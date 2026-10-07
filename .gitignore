@@ -1,0 +1,14 @@
+# 비밀값
+.env
+.env.*
+!.env.example
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# 문서 원본 (용량이 커서 저장소에 올리지 않음)
+*.hwp

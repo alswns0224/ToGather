@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: togather
+  config:
+    # 저장소 루트의 .env를 읽는다 (backend/ 또는 루트에서 실행하는 경우 모두 지원)
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate # 스키마 변경은 Flyway로만
+    properties:
+      hibernate:
+        default_batch_fetch_size: 100
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  data:
+    web:
+      pageable:
+        default-page-size: 20
+        one-indexed-parameters: false
+
+togather:
+  token-key: ${TOGATHER_TOKEN_KEY:}
+  chroma:
+    url: ${CHROMA_URL:http://localhost:8000}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+  slack:
+    client-id: ${SLACK_CLIENT_ID:}
+    client-secret: ${SLACK_CLIENT_SECRET:}
+  notion:
+    client-id: ${NOTION_CLIENT_ID:}
+    client-secret: ${NOTION_CLIENT_SECRET:}
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
