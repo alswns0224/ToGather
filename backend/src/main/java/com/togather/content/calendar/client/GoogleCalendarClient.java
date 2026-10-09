@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,6 +37,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class GoogleCalendarClient {
 
     public static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter LOCAL_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
     private static final String BASE = "https://www.googleapis.com/calendar/v3";
     private static final ParameterizedTypeReference<Map<String, Object>> JSON = new ParameterizedTypeReference<>() {
     };
@@ -179,10 +181,10 @@ public class GoogleCalendarClient {
             body.put("description", write.description());
         }
         if (write.startAt() != null) {
-            body.put("start", Map.of("dateTime", write.startAt().toString(), "timeZone", ZONE.getId()));
+            body.put("start", Map.of("dateTime", LOCAL_FORMAT.format(write.startAt()), "timeZone", ZONE.getId()));
         }
         if (write.endAt() != null) {
-            body.put("end", Map.of("dateTime", write.endAt().toString(), "timeZone", ZONE.getId()));
+            body.put("end", Map.of("dateTime", LOCAL_FORMAT.format(write.endAt()), "timeZone", ZONE.getId()));
         }
         if (write.attendeeEmails() != null) {
             body.put("attendees", write.attendeeEmails().stream().map(email -> Map.of("email", email)).toList());
@@ -194,8 +196,12 @@ public class GoogleCalendarClient {
         return OffsetDateTime.parse(rfc3339).atZoneSameInstant(ZONE).toLocalDateTime();
     }
 
-    private static String rfc3339(LocalDateTime time) {
-        return time.atZone(ZONE).toOffsetDateTime().toString();
+    /**
+     * Google은 초까지 있는 RFC3339만 받는다. (toString()은 초가 0이면 초를 생략해서 400 오류가 난다)
+     * 쿼리 문자열에서 '+09:00'의 '+'는 공백으로 해석되므로 UTC('Z')로 보낸다.
+     */
+    static String rfc3339(LocalDateTime time) {
+        return DateTimeFormatter.ISO_INSTANT.format(time.atZone(ZONE).toInstant());
     }
 
     private static java.net.URI eventUri(String calendarId, String eventId, String sendUpdates) {
@@ -217,7 +223,9 @@ public class GoogleCalendarClient {
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
                 throw new BusinessException(ErrorCode.REAUTH_REQUIRED);
             }
-            log.warn("Google Calendar API 오류: status={}", e.getStatusCode().value());
+            // 응답 본문은 Google의 오류 설명(토큰·일정 내용 없음)이라 원인 파악을 위해 남긴다.
+            log.warn("Google Calendar API 오류: status={}, body={}", e.getStatusCode().value(),
+                    e.getResponseBodyAsString().replaceAll("\\s+", " "));
             throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         } catch (RestClientException e) {
             log.warn("Google Calendar API 호출 실패: {}", e.getClass().getSimpleName());
