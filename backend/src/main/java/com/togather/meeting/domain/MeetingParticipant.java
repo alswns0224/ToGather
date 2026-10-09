@@ -35,4 +35,9 @@ public class MeetingParticipant extends BaseTimeEntity {
     public void markResponded() {
         this.hasResponded = true;
     }
+
+    /** 후보 기간이 바뀌면 다시 응답해야 한다. */
+    public void resetResponse() {
+        this.hasResponded = false;
+    }
 }

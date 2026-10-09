@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import WorkspaceLayout from './layouts/WorkspaceLayout';
+import RequireAuth from './components/RequireAuth';
 import LoginPage from './pages/auth/LoginPage';
 import WorkspaceListPage from './pages/workspace/WorkspaceListPage';
 import InviteJoinPage from './pages/workspace/InviteJoinPage';
@@ -13,17 +14,36 @@ import AnalysisPage from './pages/analysis/AnalysisPage';
 import TaskListPage from './pages/task/TaskListPage';
 import TaskContextPage from './pages/task/TaskContextPage';
 import MeetingListPage from './pages/meeting/MeetingListPage';
+import MeetingDetailPage from './pages/meeting/MeetingDetailPage';
 import SearchPage from './pages/search/SearchPage';
 import AssistantPage from './pages/assistant/AssistantPage';
 
 export const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/workspaces" replace /> },
   { path: '/login', element: <LoginPage /> },
-  { path: '/workspaces', element: <WorkspaceListPage /> },
-  { path: '/invite/:token', element: <InviteJoinPage /> },
+  {
+    path: '/workspaces',
+    element: (
+      <RequireAuth>
+        <WorkspaceListPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/invite/:token',
+    element: (
+      <RequireAuth>
+        <InviteJoinPage />
+      </RequireAuth>
+    ),
+  },
   {
     path: '/workspaces/:workspaceId',
-    element: <WorkspaceLayout />,
+    element: (
+      <RequireAuth>
+        <WorkspaceLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <Navigate to="tasks" replace /> },
       { path: 'tasks', element: <TaskListPage /> },
@@ -34,6 +54,7 @@ export const router = createBrowserRouter([
       { path: 'drive', element: <DrivePage /> },
       { path: 'calendar', element: <CalendarPage /> },
       { path: 'meetings', element: <MeetingListPage /> },
+      { path: 'meetings/:meetingId', element: <MeetingDetailPage /> },
       { path: 'search', element: <SearchPage /> },
       { path: 'assistant', element: <AssistantPage /> },
       { path: 'integrations', element: <IntegrationsPage /> },

@@ -35,9 +35,16 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // Docker 없이 실제 PostgreSQL로 통합 테스트 (Flyway 마이그레이션·JPA 매핑 검증)
+    testImplementation 'io.zonky.test:embedded-postgres:2.1.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// Docker 없이 로컬 실행 (내장 PostgreSQL): ./gradlew bootTestRun
+tasks.named('bootTestRun') {
+    mainClass = 'com.togather.LocalTogatherApplication'
 }

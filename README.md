@@ -33,8 +33,35 @@
    - 첫 실행 때 Flyway가 스키마를 만듭니다.
 3. 프론트엔드: `cd frontend && npm install && npm run dev` → http://localhost:5173
    - `/api`로 시작하는 요청은 8080으로 프록시됩니다.
+4. 브라우저에서 http://localhost:5173 접속
+   - `.env`에 `DEV_LOGIN_ENABLED=true`면 Google 설정 없이 이메일·이름만으로 로그인할 수 있습니다. (로컬 전용)
 
 DB를 처음 상태로 되돌리려면 `docker compose down -v` 후 다시 `up` 합니다. (로컬 데이터가 모두 지워집니다)
+
+**Docker를 쓸 수 없을 때** (가상화가 꺼진 PC 등)
+- 1·2번 대신 `cd backend && ./gradlew bootTestRun`을 실행합니다. 내장 PostgreSQL이 함께 뜨고, 데이터는 `backend/.local-postgres`에 남습니다. (처음 상태로 되돌리려면 이 폴더를 지웁니다)
+- ChromaDB는 뜨지 않으므로 통합 검색은 Docker 환경에서 확인합니다.
+
+**테스트**: `cd backend && ./gradlew test` — 통합 테스트도 내장 PostgreSQL로 돌아가서 Docker가 필요 없습니다.
+
+**Windows에서 Gradle이 `Unable to establish loopback connection`으로 실패할 때**: 임시 폴더 경로 문제입니다. 짧은 영어 경로를 임시 폴더로 지정하고 실행합니다.
+
+```bash
+mkdir -p /c/gtmp
+export TMP='C:\gtmp' TEMP='C:\gtmp' JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\gtmp -Djava.io.tmpdir=C:\gtmp'
+./gradlew bootRun
+```
+
+### 외부 서비스 앱 등록 (A 담당)
+
+각 서비스 개발자 콘솔에서 OAuth 앱을 만들고, 아래 Redirect URI를 등록한 뒤 client id/secret을 `.env`에 넣습니다. `{APP_URL}`은 `.env`의 `APP_URL`(기본 `http://localhost:5173`)입니다.
+
+| 서비스 | Redirect URI | 비고 |
+|---|---|---|
+| Google (로그인) | `{APP_URL}/api/auth/google/callback` | Google Cloud Console → OAuth 클라이언트(웹 애플리케이션) |
+| Google (Drive·Calendar·Gmail) | `{APP_URL}/api/integrations/google/callback` | 같은 OAuth 클라이언트. Drive·Calendar·Gmail API 사용 설정, 동의 화면에 팀원을 테스트 사용자로 등록 |
+| Slack | `{APP_URL}/api/integrations/slack/callback` | **https만 허용**됩니다. 로컬에서는 ngrok 등으로 https 주소를 만들어 `APP_URL`에 넣습니다. User Token Scopes는 `SlackOAuthClient.USER_SCOPE` 참고 |
+| Notion | `{APP_URL}/api/integrations/notion/callback` | Public integration으로 만듭니다. |
 
 ### 비밀값
 

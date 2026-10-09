@@ -43,7 +43,7 @@ public class Meeting extends BaseTimeEntity {
     })
     private DateRange candidatePeriod;
 
-    /** 진행 방식. 값 목록 미정이라 String */
+    /** 진행 방식. 값 목록 미정이라 String (예: 온라인, 오프라인) */
     private String meetingMode;
 
     @Enumerated(EnumType.STRING)
@@ -55,8 +55,16 @@ public class Meeting extends BaseTimeEntity {
 
     private boolean calendarSyncFailed;
 
-    public Meeting(Long workspaceId, String title, int durationMinutes, DateRange candidatePeriod, String meetingMode) {
+    /** 회의를 만든 사용자 (V3) */
+    private Long createdBy;
+
+    /** 확정 후 등록된 화상 회의 링크 (V3) */
+    private String meetLink;
+
+    public Meeting(Long workspaceId, Long createdBy, String title, int durationMinutes, DateRange candidatePeriod,
+                   String meetingMode) {
         this.workspaceId = workspaceId;
+        this.createdBy = createdBy;
         this.title = title;
         this.durationMinutes = durationMinutes;
         this.candidatePeriod = candidatePeriod;
@@ -80,8 +88,17 @@ public class Meeting extends BaseTimeEntity {
         this.status = MeetingStatus.CONFIRMED;
     }
 
-    public void registerCalendarEvent(Long contentRefId) {
+    public LocalDateTime getEndAt() {
+        return startAt == null ? null : startAt.plusMinutes(durationMinutes);
+    }
+
+    public boolean isScheduling() {
+        return status == MeetingStatus.SCHEDULING;
+    }
+
+    public void registerCalendarEvent(Long contentRefId, String meetLink) {
         this.calendarRefId = contentRefId;
+        this.meetLink = meetLink;
         this.calendarSyncFailed = false;
     }
 

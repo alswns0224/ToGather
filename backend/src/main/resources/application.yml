@@ -26,8 +26,21 @@ spring:
         default-page-size: 20
         one-indexed-parameters: false
 
+server:
+  servlet:
+    session:
+      timeout: 14d
+      cookie:
+        http-only: true
+        same-site: lax
+
 togather:
+  # 브라우저 기준 앱 주소. OAuth 콜백도 이 주소의 /api/... 로 돌아온다 (개발 중 Vite가 백엔드로 프록시)
+  app-url: ${APP_URL:http://localhost:5173}
   token-key: ${TOGATHER_TOKEN_KEY:}
+  auth:
+    # true면 Google 로그인 없이 이메일만으로 로그인하는 개발용 API(/api/auth/dev-login)를 연다. 운영에서는 false
+    dev-login: ${DEV_LOGIN_ENABLED:false}
   chroma:
     url: ${CHROMA_URL:http://localhost:8000}
   google:

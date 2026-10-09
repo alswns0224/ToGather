@@ -68,6 +68,23 @@ public class ServiceConnection extends BaseTimeEntity {
         this.status = status;
     }
 
+    /** 같은 사용자가 다시 인증했을 때 계정·토큰을 갱신한다. */
+    public void reconnect(String externalAccountId, String encryptedTokens, String scope, LocalDateTime expiresAt) {
+        this.externalAccountId = externalAccountId;
+        refreshTokens(encryptedTokens, scope, expiresAt);
+    }
+
+    /** 연결 해제. 토큰은 지우고 기록만 남긴다. */
+    public void disconnect() {
+        this.encryptedTokens = "";
+        this.expiresAt = null;
+        this.status = ConnectionStatus.DISCONNECTED;
+    }
+
+    public boolean isActive() {
+        return status != ConnectionStatus.DISCONNECTED;
+    }
+
     public boolean isTokenExpired(LocalDateTime now) {
         return expiresAt != null && !now.isBefore(expiresAt);
     }

@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** C-00-06. Slack 채널 / Notion 데이터베이스 / Drive 폴더 등 연동 대상 */
+/** C-00-06. Slack 채널 / Notion 데이터베이스 / Drive 폴더 / Calendar 캘린더 등 연동 대상 */
 @Getter
 @Entity
 @Table(name = "integration_target")
@@ -25,8 +25,12 @@ public class IntegrationTarget extends BaseTimeEntity {
 
     private String externalTargetId;
 
-    public IntegrationTarget(Long connectionId, String externalTargetId) {
+    /** 화면 표시용 이름 (V2에서 추가) */
+    private String name;
+
+    public IntegrationTarget(Long connectionId, String externalTargetId, String name) {
         this.connectionId = connectionId;
         this.externalTargetId = externalTargetId;
+        this.name = name;
     }
 }

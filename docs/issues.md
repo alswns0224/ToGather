@@ -26,57 +26,59 @@ GitHub Issues에 등록할 목록입니다. 한 이슈 = 한 브랜치 = 한 PR�
 
 ## A. 기반·연동·일정 (백민준)
 
-### A-01. Google 로그인과 세션
+> A-01 ~ A-09는 `feature/a-foundation`에서 구현했습니다. 실제 외부 서비스(Google·Slack·Notion) 연동 확인은 OAuth 앱 등록 후 진행합니다.
+
+### A-01. Google 로그인과 세션 ✅
 - 브랜치: `a-google-login` · UC-01-01 · SD-01-01 · UI-01 · 1주차
 - [ ] `AuthController` `login`, `googleCallback` / `AuthService.loginWithGoogle` / `SessionManager`
 - [ ] 최초 로그인 시 `users` 저장, 이후 프로필 갱신
 - [ ] `@LoginUser Long userId` 인자 주입, 미로그인 시 401 `UNAUTHORIZED`
 - [ ] 로그인 화면 (처리 중 표시, 실패 사유 안내)
 
-### A-02. 워크스페이스 CRUD
+### A-02. 워크스페이스 CRUD ✅
 - 브랜치: `a-workspace-crud` · UC-02-01~04 · SD-02-01~04 · UI-02 · 1주차 · 선행: A-01
 - [ ] 목록, 조회, 생성(생성자 OWNER 등록), 수정·삭제(OWNER만)
 - [ ] 워크스페이스 목록 화면(카드, 팀원 수), 생성·수정·삭제 확인
 
-### A-03. 초대 링크와 팀원 관리
+### A-03. 초대 링크와 팀원 관리 ✅
 - 브랜치: `a-invite-member` · UC-02-05~08 · SD-02-05~08 · UI-02 · 2주차 · 선행: A-02
 - [ ] 초대 링크 생성·조회(OWNER), 초대 정보 조회, 링크로 참여(MEMBER)
 - [ ] 팀원 목록(팀장·팀원 구분), 팀원 내보내기(OWNER)
 - [ ] `UserService.getUsers`, `WorkspaceMemberService.getMemberUserIds` 제공
 - [ ] 초대 참여 화면, 팀원 관리 화면
 
-### A-04. OAuth 연동과 토큰 암호화
+### A-04. OAuth 연동과 토큰 암호화 ✅
 - 브랜치: `a-oauth-connect` · UC-03-01~02 · SD-03-01~02 · UI-03 · 3주차 · 선행: A-02
 - [ ] Slack, Notion, Google(Drive·Calendar·Gmail) 인증 화면 이동과 콜백 처리
 - [ ] 토큰 암호화 저장(`TOGATHER_TOKEN_KEY`), 연동 대상 선택
 - [ ] `getAccessToken`(만료 시 갱신), `getConnectionTargets` 제공
 - [ ] 연동 상태 화면
 
-### A-05. 재인증과 연결 해제
+### A-05. 재인증과 연결 해제 ✅
 - 브랜치: `a-oauth-reauth` · UC-03-03~04 · SD-03-03~04 · UI-03 · 4주차 · 선행: A-04
 - [ ] 토큰 만료 시 `REAUTH_REQUIRED` 상태 전환과 화면 표시(구분 색상)
 - [ ] 재인증(같은 계정인지 확인), 연결 해제(확인 절차)
 
-### A-06. Google Calendar 일정
+### A-06. Google Calendar 일정 ✅
 - 브랜치: `a-calendar` · UC-07-01~04 · SD-07-01~04 · UI-07 · 5주차 · 선행: A-04, B-01
 - [ ] 일정 조회(월·주), 생성, 수정, 삭제
 - [ ] `createContent`, `createPersonalEvent`, `getContentDetail` 제공 (B, C 사용)
 - [ ] 달력 화면, 확정된 회의 일정 구분 표시
 
-### A-07. 회의 생성·수정·취소와 안건
+### A-07. 회의 생성·수정·취소와 안건 ✅
 - 브랜치: `a-meeting-crud` · UC-10-01~05 · SD-10-01~05 · UI-10 · 6주차 · 선행: C-01
 - [ ] 회의 생성(SCHEDULING), 수정, 취소
 - [ ] 안건 추가·변경(진행 중 Task 중 선택), 안건별 관련 자료 조회
 - [ ] `getMeetingsByTask` 제공 (C 사용)
 - [ ] 회의 목록 화면(예정·지난 회의), 생성 화면, 안건 화면
 
-### A-08. 가용 시간 수집
+### A-08. 가용 시간 수집 ✅
 - 브랜치: `a-meeting-availability` · UC-10-06~07 · SD-10-06~07 · UI-10 · 7주차 · 선행: A-06, A-07
 - [ ] 가능·불가능·비선호 입력, 연동 캘린더 일정은 불가능으로 자동 표시
 - [ ] 참여자별 응답 현황
 - [ ] 후보 기간 표 형태 입력 화면
 
-### A-09. 회의 시간 추천과 확정
+### A-09. 회의 시간 추천과 확정 ✅
 - 브랜치: `a-meeting-recommend` · UC-10-08~09 · SD-10-08~09 · UI-10 · 8주차 · 선행: A-08
 - [ ] 가용 시간 집계와 점수 계산, 후보 순위(가능 인원, 비선호 인원) — 3초 이내
 - [ ] 확정 시 Calendar 등록, 실패 시 `calendarSyncFailed` 기록과 재시도

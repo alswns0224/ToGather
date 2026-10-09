@@ -23,7 +23,7 @@
 
 ---
 
-## 1. A가 제공 (백민준)
+## 1. A가 제공 (백민준) — ✅ 구현 완료
 
 ### 로그인 사용자 · 권한
 
@@ -32,7 +32,7 @@
 @GetMapping("/api/workspaces/{workspaceId}/tasks")
 public ApiResponse<...> getTasks(@LoginUser Long userId, @PathVariable Long workspaceId)
 
-// common.auth.WorkspaceAccessChecker (이미 커밋됨)
+// common.auth.WorkspaceAccessChecker
 void checkMember(Long workspaceId, Long userId);   // 멤버가 아니면 403 WORKSPACE_ACCESS_DENIED
 void checkOwner(Long workspaceId, Long userId);    // OWNER가 아니면 403 WORKSPACE_OWNER_REQUIRED
 ```
@@ -44,11 +44,12 @@ void checkOwner(Long workspaceId, Long userId);    // OWNER가 아니면 403 WOR
 ```java
 // UserService
 UserSummary getUser(Long userId);
-List<UserSummary> getUsers(List<Long> userIds);
+List<UserSummary> getUsers(Collection<Long> userIds);   // 없는 ID는 결과에서 빠짐
 record UserSummary(Long userId, String name, String email, String profileImage) {}
 
 // WorkspaceMemberService
 List<Long> getMemberUserIds(Long workspaceId);
+boolean isMember(Long workspaceId, Long userId);
 ```
 
 사용처: C(Task 담당자 표시·검증), B(후속 작업 제안 담당자, 스레드 참여자 매핑)
@@ -63,7 +64,15 @@ String getAccessToken(Long workspaceId, Long userId, Provider provider);
 // 워크스페이스에서 선택한 연동 대상(Slack 채널, Notion DB, Drive 폴더)
 // [결정] 대상이 여러 개일 수 있으므로 List로 반환 (명세서는 단건)
 List<String> getConnectionTargets(Long workspaceId, Provider provider);
+
+// 연결이 없으면 빈 값 (선택적으로 쓰는 기능: 예) 캘린더가 있으면 자동 반영)
+Optional<String> findAccessToken(Long workspaceId, Long userId, Provider provider);
+boolean hasConnection(Long workspaceId, Long userId, Provider provider);
 ```
+
+- 팀 서비스(Slack·Notion·Drive)는 본인 연결이 없으면 워크스페이스에서 다른 팀원이 연결한 토큰을 준다.
+- 개인 서비스(Gmail·Calendar)는 본인 연결만 쓴다.
+- 외부 API가 401을 주면 `BusinessException(REAUTH_REQUIRED)`로 바꿔 던지면 화면에 재인증 안내가 나간다.
 
 사용처: B(Slack, Notion), C(Drive, Gmail)
 규칙: 받은 토큰은 DTO, 응답, 로그에 넣지 않는다. (README 10번)
@@ -71,14 +80,16 @@ List<String> getConnectionTargets(Long workspaceId, Provider provider);
 ### Calendar (CalendarContentService)
 
 ```java
-// [결정 4] workspaceId, userId 추가
+// [결정 4] workspaceId, userId 추가. 팀 캘린더(연동 관리에서 선택)에 등록, 없으면 요청자의 기본 캘린더
 ContentRefDTO createContent(Long workspaceId, Long userId, CalendarEventRequest request);
-record CalendarEventRequest(String title, LocalDateTime startAt, List<Long> participants, String description) {}
+// endAt이 null이면 시작 후 1시간 (명세서에 없던 endAt 추가)
+record CalendarEventRequest(String title, LocalDateTime startAt, LocalDateTime endAt, List<Long> participants, String description) {}
 
-// 개인 일정 (AI 업무 보조 승인 시)
-ContentRefDTO createPersonalEvent(Long userId, PersonalEventRequest request);
-record PersonalEventRequest(String title, LocalDateTime startAt, LocalDateTime endAt) {}
+// 개인 일정 (AI 업무 보조 승인 시). [결정 4] workspaceId 추가 — Calendar 연결이 워크스페이스 단위라서
+ContentRefDTO createPersonalEvent(Long workspaceId, Long userId, PersonalEventRequest request);
+record PersonalEventRequest(String title, LocalDateTime startAt, LocalDateTime endAt) {}   // endAt null이면 1시간
 
+// 원본이 지워졌으면 isOriginDeleted=true와 보관 사본
 ContentDetailDTO getContentDetail(Long contentRefId);
 ```
 
@@ -96,6 +107,9 @@ record MeetingSummary(Long meetingId, String title, MeetingStatus status, LocalD
 ---
 
 ## 2. B가 제공 (정철준)
+
+> A의 Calendar 구현에 필요해서 `ContentRefService`(upsert, getContentRef, getContentRefs, findByOrigin, getOwner, updateContent, markOriginDeleted)와
+> `ContentRefDTO`, `ContentDetailDTO`를 먼저 만들어 두었습니다. B가 이어서 확장합니다. (`getPersonalContents`는 아직 없음)
 
 ### ContentRef 저장 · 조회 [결정 1]
 
@@ -170,6 +184,9 @@ record AnalysisItemDTO(Long itemId, ItemType itemType, String content, List<Long
 ---
 
 ## 3. C가 제공 (이찬서)
+
+> A의 회의 안건에 필요해서 `TaskService.getTask`, `getTasks(Collection<Long>)`, `getTasksInProgress`와 `TaskSummary`를 먼저 만들어 두었습니다.
+> C가 이어서 CRUD와 나머지 메서드를 구현합니다.
 
 ### Task (TaskService)
 
