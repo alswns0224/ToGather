@@ -91,7 +91,10 @@ export interface ResponseStatus {
 
 export interface TimeCandidate {
   candidateId: number;
+  /** 가능 인원·비선호 인원이 같으면 같은 순위 */
   rank: number;
+  /** 같은 순위의 후보가 더 있으면 true → "공동 N위" */
+  tied: boolean;
   startAt: string;
   endAt: string;
   availableCount: number;

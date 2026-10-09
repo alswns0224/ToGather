@@ -66,6 +66,36 @@ class MeetingTimeRecommenderTest {
     }
 
     @Test
+    void 점수가_같으면_공동_순위이고_다음_순위는_건너뛴다() {
+        Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
+        // 10시·11시·12시는 가능, 15시는 비선호
+        Map<LocalDateTime, SlotPreference> user1 = cells(SlotPreference.AVAILABLE, at(10, 0), at(11, 0), at(12, 0));
+        user1.put(at(15, 0), SlotPreference.NOT_PREFERRED);
+        responses.put(1L, user1);
+
+        List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(18, 0)), 30, responses);
+
+        assertThat(result).extracting(Scored::rank).containsExactly(1, 1, 1, 4);
+        assertThat(result).extracting(Scored::startAt).containsExactly(at(10, 0), at(11, 0), at(12, 0), at(15, 0));
+    }
+
+    @Test
+    void 후보는_5개보다_많이_나올_수_있다() {
+        Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
+        Map<LocalDateTime, SlotPreference> allDay = new HashMap<>();
+        for (LocalDateTime t : recommender.cells(new DateRange(at(9, 0), at(22, 0)))) {
+            allDay.put(t, SlotPreference.AVAILABLE);
+        }
+        responses.put(1L, allDay);
+
+        List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(22, 0)), 60, responses);
+
+        // 9~22시에 겹치지 않는 1시간 회의 13개, 모두 공동 1위
+        assertThat(result).hasSize(13);
+        assertThat(result).extracting(Scored::rank).containsOnly(1);
+    }
+
+    @Test
     void 하루_표시_범위_밖의_시간은_후보가_아니다() {
         List<LocalDateTime> cells = recommender.cells(new DateRange(at(7, 0), at(23, 0)));
 

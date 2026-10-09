@@ -295,11 +295,11 @@ public class MeetingService {
 
         List<Scored> scored = recommender.recommend(meeting.getCandidatePeriod(), meeting.getDurationMinutes(), responses);
         candidateRepository.deleteAllByMeetingId(meetingId);
-        int rank = 1;
         List<MeetingTimeCandidate> saved = new ArrayList<>();
         for (Scored s : scored) {
-            saved.add(new MeetingTimeCandidate(meetingId, s.startAt(), rank++, s.availableCount(), s.nonPreferredCount()));
+            saved.add(new MeetingTimeCandidate(meetingId, s.startAt(), s.rank(), s.availableCount(), s.nonPreferredCount()));
         }
+        Map<Integer, Long> rankCounts = scored.stream().collect(Collectors.groupingBy(Scored::rank, Collectors.counting()));
         candidateRepository.saveAll(saved);
 
         Map<Long, UserSummary> users = users(participants.stream().map(MeetingParticipant::getUserId).toList());
@@ -308,7 +308,7 @@ public class MeetingService {
             MeetingTimeCandidate c = saved.get(i);
             List<String> unavailableNames = scored.get(i).unavailableUserIds().stream()
                     .map(users::get).filter(Objects::nonNull).map(UserSummary::name).toList();
-            result.add(new TimeCandidateResponse(c.getCandidateId(), c.getRank(), c.getStartAt(),
+            result.add(new TimeCandidateResponse(c.getCandidateId(), c.getRank(), rankCounts.get(c.getRank()) > 1, c.getStartAt(),
                     c.getStartAt().plusMinutes(meeting.getDurationMinutes()), c.getAvailableCount(),
                     c.getNonPreferredCount(), responded.size(), participants.size(), unavailableNames));
         }

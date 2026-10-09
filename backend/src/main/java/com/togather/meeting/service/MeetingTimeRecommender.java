@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
  *   <li>후보 시작 시각은 후보 기간 안에서 30분 간격, 하루 중 {@value #DAY_START_HOUR}시 ~ {@value #DAY_END_HOUR}시 사이만 본다.</li>
  *   <li>참여자가 회의 시간의 모든 칸을 "가능" 또는 "비선호"로 표시했으면 참석 가능. 표시하지 않은 칸이나 "불가능"이 하나라도 있으면 불가능.</li>
  *   <li>가능 인원이 많은 순 → 비선호 인원이 적은 순 → 이른 시각 순으로 정렬하고, 서로 겹치지 않는 후보를 고른다.</li>
+ *   <li>가능 인원과 비선호 인원이 같으면 공동 순위다. 다음 순위는 공동 개수만큼 건너뛴다. (예: 1, 1, 1, 4)</li>
  *   <li>가용 시간에 응답하지 않은 참여자는 계산에서 뺀다.</li>
  * </ul>
  */
@@ -27,13 +28,23 @@ public class MeetingTimeRecommender {
     public static final int SLOT_MINUTES = 30;
     public static final int DAY_START_HOUR = 9;
     public static final int DAY_END_HOUR = 22;
-    public static final int MAX_CANDIDATES = 5;
+    /** 화면에서는 5개씩 "더 보기"로 보여 준다. */
+    public static final int MAX_CANDIDATES = 30;
 
     /**
+     * @param rank               순위. 가능 인원·비선호 인원이 같으면 같은 순위(공동)
      * @param unavailableUserIds 이 시간에 참석할 수 없는 참여자
      */
-    public record Scored(LocalDateTime startAt, int availableCount, int nonPreferredCount,
+    public record Scored(int rank, LocalDateTime startAt, int availableCount, int nonPreferredCount,
                          List<Long> unavailableUserIds) {
+
+        Scored withRank(int rank) {
+            return new Scored(rank, startAt, availableCount, nonPreferredCount, unavailableUserIds);
+        }
+
+        boolean sameScore(Scored other) {
+            return availableCount == other.availableCount && nonPreferredCount == other.nonPreferredCount;
+        }
     }
 
     /**
@@ -59,7 +70,18 @@ public class MeetingTimeRecommender {
                 selected.add(candidate);
             }
         }
-        return selected;
+        return assignRanks(selected);
+    }
+
+    /** 공동 순위: 앞 후보와 점수가 같으면 같은 순위, 다르면 (앞에 있는 후보 수 + 1)위 */
+    private static List<Scored> assignRanks(List<Scored> sorted) {
+        List<Scored> ranked = new ArrayList<>();
+        for (int i = 0; i < sorted.size(); i++) {
+            Scored current = sorted.get(i);
+            int rank = i > 0 && current.sameScore(sorted.get(i - 1)) ? ranked.get(i - 1).rank() : i + 1;
+            ranked.add(current.withRank(rank));
+        }
+        return ranked;
     }
 
     /** 가용 시간 입력 표의 칸 시작 시각 목록 (하루 중 표시 범위 안) */
@@ -121,7 +143,7 @@ public class MeetingTimeRecommender {
                 unavailable.add(entry.getKey());
             }
         }
-        return new Scored(start, available, nonPreferred, unavailable);
+        return new Scored(0, start, available, nonPreferred, unavailable);
     }
 
     private static boolean overlaps(LocalDateTime a, LocalDateTime b, int durationMinutes) {

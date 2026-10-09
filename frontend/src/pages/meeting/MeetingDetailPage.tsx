@@ -381,6 +381,9 @@ function buildGrid(a: AvailabilityResponse) {
 
 // ===================== 추천 · 확정 =====================
 
+/** 추천 후보를 한 번에 보여 주는 개수 */
+const PAGE_SIZE = 5;
+
 function Recommendations({
   workspaceId,
   meeting,
@@ -391,6 +394,7 @@ function Recommendations({
   onConfirm: (startAt: string) => void;
 }) {
   const [candidates, setCandidates] = useState<TimeCandidate[] | null>(null);
+  const [visible, setVisible] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
   const responded = meeting.participants.filter((p) => p.hasResponded).length;
@@ -400,6 +404,7 @@ function Recommendations({
     setError(undefined);
     try {
       setCandidates(await recommendTimes(workspaceId, meeting.meetingId));
+      setVisible(PAGE_SIZE);
     } catch (err) {
       setError(err as Error);
     } finally {
@@ -429,9 +434,12 @@ function Recommendations({
       )}
       {candidates && candidates.length > 0 && (
         <ul className="list">
-          {candidates.map((c) => (
+          {candidates.slice(0, visible).map((c) => (
             <li key={c.candidateId} className="row">
-              <span className="badge">{c.rank}순위</span>
+              <span className={`badge ${c.rank === 1 ? 'badge-primary' : ''}`}>
+                {c.tied ? '공동 ' : ''}
+                {c.rank}위
+              </span>
               <strong>
                 {formatDateTime(c.startAt)} ~ {formatTime(c.endAt)}
               </strong>
@@ -452,6 +460,11 @@ function Recommendations({
             </li>
           ))}
         </ul>
+      )}
+      {candidates && candidates.length > visible && (
+        <button className="btn btn-small" onClick={() => setVisible(visible + PAGE_SIZE)}>
+          더 보기 ({candidates.length - visible}개 남음)
+        </button>
       )}
     </div>
   );
