@@ -166,6 +166,9 @@ ContentDetailDTO getContentDetail(Long contentRefId);
 
 ### Gemini (GeminiClient) [결정 7]
 
+위치: `common.ai.GeminiClient` (여러 파트가 같이 쓰므로 common). 실패하면 `AI_CALL_FAILED`(502), 429·5xx·타임아웃은 2번까지 다시 시도.
+프롬프트는 `resources/prompts/{이름}.txt`에 두고 `PromptTemplates.render(이름, 변수)`로 읽는다.
+
 ```java
 String generate(String prompt);                 // 텍스트 생성 (논의 분석, 후보 추출)
 <T> T generateJson(String prompt, Class<T> type); // JSON 응답을 객체로 변환
