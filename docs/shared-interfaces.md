@@ -159,8 +159,8 @@ List<ContentRefDTO> getContentsByUser(Long workspaceId, Long userId);  // 본인
 ContentDetailDTO getContentDetail(Long contentRefId);   // 스레드면 participants에 참여자 이름
 
 // NotionContentService
-List<ContentRefDTO> getContents(Long workspaceId);
-ContentDetailDTO getContentDetail(Long contentRefId);
+List<ContentRefDTO> getContents(Long workspaceId);        // 삭제되지 않은 페이지, 최근 수정순
+ContentDetailDTO getContentDetail(Long contentRefId);     // body는 "# 제목, - 목록" 형식의 텍스트
 ```
 
 사용처: C(Task 관련 자료 후보 SD-09-05, 통합 검색 결과 상세 SD-12-01)

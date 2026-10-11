@@ -1,0 +1,46 @@
+/* UI-05 Notion 화면 전용 (담당: B) */
+
+.notion-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.notion-layout.with-detail {
+  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+}
+
+.notion-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.notion-item.active {
+  background: var(--primary-soft);
+}
+
+.notion-body {
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+textarea.input.notion-editor {
+  min-height: 240px;
+}
+
+@media (max-width: 900px) {
+  .notion-layout.with-detail {
+    grid-template-columns: 1fr;
+  }
+}

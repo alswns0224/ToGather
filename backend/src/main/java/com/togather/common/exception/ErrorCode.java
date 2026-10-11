@@ -49,6 +49,8 @@ public enum ErrorCode {
     SLACK_ACTION_FORBIDDEN(HttpStatus.FORBIDDEN, "Slack에서 허용되지 않은 작업입니다. 본인 메시지인지, 채널에 참여 중인지 확인해 주세요."),
     SLACK_OWN_CONNECTION_REQUIRED(HttpStatus.FORBIDDEN, "메시지를 작성하려면 본인 Slack 계정을 먼저 연동해 주세요."),
     SLACK_CHANNEL_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동 대상으로 선택한 채널이 아닙니다."),
+    NOTION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "Notion에서 이 문서에 접근할 수 없습니다. 연동 시 공유한 데이터베이스인지 확인해 주세요."),
+    NOTION_DATABASE_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동된 Notion 데이터베이스가 없습니다. 연동 관리에서 데이터베이스를 선택해 주세요."),
 
     // ===== C. Drive·Gmail·Task·검색 =====
     TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Task를 찾을 수 없습니다."),
