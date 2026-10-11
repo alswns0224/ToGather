@@ -11,6 +11,7 @@ import NotionPage from './pages/notion/NotionPage';
 import DrivePage from './pages/drive/DrivePage';
 import CalendarPage from './pages/calendar/CalendarPage';
 import AnalysisPage from './pages/analysis/AnalysisPage';
+import AnalysisListPage from './pages/analysis/AnalysisListPage';
 import TaskListPage from './pages/task/TaskListPage';
 import TaskContextPage from './pages/task/TaskContextPage';
 import MeetingListPage from './pages/meeting/MeetingListPage';
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
       { path: 'tasks', element: <TaskListPage /> },
       { path: 'tasks/:taskId', element: <TaskContextPage /> },
       { path: 'slack', element: <SlackPage /> },
+      { path: 'slack/analyses', element: <AnalysisListPage /> },
       { path: 'slack/analysis/:analysisId', element: <AnalysisPage /> },
       { path: 'notion', element: <NotionPage /> },
       { path: 'drive', element: <DrivePage /> },

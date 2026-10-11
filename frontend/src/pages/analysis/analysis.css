@@ -1,0 +1,63 @@
+/* UI-08 논의 정리 화면 전용 (담당: B) */
+
+.analysis-steps {
+  margin: 0;
+  padding-left: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.analysis-steps li.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.analysis-steps li.done {
+  color: var(--success);
+}
+
+.analysis-steps li.done::after {
+  content: ' ✓';
+}
+
+.analysis-item {
+  gap: 6px;
+}
+
+.analysis-evidences {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analysis-new-message {
+  background: var(--primary-soft);
+  border-radius: 6px;
+  padding-left: 6px;
+}
+
+.analysis-output li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge.status-reviewing,
+.badge.status-analyzing {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.badge.status-failed {
+  background: var(--danger-soft, #fde8e8);
+  color: var(--danger, #c62828);
+}
+
+.badge.status-no_content {
+  color: var(--muted);
+}

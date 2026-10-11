@@ -1,6 +1,6 @@
 // UI-04 커뮤니케이션 (Slack) (담당: B)
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   createMessage,
   deleteMessage,
@@ -22,6 +22,7 @@ const PAGE_SIZE = 30;
 
 export default function SlackPage() {
   const { workspaceId = '' } = useParams();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const channels = useAsync(() => getChannels(workspaceId), [workspaceId]);
   const [syncing, setSyncing] = useState(false);
@@ -66,6 +67,9 @@ export default function SlackPage() {
       <div className="row">
         <h1>커뮤니케이션 (Slack)</h1>
         <span className="spacer" />
+        <Link to={`/workspaces/${workspaceId}/slack/analyses`} className="small">
+          논의 정리 검토 대기
+        </Link>
         {channel?.lastSyncedAt && (
           <span className="small muted">마지막 동기화 {formatDateTime(channel.lastSyncedAt)}</span>
         )}
@@ -121,6 +125,10 @@ export default function SlackPage() {
               ts={threadTs}
               onClose={() => select({ thread: null })}
               onChanged={() => setSyncTick((t) => t + 1)}
+              onAnalyze={(root) =>
+                root.contentRefId &&
+                navigate(`/workspaces/${workspaceId}/slack/analysis/new?thread=${root.contentRefId}`)
+              }
             />
           )}
         </div>

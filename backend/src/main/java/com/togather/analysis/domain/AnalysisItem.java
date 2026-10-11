@@ -72,6 +72,11 @@ public class AnalysisItem extends BaseTimeEntity {
         this.suggestedParticipantIds = suggestedParticipantIds == null ? new ArrayList<>() : new ArrayList<>(suggestedParticipantIds);
     }
 
+    /** 담당자·마감일·일시처럼 실행에 필요한 값이 비어 있으면 미정으로 표시한다. (명세서 markUndetermined) */
+    public void markUndetermined(boolean undetermined) {
+        this.isUndetermined = undetermined;
+    }
+
     public void recordOutput(Long outputTargetId, OutputStatus outputStatus) {
         this.outputTargetId = outputTargetId;
         this.outputStatus = outputStatus;

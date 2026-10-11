@@ -50,6 +50,12 @@ public enum ErrorCode {
     SLACK_OWN_CONNECTION_REQUIRED(HttpStatus.FORBIDDEN, "메시지를 작성하려면 본인 Slack 계정을 먼저 연동해 주세요."),
     SLACK_CHANNEL_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동 대상으로 선택한 채널이 아닙니다."),
     NOTION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "Notion에서 이 문서에 접근할 수 없습니다. 연동 시 공유한 데이터베이스인지 확인해 주세요."),
+    ANALYSIS_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 항목을 찾을 수 없습니다."),
+    ANALYSIS_IN_PROGRESS(HttpStatus.CONFLICT, "이 스레드는 지금 분석 중입니다. 잠시 후 다시 확인해 주세요."),
+    ANALYSIS_ALREADY_CONFIRMED(HttpStatus.BAD_REQUEST, "이미 확정된 분석은 수정할 수 없습니다."),
+    ANALYSIS_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "분석을 먼저 확정해 주세요."),
+    ANALYSIS_TARGET_INVALID(HttpStatus.BAD_REQUEST, "Slack 스레드의 첫 메시지만 분석할 수 있습니다."),
+    EVIDENCE_NOT_IN_THREAD(HttpStatus.BAD_REQUEST, "같은 스레드의 메시지만 근거로 연결할 수 있습니다."),
     NOTION_DATABASE_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동된 Notion 데이터베이스가 없습니다. 연동 관리에서 데이터베이스를 선택해 주세요."),
 
     // ===== C. Drive·Gmail·Task·검색 =====

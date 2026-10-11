@@ -199,8 +199,8 @@ List<SyncStatusResponse> syncNow(Long workspaceId, Provider provider, Long reque
 ### 결정사항 [결정 8]
 
 ```java
-// AnalysisService
-AnalysisItemDTO getItemSummary(Long itemId);
+// AnalysisService (analysis.dto.AnalysisItemDTO)
+AnalysisItemDTO getItemSummary(Long itemId);   // 없으면 ANALYSIS_ITEM_NOT_FOUND
 record AnalysisItemDTO(Long itemId, ItemType itemType, String content, List<Long> evidenceContentRefIds) {}
 ```
 
