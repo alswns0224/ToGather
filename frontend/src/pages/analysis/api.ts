@@ -121,3 +121,45 @@ export const confirmAnalysis = (workspaceId: string, analysisId: number) =>
 
 export const discardAnalysis = (workspaceId: string, analysisId: number) =>
   http.delete<void>(ws(workspaceId, `/analyses/${analysisId}`));
+
+// ===== 확정 후 실행 연계 (B-08) =====
+
+export interface DocumentDraftDTO {
+  title: string;
+  body: string;
+}
+
+export interface MeetingDraftDTO {
+  title: string;
+  startAt: string | null;
+  endAt: string | null;
+  participantIds: number[];
+  description: string | null;
+}
+
+export interface OutputResultResponse {
+  status: OutputStatus;
+  targetId: number | null;
+  link: string | null;
+}
+
+export const getNotionDraft = (workspaceId: string, analysisId: number) =>
+  http.get<DocumentDraftDTO>(ws(workspaceId, `/analyses/${analysisId}/notion-draft`));
+
+export const createNotionDocument = (
+  workspaceId: string,
+  analysisId: number,
+  body: { title: string; body: string; databaseId?: string },
+) => http.post<OutputResultResponse>(ws(workspaceId, `/analyses/${analysisId}/notion`), body);
+
+export const createFollowUpTask = (
+  workspaceId: string,
+  itemId: number,
+  body: { title: string; description: string; assigneeId: number | null; dueDate: string | null },
+) => http.post<OutputResultResponse>(ws(workspaceId, `/analysis-items/${itemId}/task`), body);
+
+export const getMeetingDraft = (workspaceId: string, itemId: number) =>
+  http.get<MeetingDraftDTO>(ws(workspaceId, `/analysis-items/${itemId}/meeting-draft`));
+
+export const registerMeeting = (workspaceId: string, itemId: number, body: MeetingDraftDTO) =>
+  http.post<OutputResultResponse>(ws(workspaceId, `/analysis-items/${itemId}/meeting`), body);

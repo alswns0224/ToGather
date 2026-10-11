@@ -8,6 +8,7 @@ import com.togather.analysis.repository.AnalysisItemRepository;
 import com.togather.analysis.repository.DiscussionAnalysisRepository;
 import com.togather.common.enums.AnalysisStatus;
 import com.togather.common.enums.ItemType;
+import com.togather.common.enums.OutputStatus;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import java.time.Duration;
@@ -67,6 +68,19 @@ public class AnalysisStore {
         }
         analysis.markAnalyzedUntil(analyzedUntil);
         analysis.changeStatus(items.isEmpty() ? AnalysisStatus.NO_CONTENT : AnalysisStatus.REVIEWING);
+    }
+
+    /** 연계 결과(Task·Calendar)를 단계별로 기록한다. 실패해도 남아야 하므로 별도 트랜잭션 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordItemOutput(Long itemId, Long outputTargetId, OutputStatus status) {
+        itemRepository.findById(itemId).ifPresent(item -> item.recordOutput(
+                status == OutputStatus.SUCCESS ? outputTargetId : item.getOutputTargetId(), status));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordNotionOutput(Long analysisId, Long notionPageRefId, OutputStatus status) {
+        analysisRepository.findById(analysisId).ifPresent(a -> a.recordNotionOutput(
+                status == OutputStatus.SUCCESS ? notionPageRefId : a.getNotionPageRefId(), status));
     }
 
     /** 실패해도 분석 기록은 남긴다. 같은 범위(analyzedUntil 이후)를 다시 분석할 수 있다. */

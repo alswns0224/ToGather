@@ -55,6 +55,9 @@ public enum ErrorCode {
     ANALYSIS_ALREADY_CONFIRMED(HttpStatus.BAD_REQUEST, "이미 확정된 분석은 수정할 수 없습니다."),
     ANALYSIS_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "분석을 먼저 확정해 주세요."),
     ANALYSIS_TARGET_INVALID(HttpStatus.BAD_REQUEST, "Slack 스레드의 첫 메시지만 분석할 수 있습니다."),
+    ANALYSIS_OUTPUT_ALREADY_DONE(HttpStatus.CONFLICT, "이미 생성했습니다. 중복으로 만들지 않습니다."),
+    ANALYSIS_ITEM_TYPE_MISMATCH(HttpStatus.BAD_REQUEST, "이 항목 유형으로는 할 수 없는 작업입니다."),
+    TASK_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Task 생성 기능이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요."),
     EVIDENCE_NOT_IN_THREAD(HttpStatus.BAD_REQUEST, "같은 스레드의 메시지만 근거로 연결할 수 있습니다."),
     NOTION_DATABASE_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동된 Notion 데이터베이스가 없습니다. 연동 관리에서 데이터베이스를 선택해 주세요."),
 
