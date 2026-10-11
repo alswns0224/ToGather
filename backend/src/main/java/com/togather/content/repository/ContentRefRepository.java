@@ -22,6 +22,10 @@ public interface ContentRefRepository extends JpaRepository<ContentRef, Long> {
     List<ContentRef> findAllByOwnerUserIdAndProviderAndLastModifiedAtGreaterThanEqualOrderByLastModifiedAtDesc(
             Long ownerUserId, Provider provider, LocalDateTime since);
 
+    /** 워크스페이스에서 연결한 내 개인 콘텐츠 (AI 업무 보조: Gmail) */
+    List<ContentRef> findAllByWorkspaceIdAndOwnerUserIdAndProviderAndCreatedAtAfterOrderByCreatedAtDesc(
+            Long workspaceId, Long ownerUserId, Provider provider, LocalDateTime after);
+
     // ===== 팀 콘텐츠 (Slack, Notion) =====
 
     /** 채널의 최상위 메시지 (답글 제외) */

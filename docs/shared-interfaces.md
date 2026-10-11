@@ -232,6 +232,9 @@ record TaskSummary(Long taskId, Long workspaceId, String title, Long assigneeId,
 
 사용처: A(회의 안건 SD-10-04·05), B(후속 Task 생성 SD-08-04, AI 업무 보조 SD-13-02)
 
+> B는 `analysis.service.TaskGateway`에서만 `createTask`, `getMyTasks`를 호출합니다. C 구현 전까지는 Task 생성이
+> `TASK_SERVICE_UNAVAILABLE`(실패 단계로 기록, 나중에 재시도)로 처리되고 담당 Task 목록은 비어 있습니다.
+
 ### 협업 맥락 (TaskContextService)
 
 ```java
@@ -248,6 +251,9 @@ List<ContentRefDTO> getContentsByUser(Long userId);
 ```
 
 사용처: B(AI 업무 보조 일정·할 일 후보 추출 SD-13-01·02)
+
+> B는 C가 `ContentRefService.upsert`로 저장한 메일(provider=GMAIL, ownerUserId=본인)을 content_ref에서 직접 읽습니다.
+> 그래서 C는 메일을 저장할 때 `ownerUserId`, `title`(제목), `content`(본문), `authorName`(보낸 사람), `createdAt`을 채워 주세요.
 
 ---
 

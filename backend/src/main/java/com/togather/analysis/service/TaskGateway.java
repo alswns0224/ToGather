@@ -24,6 +24,17 @@ public class TaskGateway {
                                Long originAnalysisItemId) {
     }
 
+    /**
+     * 내가 담당한 Task 제목 (AI 업무 보조 중복 후보 제외, MyTodoList).
+     * TODO(C-01 완료 후): taskService.getMyTasks(userId)로 바꾼다. 지금은 빈 목록
+     */
+    public java.util.List<MyTask> getMyTasks(Long userId) {
+        return java.util.List.of();
+    }
+
+    public record MyTask(Long taskId, Long workspaceId, String title, LocalDate dueDate) {
+    }
+
     /** @return 생성된 Task ID */
     public Long createTask(Long workspaceId, FollowUpTask task) {
         log.info("Task 생성 요청 보류 (TaskService.createTask 미구현): workspaceId={}, itemId={}",
