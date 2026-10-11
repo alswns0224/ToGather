@@ -186,6 +186,8 @@ class AnalysisServiceTest extends IntegrationTestSupport {
 
         analysisService.confirmAnalysis(workspaceId, empty.analysisId());
         assertThat(analysisService.getPendingAnalyses(workspaceId)).isEmpty();
+        assertThat(analysisService.getAnalyses(workspaceId, true)).extracting(s -> s.status())
+                .containsExactly(AnalysisStatus.CONFIRMED); // 분석 목록 화면은 확정된 것도 보여준다
         assertThatThrownBy(() -> analysisService.deleteItem(workspaceId, added.itemId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ANALYSIS_ALREADY_CONFIRMED));

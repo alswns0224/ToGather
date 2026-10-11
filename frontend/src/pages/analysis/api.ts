@@ -95,6 +95,10 @@ export const analyzeThread = (workspaceId: string, contentRefId: number) =>
 export const getPendingAnalyses = (workspaceId: string) =>
   http.get<AnalysisSummaryDTO[]>(ws(workspaceId, '/analyses'));
 
+/** 스레드별 최신 분석 (확정 포함) */
+export const getAnalyses = (workspaceId: string) =>
+  http.get<AnalysisSummaryDTO[]>(ws(workspaceId, '/analyses?includeConfirmed=true'));
+
 export const getLatestAnalysis = (workspaceId: string, contentRefId: number) =>
   http.get<{ analysisId: number | null }>(ws(workspaceId, `/analyses/latest?contentRefId=${contentRefId}`));
 

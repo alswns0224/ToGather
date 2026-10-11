@@ -180,12 +180,21 @@ public class AnalysisService {
 
     /** 검토 대기 목록: 스레드별 최신 분석 중 확정되지 않은 것 */
     public List<AnalysisSummaryDTO> getPendingAnalyses(Long workspaceId) {
+        return getAnalyses(workspaceId, false);
+    }
+
+    /**
+     * 스레드별 최신 분석 목록 (최근순)
+     *
+     * @param includeConfirmed true면 확정된 분석도 포함 (UI-08 분석 목록), false면 검토 대기만
+     */
+    public List<AnalysisSummaryDTO> getAnalyses(Long workspaceId, boolean includeConfirmed) {
         List<DiscussionAnalysis> all = analysisRepository.findByWorkspaceAndStatus(workspaceId,
                 EnumSet.allOf(AnalysisStatus.class));
         Map<Long, DiscussionAnalysis> latestByThread = new LinkedHashMap<>();
         all.forEach(a -> latestByThread.putIfAbsent(a.getContentRefId(), a)); // analysisId 내림차순
         List<DiscussionAnalysis> pending = latestByThread.values().stream()
-                .filter(a -> a.getStatus() != AnalysisStatus.CONFIRMED)
+                .filter(a -> includeConfirmed || a.getStatus() != AnalysisStatus.CONFIRMED)
                 .toList();
         Map<Long, ContentRef> threads = contentRefRepository
                 .findAllById(pending.stream().map(DiscussionAnalysis::getContentRefId).toList()).stream()

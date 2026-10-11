@@ -45,11 +45,14 @@ public class AnalysisController {
         return ApiResponse.ok(analysisService.analyzeThread(workspaceId, request.contentRefId(), userId));
     }
 
+    /** 검토 대기 분석 목록. ?includeConfirmed=true면 확정된 분석도 함께 (스레드별 최신 분석) */
     @GetMapping("/analyses")
     public ApiResponse<List<AnalysisSummaryDTO>> getPendingAnalyses(@LoginUser Long userId,
-                                                                    @PathVariable Long workspaceId) {
+                                                                    @PathVariable Long workspaceId,
+                                                                    @RequestParam(defaultValue = "false")
+                                                                    boolean includeConfirmed) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(analysisService.getPendingAnalyses(workspaceId));
+        return ApiResponse.ok(analysisService.getAnalyses(workspaceId, includeConfirmed));
     }
 
     /** 스레드의 최신 분석 ID. 없으면 {"analysisId": null} */
