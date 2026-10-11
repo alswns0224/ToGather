@@ -108,24 +108,28 @@ record MeetingSummary(Long meetingId, String title, MeetingStatus status, LocalD
 
 ## 2. B가 제공 (정철준)
 
-> A의 Calendar 구현에 필요해서 `ContentRefService`(upsert, getContentRef, getContentRefs, findByOrigin, getOwner, updateContent, markOriginDeleted)와
-> `ContentRefDTO`, `ContentDetailDTO`를 먼저 만들어 두었습니다. B가 이어서 확장합니다. (`getPersonalContents`는 아직 없음)
+> B-01에서 `getPersonalContents`, `markSyncFailed`를 추가하고, DTO의 `lastModifiedAt`·`messageCount`·`syncFailed`를 실제 값으로 채우도록 바꿨습니다.
 
 ### ContentRef 저장 · 조회 [결정 1]
 
 ```java
 // ContentRefService
-ContentRef upsert(ContentRefUpsert command);     // workspaceId + provider + originId 기준
+ContentRefDTO upsert(ContentRefUpsert command);  // workspaceId + provider + originId 기준. 있으면 최신 원본으로 갱신
+// 기존 11개 인자 생성자도 그대로 쓸 수 있다. (수정 시각·작성자 없이 저장)
 record ContentRefUpsert(Long workspaceId, Long ownerUserId, Provider provider, ContentType contentType,
                         String originId, String channelId, Long parentRefId,
-                        String title, String content, String deepLink, LocalDateTime createdAt) {}
+                        String title, String content, String deepLink, LocalDateTime createdAt,
+                        LocalDateTime lastModifiedAt, String authorExternalId, String authorName) {}
 
 ContentRefDTO getContentRef(Long contentRefId);
-List<ContentRefDTO> getContentRefs(List<Long> contentRefIds);
+List<ContentRefDTO> getContentRefs(Collection<Long> contentRefIds);
+Optional<ContentRefDTO> findByOrigin(Long workspaceId, Provider provider, String originId);
+ContentOwner getOwner(Long contentRefId);
 void updateContent(Long contentRefId, String title, String content);
 void markOriginDeleted(Long contentRefId);
+void markSyncFailed(Long workspaceId, Provider provider, String originId);   // 동기화 중 이 콘텐츠 저장 실패 표시
 
-// 개인 콘텐츠(Gmail, Calendar)는 ownerUserId 조건이 들어간 메서드만 사용 (README 10번)
+// 개인 콘텐츠(Gmail, Calendar)는 ownerUserId 조건이 들어간 메서드만 사용 (README 10번). since가 null이면 전체
 List<ContentRefDTO> getPersonalContents(Long ownerUserId, Provider provider, LocalDateTime since);
 ```
 
