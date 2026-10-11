@@ -46,6 +46,9 @@ public enum ErrorCode {
     // ===== B. 수집·Slack·Notion·AI =====
     ANALYSIS_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 결과를 찾을 수 없습니다."),
     AI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "AI 분석 호출에 실패했습니다."),
+    SLACK_ACTION_FORBIDDEN(HttpStatus.FORBIDDEN, "Slack에서 허용되지 않은 작업입니다. 본인 메시지인지, 채널에 참여 중인지 확인해 주세요."),
+    SLACK_OWN_CONNECTION_REQUIRED(HttpStatus.FORBIDDEN, "메시지를 작성하려면 본인 Slack 계정을 먼저 연동해 주세요."),
+    SLACK_CHANNEL_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동 대상으로 선택한 채널이 아닙니다."),
 
     // ===== C. Drive·Gmail·Task·검색 =====
     TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Task를 찾을 수 없습니다."),

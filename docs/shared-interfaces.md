@@ -153,9 +153,10 @@ record ContentDetailDTO(Long contentRefId, Provider provider, String title, Stri
 
 ```java
 // SlackContentService
-List<ContentRefDTO> getContents(Long workspaceId);
-List<ContentRefDTO> getContentsByUser(Long userId);    // AI 업무 보조 후보 추출용
-ContentDetailDTO getContentDetail(Long contentRefId);
+List<ContentRefDTO> getContents(Long workspaceId);      // 스레드 root 최근 200개
+// [변경] workspaceId 추가 — Slack 연결이 워크스페이스 단위라서. B 내부(AI 업무 보조)에서만 사용
+List<ContentRefDTO> getContentsByUser(Long workspaceId, Long userId);  // 본인이 쓰거나 멘션된 최근 14일 메시지
+ContentDetailDTO getContentDetail(Long contentRefId);   // 스레드면 participants에 참여자 이름
 
 // NotionContentService
 List<ContentRefDTO> getContents(Long workspaceId);
