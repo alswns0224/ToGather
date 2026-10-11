@@ -178,6 +178,23 @@ List<float[]> embedAll(List<String> texts);
 
 사용처: C(임베딩, 통합 검색)
 
+### 증분 동기화 (SyncAdapter) — C의 Drive·Gmail도 사용
+
+```java
+// sync.service.SyncAdapter를 구현해 @Component로 등록하면 스케줄러(5분 간격)와 즉시 동기화가 자동으로 사용한다.
+Provider provider();
+List<SyncTarget> findTargets(Long workspaceId, Long requestedBy);   // 팀: SyncTarget.team(폴더 ID), 개인: SyncTarget.personal(userId)
+SyncResult sync(SyncContext context);   // context.since()가 null이면 처음 동기화. 실패하면 예외를 그대로 던진다
+record SyncResult(int savedCount, LocalDateTime syncedUntil) {}
+
+// SyncService
+void syncIfStale(Long workspaceId, Provider provider, Long requestedBy, Duration maxAge);  // 화면 진입 시
+List<SyncStatusResponse> syncNow(Long workspaceId, Provider provider, Long requestedBy);  // POST /api/workspaces/{id}/sync/{provider}
+```
+
+- 실패하면 저장된 콘텐츠는 그대로 두고 `sync_state`에 실패만 기록한다. 다음 동기화에서 같은 범위를 다시 가져온다.
+- 연속 실패한 대상은 자동 동기화를 5분 → 10분 → … 최대 2시간까지 늦춘다.
+
 ### 결정사항 [결정 8]
 
 ```java
