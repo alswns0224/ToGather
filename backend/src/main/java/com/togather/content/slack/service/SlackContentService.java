@@ -9,7 +9,11 @@ import com.togather.content.dto.ContentDetailDTO;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
+import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.content.slack.client.SlackApiClient;
+import com.togather.content.slack.client.SlackApiClient.SlackFile;
+import com.togather.content.slack.client.SlackApiClient.SlackMessage;
+import com.togather.content.slack.client.SlackApiClient.SlackUser;
 import com.togather.content.slack.dto.SlackChannelResponse;
 import com.togather.content.slack.dto.SlackMessageResponse;
 import com.togather.content.slack.dto.ThreadDetailResponse;
@@ -115,6 +119,100 @@ public class SlackContentService {
         String mySlackId = findMySlackId(workspaceId, userId).orElse(null);
         return new ThreadDetailResponse(toResponse(root, replies.size(), mySlackId),
                 replies.stream().map(r -> toResponse(r, 0, mySlackId)).toList(), root.getDeepLink(), refreshFailed);
+    }
+
+    // ===================== 작성·수정·삭제 (UC-04-02 ~ 04) =====================
+
+    /** 채널에 메시지를 작성하고 content_ref로 저장한다. 본인 Slack 연결이 있어야 본인 이름으로 보낼 수 있다. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public SlackMessageResponse createMessage(Long workspaceId, Long userId, String channelId, String body) {
+        return post(workspaceId, userId, channelId, null, null, body);
+    }
+
+    /** 스레드에 답글을 작성한다. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public SlackMessageResponse createReply(Long workspaceId, Long userId, String channelId, String threadTs,
+                                            String body) {
+        ContentRef root = getMessage(workspaceId, channelId, threadTs);
+        if (root.getParentRefId() != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT); // 답글에는 답글을 달 수 없다.
+        }
+        return post(workspaceId, userId, channelId, threadTs, root.getContentRefId(), body);
+    }
+
+    /** 본인 메시지만 수정할 수 있다. 남의 메시지면 Slack이 거부한다. (SLACK_ACTION_FORBIDDEN) */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public SlackMessageResponse updateMessage(Long workspaceId, Long userId, String channelId, String messageTs,
+                                              String body) {
+        validateInput(body);
+        ContentRef ref = getMessage(workspaceId, channelId, messageTs);
+        slackApiClient.updateMessage(ownToken(workspaceId, userId), channelId, messageTs, body);
+        List<SlackFile> files = SlackMessageFormat.parse(ref.getContent()).attachments().stream()
+                .map(a -> new SlackFile(a.name(), a.url(), null))
+                .toList();
+        contentRefService.upsert(new ContentRefUpsert(workspaceId, null, Provider.SLACK, ref.getContentType(),
+                ref.getOriginId(), channelId, ref.getParentRefId(), ref.getTitle(),
+                SlackMessageFormat.toContent(body, files), ref.getDeepLink(), ref.getCreatedAt(),
+                LocalDateTime.now(SlackApiClient.ZONE), null, null));
+        return reload(ref.getContentRefId(), workspaceId, userId);
+    }
+
+    /** 본인 메시지만 삭제할 수 있다. content_ref는 지우지 않고 원본 삭제로 표시한다. (근거 발언·Task 연결 보존) */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public boolean deleteMessage(Long workspaceId, Long userId, String channelId, String messageTs) {
+        ContentRef ref = getMessage(workspaceId, channelId, messageTs);
+        slackApiClient.deleteMessage(ownToken(workspaceId, userId), channelId, messageTs);
+        contentRefService.markOriginDeleted(ref.getContentRefId());
+        return true;
+    }
+
+    private SlackMessageResponse post(Long workspaceId, Long userId, String channelId, String threadTs,
+                                      Long rootRefId, String body) {
+        validateInput(body);
+        checkLinkedChannel(workspaceId, channelId);
+        String token = ownToken(workspaceId, userId);
+        SlackMessage posted = slackApiClient.postMessage(token, channelId, threadTs, body);
+        Map<String, SlackUser> users = posted.userId() == null ? Map.of()
+                : slackDirectory.getUsers(workspaceId, token, List.of(posted.userId()));
+        ContentRefDTO saved = slackSyncAdapter.save(workspaceId, token, channelId,
+                slackDirectory.getChannelName(workspaceId, token, channelId), posted, rootRefId, users);
+        if (saved == null) {
+            // Slack에는 전송됐으므로 다음 동기화에서 저장된다. 화면이 다시 보내지 않도록 성공으로 응답한다.
+            log.warn("작성한 메시지 저장 실패, 다음 동기화에서 반영: workspaceId={}, channelId={}", workspaceId, channelId);
+            return new SlackMessageResponse(null, channelId, posted.ts(), posted.userId(), null, body, List.of(),
+                    posted.createdAt(), false, 0, null, false, true, true);
+        }
+        return reload(saved.contentRefId(), workspaceId, userId);
+    }
+
+    private SlackMessageResponse reload(Long contentRefId, Long workspaceId, Long userId) {
+        ContentRef ref = contentRefRepository.findById(contentRefId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        return toResponse(ref, (int) contentRefRepository.countByParentRefId(contentRefId),
+                findMySlackId(workspaceId, userId).orElse(null));
+    }
+
+    private ContentRef getMessage(Long workspaceId, String channelId, String messageTs) {
+        checkLinkedChannel(workspaceId, channelId);
+        return contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                        SlackMessageFormat.originId(channelId, messageTs))
+                .filter(ref -> !ref.isOriginDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    /** 팀원의 토큰으로 대신 보내지 않도록 본인 연결만 허용한다. */
+    private String ownToken(Long workspaceId, Long userId) {
+        if (!integrationService.hasConnection(workspaceId, userId, Provider.SLACK)) {
+            throw new BusinessException(ErrorCode.SLACK_OWN_CONNECTION_REQUIRED);
+        }
+        return integrationService.getAccessToken(workspaceId, userId, Provider.SLACK);
+    }
+
+    /** 명세서 validateInput: 빈 본문, 4,000자 초과 거부 */
+    private static void validateInput(String body) {
+        if (body == null || body.isBlank() || body.length() > 4000) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     // ===================== 다른 파트 제공 (docs/shared-interfaces.md) =====================

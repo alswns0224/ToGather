@@ -1,0 +1,79 @@
+/* UI-04 Slack 화면 전용 (담당: B) */
+
+.slack-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.slack-layout.with-thread {
+  grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 380px);
+}
+
+.slack-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.slack-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.slack-channel.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.slack-message-list {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.slack-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slack-message.selected {
+  background: var(--primary-soft);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.slack-text {
+  margin: 0;
+  word-break: break-word;
+}
+
+.slack-replies {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+}
+
+.slack-composer textarea.input {
+  min-height: 60px;
+}
+
+@media (max-width: 900px) {
+  .slack-layout,
+  .slack-layout.with-thread {
+    grid-template-columns: 1fr;
+  }
+}

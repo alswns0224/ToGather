@@ -139,6 +139,39 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         assertThat(result.syncedUntil()).isAfter(since);
     }
 
+    @Test
+    void 본인_Slack을_연동하지_않으면_메시지를_보낼_수_없다() {
+        when(integrationService.hasConnection(workspaceId, userId, Provider.SLACK)).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        slackContentService.createMessage(workspaceId, userId, "C1", "안녕"))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.SLACK_OWN_CONNECTION_REQUIRED));
+    }
+
+    @Test
+    void 답글을_쓰고_수정하고_삭제한다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(integrationService.hasConnection(workspaceId, userId, Provider.SLACK)).thenReturn(true);
+        String newTs = SlackApiClient.toTs(ROOT_AT.plusMinutes(5));
+        when(slackApiClient.postMessage(TOKEN, "C1", ROOT_TS, "확인했습니다"))
+                .thenReturn(message(newTs, ROOT_TS, "U1", "확인했습니다", 0, null));
+
+        SlackMessageResponse reply = slackContentService.createReply(workspaceId, userId, "C1", ROOT_TS, "확인했습니다");
+        assertThat(reply.mine()).isTrue();
+        assertThat(slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS).replies()).hasSize(2);
+
+        SlackMessageResponse edited = slackContentService.updateMessage(workspaceId, userId, "C1", ROOT_TS, "수정");
+        assertThat(edited.text()).isEqualTo("수정");
+        assertThat(edited.edited()).isTrue();
+        assertThat(edited.attachments()).hasSize(1); // 첨부 파일은 유지
+
+        slackContentService.deleteMessage(workspaceId, userId, "C1", newTs);
+        List<SlackMessageResponse> replies =
+                slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS).replies();
+        assertThat(replies).filteredOn(SlackMessageResponse::isOriginDeleted).hasSize(1);
+    }
+
     private static SlackMessage message(String ts, String threadTs, String user, String text, int replies,
                                         String latestReply) {
         return message(ts, threadTs, user, text, replies, latestReply, null);
