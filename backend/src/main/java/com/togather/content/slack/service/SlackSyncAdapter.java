@@ -3,10 +3,10 @@ package com.togather.content.slack.service;
 import com.togather.common.enums.ContentType;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
-import com.togather.common.exception.ErrorCode;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
+import com.togather.content.service.TeamTokenResolver;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.content.slack.client.SlackApiClient.HistoryPage;
 import com.togather.content.slack.client.SlackApiClient.SlackMessage;
@@ -50,6 +50,7 @@ public class SlackSyncAdapter implements SyncAdapter {
     private final SlackDirectory slackDirectory;
     private final ContentRefService contentRefService;
     private final IntegrationService integrationService;
+    private final TeamTokenResolver teamTokenResolver;
 
     @Override
     public Provider provider() {
@@ -66,8 +67,9 @@ public class SlackSyncAdapter implements SyncAdapter {
     @Override
     public SyncResult sync(SyncContext context) {
         LocalDateTime startedAt = LocalDateTime.now(SlackApiClient.ZONE);
-        String token = token(context.workspaceId(), context.requestedBy());
         String channelId = context.targetId();
+        String token = teamTokenResolver.tokenFor(context.workspaceId(), Provider.SLACK, channelId,
+                context.requestedBy());
         LocalDateTime oldest = context.since() == null
                 ? startedAt.minus(FIRST_SYNC_RANGE)
                 : context.since().minus(LOOKBACK);
@@ -79,7 +81,8 @@ public class SlackSyncAdapter implements SyncAdapter {
 
         int saved = 0;
         for (SlackMessage message : page.messages()) {
-            if (isSkipped(message)) {
+            // "채널에도 보내기"로 단 답글(thread_broadcast)도 history에 나온다. 답글은 스레드에서 저장한다.
+            if (isSkipped(message) || message.isReply()) {
                 continue;
             }
             ContentRefDTO root = save(context.workspaceId(), token, channelId, channelName, message, null, users);
@@ -136,16 +139,6 @@ public class SlackSyncAdapter implements SyncAdapter {
             }
             return null;
         }
-    }
-
-    /** 스케줄러는 연동 대상을 고른 사람의 토큰, 사용자 요청은 그 사용자(없으면 팀) 토큰을 쓴다. */
-    String token(Long workspaceId, Long requestedBy) {
-        if (requestedBy != null) {
-            return integrationService.getAccessToken(workspaceId, requestedBy, Provider.SLACK);
-        }
-        return integrationService.findTargetAccess(workspaceId, Provider.SLACK)
-                .map(IntegrationService.TargetAccess::accessToken)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONNECTION_NOT_FOUND));
     }
 
     private static boolean isSkipped(SlackMessage message) {

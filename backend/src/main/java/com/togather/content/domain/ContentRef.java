@@ -116,6 +116,13 @@ public class ContentRef {
         this.syncFailed = false;
     }
 
+    /** 채널 메시지로 먼저 저장된 답글(Slack "채널에도 보내기")을 스레드에 붙인다. */
+    public void attachToParent(Long parentRefId) {
+        if (this.parentRefId == null && parentRefId != null && !parentRefId.equals(this.contentRefId)) {
+            this.parentRefId = parentRefId;
+        }
+    }
+
     public void markSyncFailed() {
         this.syncFailed = true;
     }

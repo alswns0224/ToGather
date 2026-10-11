@@ -26,6 +26,19 @@ public final class NotionBlocks {
     private NotionBlocks() {
     }
 
+    /** ToGather에서 텍스트로 바꿨다가 그대로 되돌릴 수 있는 블록 */
+    static final java.util.Set<String> EDITABLE_TYPES = java.util.Set.of(
+            "paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item",
+            "to_do", "quote", "divider");
+
+    /**
+     * ToGather에서 본문을 수정해도 내용이 사라지지 않는지.
+     * 이미지·표·코드·토글 같은 블록이나 하위 블록(들여쓴 목록 등)이 있으면 수정할 때 지워지므로 false
+     */
+    public static boolean isEditable(List<Map<String, Object>> blocks) {
+        return blocks.stream().allMatch(b -> EDITABLE_TYPES.contains(str(b, "type")) && !bool(b, "has_children"));
+    }
+
     /** 블록 목록을 텍스트로. 지원하지 않는 블록(이미지, 표 등)은 건너뛴다. */
     public static String toText(List<Map<String, Object>> blocks) {
         List<String> lines = new ArrayList<>();

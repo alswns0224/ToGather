@@ -35,6 +35,14 @@ class NotionBlocksTest {
         assertThat(NotionBlocks.richText("가".repeat(4500))).hasSize(3);
     }
 
+    @Test
+    void 지원하지_않는_블록이나_하위_블록이_있으면_수정할_수_없다() {
+        assertThat(NotionBlocks.isEditable(List.of(Map.of("type", "paragraph"), Map.of("type", "to_do")))).isTrue();
+        assertThat(NotionBlocks.isEditable(List.of(Map.of("type", "paragraph"), Map.of("type", "image")))).isFalse();
+        assertThat(NotionBlocks.isEditable(List.of(Map.of("type", "bulleted_list_item", "has_children", true))))
+                .isFalse();
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asApiResponse(Map<String, Object> block) {
         String type = (String) block.get("type");

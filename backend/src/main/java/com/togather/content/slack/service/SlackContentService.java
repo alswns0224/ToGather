@@ -10,6 +10,7 @@ import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
+import com.togather.content.service.TeamTokenResolver;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.content.slack.client.SlackApiClient.SlackFile;
 import com.togather.content.slack.client.SlackApiClient.SlackMessage;
@@ -55,6 +56,7 @@ public class SlackContentService {
     private final ContentRefRepository contentRefRepository;
     private final ContentRefService contentRefService;
     private final IntegrationService integrationService;
+    private final TeamTokenResolver teamTokenResolver;
     private final SlackApiClient slackApiClient;
     private final SlackDirectory slackDirectory;
     private final SlackSyncAdapter slackSyncAdapter;
@@ -106,7 +108,7 @@ public class SlackContentService {
         boolean refreshFailed = false;
         if (!root.isOriginDeleted()) {
             try {
-                String token = integrationService.getAccessToken(workspaceId, userId, Provider.SLACK);
+                String token = teamTokenResolver.tokenFor(workspaceId, Provider.SLACK, channelId, userId);
                 slackSyncAdapter.syncReplies(workspaceId, token, channelId,
                         slackDirectory.getChannelName(workspaceId, token, channelId), messageTs,
                         root.getContentRefId(), null);
@@ -245,8 +247,11 @@ public class SlackContentService {
         LinkedHashSet<ContentRef> result = new LinkedHashSet<>(contentRefRepository
                 .findAllByWorkspaceIdInAndProviderAndAuthorExternalIdInAndCreatedAtAfterOrderByCreatedAtDesc(
                         List.of(workspaceId), Provider.SLACK, List.of(slackId.get()), after));
+        // 멘션은 <@U123> 또는 이름이 붙은 <@U123|철준> 형식이다.
         result.addAll(contentRefRepository.findByContentPattern(List.of(workspaceId), Provider.SLACK,
                 "%<@" + slackId.get() + ">%", after));
+        result.addAll(contentRefRepository.findByContentPattern(List.of(workspaceId), Provider.SLACK,
+                "%<@" + slackId.get() + "|%", after));
         return result.stream().filter(ref -> !ref.isOriginDeleted()).toList();
     }
 
@@ -318,12 +323,9 @@ public class SlackContentService {
         return findToken(workspaceId, userId).flatMap(t -> slackDirectory.findSlackUserId(workspaceId, t, userId));
     }
 
+    /** 이름 조회·사용자 매핑용. 같은 Slack 워크스페이스면 누구의 토큰이든 된다. */
     private Optional<String> findToken(Long workspaceId, Long userId) {
-        try {
-            return integrationService.findAccessToken(workspaceId, userId, Provider.SLACK);
-        } catch (BusinessException e) {
-            return Optional.empty();
-        }
+        return teamTokenResolver.findTokenFor(workspaceId, Provider.SLACK, null, userId);
     }
 
     private List<ContentRefDTO> toDtos(Collection<ContentRef> refs) {

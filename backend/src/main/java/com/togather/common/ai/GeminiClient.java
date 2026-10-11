@@ -147,29 +147,44 @@ public class GeminiClient {
                 .body(JSON);
     }
 
+    /**
+     * 재시도를 포함한 전체 시간이 timeoutSeconds(기본 30초)를 넘지 않게 한다. (논의 분석 30초 목표)
+     * 한 번의 호출은 attemptTimeout(전체의 2/3)까지 기다리고, 남은 시간 안에 한 번 더 호출할 수 있을 때만 다시 시도한다.
+     */
     private Map<String, Object> call(String action, Supplier<Map<String, Object>> request) {
         if (!isConfigured()) {
             log.warn("Gemini API 키(GEMINI_API_KEY)가 설정되지 않았습니다.");
             throw new BusinessException(ErrorCode.AI_CALL_FAILED);
         }
+        long deadline = System.currentTimeMillis() + properties.timeoutSeconds() * 1000L;
+        long attemptMillis = attemptTimeout(properties).toMillis();
         for (int attempt = 0; ; attempt++) {
+            String failure;
             try {
                 return request.get();
             } catch (HttpStatusCodeException e) {
                 int status = e.getStatusCode().value();
-                boolean retryable = status == 429 || status >= 500;
-                if (!retryable || attempt >= properties.maxRetries()) {
-                    log.warn("Gemini {} 실패: status={}, attempt={}", action, status, attempt + 1);
+                if (status != 429 && status < 500) {
+                    log.warn("Gemini {} 실패: status={}", action, status);
                     throw new BusinessException(ErrorCode.AI_CALL_FAILED);
                 }
+                failure = "status=" + status;
             } catch (RestClientException e) {
-                if (attempt >= properties.maxRetries()) {
-                    log.warn("Gemini {} 호출 실패: {}, attempt={}", action, e.getClass().getSimpleName(), attempt + 1);
-                    throw new BusinessException(ErrorCode.AI_CALL_FAILED);
-                }
+                failure = e.getClass().getSimpleName();
             }
-            sleep(retryBackoffMillis * (attempt + 1));
+            long backoff = retryBackoffMillis * (attempt + 1);
+            boolean timeLeft = System.currentTimeMillis() + backoff + attemptMillis <= deadline;
+            if (attempt >= properties.maxRetries() || !timeLeft) {
+                log.warn("Gemini {} 실패: {}, attempt={}", action, failure, attempt + 1);
+                throw new BusinessException(ErrorCode.AI_CALL_FAILED);
+            }
+            sleep(backoff);
         }
+    }
+
+    /** 한 번의 호출에 기다리는 시간: 전체 시간의 2/3 (최소 5초) */
+    static Duration attemptTimeout(GeminiProperties properties) {
+        return Duration.ofSeconds(Math.max(5, properties.timeoutSeconds() * 2L / 3));
     }
 
     private static float[] toVector(Map<String, Object> embedding) {
@@ -209,7 +224,7 @@ public class GeminiClient {
     private static RestClient buildRestClient(GeminiProperties properties) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(5));
-        factory.setReadTimeout(Duration.ofSeconds(properties.timeoutSeconds()));
+        factory.setReadTimeout(attemptTimeout(properties));
         return RestClient.builder().requestFactory(factory).build();
     }
 }

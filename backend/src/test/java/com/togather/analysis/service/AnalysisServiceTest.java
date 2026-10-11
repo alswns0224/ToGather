@@ -109,11 +109,47 @@ class AnalysisServiceTest extends IntegrationTestSupport {
         assertThat(again.analysisId()).isEqualTo(first.analysisId());
 
         slack("1.2", root.contentRefId(), "U1", "철준", "그럼 회의는 다음 주 화요일에 해요", t0.plusMinutes(20));
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiItem("MEETING_PROPOSAL", "다음 주 화요일 회의", List.of("m3"), null, null, null, null)), true));
+        AnalysisResultDTO second = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
+
+        // 확정 전 분석에 이어서 추가된다. 검토하던 항목이 목록에서 사라지지 않는다.
+        assertThat(second.analysisId()).isEqualTo(first.analysisId());
+        assertThat(second.items()).extracting(AnalysisItemResponse::content)
+                .containsExactly("결정", "다음 주 화요일 회의");
+        assertThat(analysisService.getPendingAnalyses(workspaceId)).hasSize(1);
+        verify(geminiClient).generateJson(argThat(prompt -> prompt.contains("m3 (새 메시지)")
+                && prompt.contains("m1 (이전 메시지)") && prompt.contains("DECISION: 결정")), eq(AiResult.class));
+    }
+
+    @Test
+    void 확정한_뒤_새_메시지는_새_분석으로_만든다() {
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiItem("DECISION", "결정", List.of("m1"), null, null, null, null)), true));
+        AnalysisResultDTO first = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
+        analysisService.confirmAnalysis(workspaceId, first.analysisId());
+
+        slack("1.2", root.contentRefId(), "U1", "철준", "추가 논의", t0.plusMinutes(20));
         AnalysisResultDTO second = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
 
         assertThat(second.analysisId()).isNotEqualTo(first.analysisId());
-        verify(geminiClient).generateJson(argThat(prompt -> prompt.contains("m3 (새 메시지)")
-                && prompt.contains("m1 (이전 메시지)") && prompt.contains("DECISION: 결정")), eq(AiResult.class));
+    }
+
+    @Test
+    void 이어서_분석하다_실패하면_검토하던_항목은_그대로_남는다() {
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiItem("DECISION", "결정", List.of("m1"), null, null, null, null)), true));
+        AnalysisResultDTO first = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
+        slack("1.2", root.contentRefId(), "U1", "철준", "추가 논의", t0.plusMinutes(20));
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class)))
+                .thenThrow(new BusinessException(ErrorCode.AI_CALL_FAILED));
+
+        assertThatThrownBy(() -> analysisService.analyzeThread(workspaceId, root.contentRefId(), userId))
+                .isInstanceOf(BusinessException.class);
+
+        AnalysisResultDTO after = analysisService.getAnalysis(workspaceId, first.analysisId());
+        assertThat(after.status()).isEqualTo(AnalysisStatus.REVIEWING);
+        assertThat(after.items()).hasSize(1);
     }
 
     @Test

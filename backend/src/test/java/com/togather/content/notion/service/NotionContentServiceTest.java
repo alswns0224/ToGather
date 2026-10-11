@@ -17,10 +17,12 @@ import com.togather.content.notion.client.NotionApiClient.NotionPage;
 import com.togather.content.notion.dto.NotionPageDetailResponse;
 import com.togather.content.notion.dto.NotionPageResponse;
 import com.togather.integration.service.IntegrationService;
+import com.togather.integration.service.IntegrationService.TargetAccess;
 import com.togather.sync.service.SyncAdapter.SyncContext;
 import com.togather.support.IntegrationTestSupport;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,7 +52,11 @@ class NotionContentServiceTest extends IntegrationTestSupport {
         userId = createUser("철준", "cj@test.com");
         workspaceId = createWorkspace(userId);
         when(integrationService.getConnectionTargets(workspaceId, Provider.NOTION)).thenReturn(List.of("db1"));
-        when(integrationService.getAccessToken(eq(workspaceId), any(), eq(Provider.NOTION))).thenReturn(TOKEN);
+        // 데이터베이스를 연동 대상으로 고른 연결의 토큰을 쓴다.
+        when(integrationService.findTargetAccess(workspaceId, Provider.NOTION))
+                .thenReturn(Optional.of(new TargetAccess(1L, userId, TOKEN, List.of("db1"))));
+        when(integrationService.findAccessToken(eq(workspaceId), any(), eq(Provider.NOTION)))
+                .thenReturn(Optional.of("my-own-token"));
         when(notionApiClient.getDatabase(TOKEN, "db1")).thenReturn(DB);
         when(notionApiClient.queryDatabase(eq(TOKEN), eq("db1"), anyInt()))
                 .thenReturn(List.of(page("p1", "회의록", T0), page("p2", "기획서", T0.minusDays(1))));
@@ -88,6 +94,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
         NotionPageDetailResponse detail = notionContentService.getPage(workspaceId, userId, id);
 
         assertThat(detail.refreshFailed()).isTrue();
+        assertThat(detail.bodyEditable()).isFalse(); // 최신 블록을 확인하지 못했으면 본문 수정 막기
         assertThat(detail.body()).isEqualTo("# 안건\n- 발표");
     }
 
@@ -116,6 +123,30 @@ class NotionContentServiceTest extends IntegrationTestSupport {
                         notionContentService.createContent(workspaceId, userId, "제목", "본문", "other-db"))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOTION_DATABASE_NOT_LINKED));
+    }
+
+    @Test
+    void 이미지나_하위_블록이_있는_문서는_본문을_수정할_수_없다() {
+        notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, null, userId));
+        Long id = notionContentService.getPages(workspaceId).getFirst().contentRefId();
+        when(notionApiClient.getPage(TOKEN, "p1")).thenReturn(page("p1", "회의록", T0));
+        when(notionApiClient.getPageContent(TOKEN, "p1"))
+                .thenReturn(new NotionApiClient.PageContent("# 안건", false));
+
+        assertThat(notionContentService.getPage(workspaceId, userId, id).bodyEditable()).isFalse();
+
+        when(notionApiClient.getPageContent(TOKEN, "p1")).thenReturn(new NotionApiClient.PageContent("# 안건", true));
+        assertThat(notionContentService.getPage(workspaceId, userId, id).bodyEditable()).isTrue();
+    }
+
+    @Test
+    void 연동_대상을_고른_연결이_없으면_요청자_토큰을_쓴다() {
+        when(integrationService.findTargetAccess(workspaceId, Provider.NOTION)).thenReturn(Optional.empty());
+        when(notionApiClient.queryDatabase(eq("my-own-token"), eq("db1"), anyInt())).thenReturn(List.of());
+
+        notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, null, userId));
+
+        verify(notionApiClient).queryDatabase(eq("my-own-token"), eq("db1"), anyInt());
     }
 
     private static NotionPage page(String id, String title, LocalDateTime edited) {

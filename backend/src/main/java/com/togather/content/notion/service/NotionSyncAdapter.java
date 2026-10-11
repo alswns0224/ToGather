@@ -3,7 +3,6 @@ package com.togather.content.notion.service;
 import com.togather.common.enums.ContentType;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
-import com.togather.common.exception.ErrorCode;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.notion.client.NotionApiClient;
@@ -17,6 +16,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.togather.content.service.TeamTokenResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -37,6 +37,7 @@ public class NotionSyncAdapter implements SyncAdapter {
     private final ContentRefService contentRefService;
     private final ContentRefRepository contentRefRepository;
     private final IntegrationService integrationService;
+    private final TeamTokenResolver teamTokenResolver;
 
     @Override
     public Provider provider() {
@@ -53,8 +54,9 @@ public class NotionSyncAdapter implements SyncAdapter {
     @Override
     public SyncResult sync(SyncContext context) {
         LocalDateTime startedAt = LocalDateTime.now(NotionApiClient.ZONE);
-        String token = token(context.workspaceId(), context.requestedBy());
         String databaseId = context.targetId();
+        String token = teamTokenResolver.tokenFor(context.workspaceId(), Provider.NOTION, databaseId,
+                context.requestedBy());
         List<NotionPage> pages = notionApiClient.queryDatabase(token, databaseId, MAX_QUERY_PAGES);
 
         int saved = 0;
@@ -90,15 +92,6 @@ public class NotionSyncAdapter implements SyncAdapter {
             contentRefService.markSyncFailed(workspaceId, Provider.NOTION, page.id());
             return null;
         }
-    }
-
-    String token(Long workspaceId, Long requestedBy) {
-        if (requestedBy != null) {
-            return integrationService.getAccessToken(workspaceId, requestedBy, Provider.NOTION);
-        }
-        return integrationService.findTargetAccess(workspaceId, Provider.NOTION)
-                .map(IntegrationService.TargetAccess::accessToken)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONNECTION_NOT_FOUND));
     }
 
     private void markRemoved(Long workspaceId, String databaseId, List<NotionPage> pages) {

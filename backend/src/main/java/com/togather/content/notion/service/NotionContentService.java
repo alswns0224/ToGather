@@ -17,6 +17,7 @@ import com.togather.content.notion.dto.NotionPageRequest;
 import com.togather.content.notion.dto.NotionPageResponse;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
+import com.togather.content.service.TeamTokenResolver;
 import com.togather.integration.service.IntegrationService;
 import java.time.Duration;
 import java.time.Instant;
@@ -47,6 +48,7 @@ public class NotionContentService {
     private final ContentRefService contentRefService;
     private final DiscussionAnalysisRepository discussionAnalysisRepository;
     private final IntegrationService integrationService;
+    private final TeamTokenResolver teamTokenResolver;
     private final NotionApiClient notionApiClient;
     private final NotionSyncAdapter notionSyncAdapter;
 
@@ -58,14 +60,9 @@ public class NotionContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<NotionDatabaseResponse> getDatabases(Long workspaceId, Long userId) {
         List<String> ids = integrationService.getConnectionTargets(workspaceId, Provider.NOTION);
-        String token;
-        try {
-            token = integrationService.getAccessToken(workspaceId, userId, Provider.NOTION);
-        } catch (BusinessException e) {
-            return ids.stream().map(id -> new NotionDatabaseResponse(id, id)).toList();
-        }
         return ids.stream().map(id -> {
             try {
+                String token = token(workspaceId, id, userId);
                 return new NotionDatabaseResponse(id, database(token, id).title());
             } catch (BusinessException e) {
                 return new NotionDatabaseResponse(id, id);
@@ -89,14 +86,17 @@ public class NotionContentService {
     public NotionPageDetailResponse getPage(Long workspaceId, Long userId, Long contentRefId) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
         boolean refreshFailed = false;
+        boolean bodyEditable = false; // 최신 블록을 확인한 경우에만 본문 수정을 허용한다.
         if (!ref.isOriginDeleted()) {
             try {
-                String token = integrationService.getAccessToken(workspaceId, userId, Provider.NOTION);
+                String token = token(workspaceId, ref.getChannelId(), userId);
                 NotionPage page = notionApiClient.getPage(token, ref.getOriginId());
                 if (page.archived()) {
                     contentRefService.markOriginDeleted(contentRefId);
                 } else {
-                    notionSyncAdapter.save(workspaceId, token, page, notionApiClient.getPageText(token, page.id()));
+                    NotionApiClient.PageContent content = notionApiClient.getPageContent(token, page.id());
+                    notionSyncAdapter.save(workspaceId, token, page, content.text());
+                    bodyEditable = content.editable();
                 }
             } catch (BusinessException e) {
                 if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
@@ -111,14 +111,15 @@ public class NotionContentService {
         return new NotionPageDetailResponse(latest.getContentRefId(), latest.getOriginId(), latest.getTitle(),
                 latest.isOriginDeleted() ? latest.getSnapshot() : latest.getContent(), latest.getDeepLink(),
                 latest.getLastModifiedAt(), !analysisPageIds(List.of(contentRefId)).isEmpty(),
-                latest.isOriginDeleted(), refreshFailed);
+                latest.isOriginDeleted(), refreshFailed, bodyEditable && !latest.isOriginDeleted());
     }
 
     /** 새 문서 (UC-05-02) */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContentRefDTO createContent(Long workspaceId, Long userId, String title, String body, String databaseId) {
-        String token = integrationService.getAccessToken(workspaceId, userId, Provider.NOTION);
-        NotionDatabase database = database(token, resolveDatabase(workspaceId, databaseId));
+        String resolved = resolveDatabase(workspaceId, databaseId);
+        String token = token(workspaceId, resolved, userId);
+        NotionDatabase database = database(token, resolved);
         NotionPage page = notionApiClient.createPage(token, database, title, body);
         return saveOrFail(workspaceId, token, page, body);
     }
@@ -136,7 +137,7 @@ public class NotionContentService {
         if (ref.isOriginDeleted()) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-        String token = integrationService.getAccessToken(workspaceId, userId, Provider.NOTION);
+        String token = token(workspaceId, ref.getChannelId(), userId);
         NotionDatabase database = database(token, ref.getChannelId());
         NotionPage page = notionApiClient.updatePage(token, ref.getOriginId(), database.titleProperty(), title, body);
         return saveOrFail(workspaceId, token, page, body != null ? body : ref.getContent());
@@ -146,7 +147,7 @@ public class NotionContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public boolean deleteContent(Long workspaceId, Long userId, Long contentRefId) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
-        String token = integrationService.getAccessToken(workspaceId, userId, Provider.NOTION);
+        String token = token(workspaceId, ref.getChannelId(), userId);
         notionApiClient.archivePage(token, ref.getOriginId());
         contentRefService.markOriginDeleted(contentRefId);
         return true;
@@ -174,6 +175,11 @@ public class NotionContentService {
                 .findAllByWorkspaceIdAndProviderAndParentRefIdIsNullOrderByLastModifiedAtDesc(workspaceId,
                         Provider.NOTION)
                 .stream().filter(ref -> !ref.isOriginDeleted()).toList();
+    }
+
+    /** 데이터베이스를 연동 대상으로 고른 연결의 토큰 (TeamTokenResolver). Notion 통합은 공유받은 DB만 볼 수 있다. */
+    private String token(Long workspaceId, String databaseId, Long userId) {
+        return teamTokenResolver.tokenFor(workspaceId, Provider.NOTION, databaseId, userId);
     }
 
     private ContentRefDTO saveOrFail(Long workspaceId, String token, NotionPage page, String body) {

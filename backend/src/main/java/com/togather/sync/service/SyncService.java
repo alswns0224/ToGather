@@ -40,6 +40,8 @@ public class SyncService {
     /** 연속 실패 시 다음 자동 동기화까지 기다리는 최대 시간 */
     private static final Duration MAX_BACKOFF = Duration.ofHours(2);
     private static final Duration BASE_BACKOFF = Duration.ofMinutes(5);
+    /** 사용자가 요청해도 이 간격 안에는 다시 동기화하지 않는다. (화면 진입마다 호출되므로 외부 API 호출 한도 보호) */
+    static final Duration MIN_MANUAL_INTERVAL = Duration.ofMinutes(1);
 
     private final Map<Provider, SyncAdapter> adapters;
     private final SyncStateService syncStateService;
@@ -55,7 +57,10 @@ public class SyncService {
         return adapters.containsKey(provider);
     }
 
-    /** 사용자가 요청한 즉시 동기화. 대상별 결과를 돌려준다. (실패해도 예외를 던지지 않는다) */
+    /**
+     * 사용자가 요청한 즉시 동기화. 대상별 결과를 돌려준다. (실패해도 예외를 던지지 않는다)
+     * 1분 안에 동기화를 시도한 대상은 건너뛴다.
+     */
     public List<SyncStatusResponse> syncNow(Long workspaceId, Provider provider, Long requestedBy) {
         syncWorkspace(workspaceId, provider, requestedBy, false);
         return getStatuses(workspaceId, provider);
@@ -137,7 +142,7 @@ public class SyncService {
             SyncState state = syncStateService.getOrCreate(workspaceId, adapter.provider(), target.targetId(),
                     target.ownerUserId());
             LocalDateTime now = LocalDateTime.now();
-            if (scheduled && isBackingOff(state, now)) {
+            if (scheduled ? isBackingOff(state, now) : isRecentlyAttempted(state, now)) {
                 return;
             }
             try {
@@ -155,6 +160,10 @@ public class SyncService {
         } finally {
             running.remove(lockKey);
         }
+    }
+
+    static boolean isRecentlyAttempted(SyncState state, LocalDateTime now) {
+        return state.getLastAttemptAt() != null && state.getLastAttemptAt().plus(MIN_MANUAL_INTERVAL).isAfter(now);
     }
 
     static boolean isBackingOff(SyncState state, LocalDateTime now) {

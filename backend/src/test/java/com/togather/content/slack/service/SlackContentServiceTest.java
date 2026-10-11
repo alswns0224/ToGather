@@ -172,6 +172,22 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         assertThat(replies).filteredOn(SlackMessageResponse::isOriginDeleted).hasSize(1);
     }
 
+    @Test
+    void 채널에도_보낸_답글은_채널_목록이_아니라_스레드에만_나온다() {
+        SlackMessage root = message(ROOT_TS, ROOT_TS, "U1", "회의는 <@U2> 목요일로 할까요?", 1, REPLY_TS);
+        SlackMessage broadcast = new SlackMessage(REPLY_TS, ROOT_TS, "U2", "좋아요", 0, null,
+                SlackApiClient.toLocal(REPLY_TS), null, List.of(), "thread_broadcast");
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(broadcast, root), false));
+        when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), any())).thenReturn(List.of(root, broadcast));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+
+        var page = slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20));
+        assertThat(page.items()).extracting(SlackMessageResponse::ts).containsExactly(ROOT_TS);
+        assertThat(page.items().getFirst().replyCount()).isEqualTo(1);
+    }
+
     private static SlackMessage message(String ts, String threadTs, String user, String text, int replies,
                                         String latestReply) {
         return message(ts, threadTs, user, text, replies, latestReply, null);

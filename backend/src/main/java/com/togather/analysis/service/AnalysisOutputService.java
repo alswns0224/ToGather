@@ -26,7 +26,6 @@ import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.slack.service.SlackContentService;
 import com.togather.content.slack.service.SlackContentService.ThreadMessage;
 import com.togather.content.slack.service.SlackDirectory;
-import com.togather.integration.service.IntegrationService;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -34,6 +33,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import com.togather.content.service.TeamTokenResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -68,7 +68,7 @@ public class AnalysisOutputService {
     private final ContentRefRepository contentRefRepository;
     private final SlackContentService slackContentService;
     private final SlackDirectory slackDirectory;
-    private final IntegrationService integrationService;
+    private final TeamTokenResolver teamTokenResolver;
 
     // ===================== Notion 문서 (SD-08-03) =====================
 
@@ -198,7 +198,7 @@ public class AnalysisOutputService {
         List<String> slackIds = slackContentService.getThreadMessages(threadId, null).stream()
                 .map(ThreadMessage::authorExternalId).filter(Objects::nonNull).distinct().toList();
         try {
-            Optional<String> token = integrationService.findAccessToken(workspaceId, userId, Provider.SLACK);
+            Optional<String> token = teamTokenResolver.findTokenFor(workspaceId, Provider.SLACK, null, userId);
             if (token.isEmpty() || slackIds.isEmpty()) {
                 return List.of();
             }

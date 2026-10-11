@@ -95,7 +95,16 @@ public class NotionApiClient {
 
     /** 페이지 본문(최상위 블록)을 텍스트로 */
     public String getPageText(String token, String pageId) {
-        return NotionBlocks.toText(getChildren(token, pageId));
+        return getPageContent(token, pageId).text();
+    }
+
+    /** @param editable ToGather에서 본문을 수정해도 되는지 (NotionBlocks.isEditable) */
+    public record PageContent(String text, boolean editable) {
+    }
+
+    public PageContent getPageContent(String token, String pageId) {
+        List<Map<String, Object>> blocks = getChildren(token, pageId);
+        return new PageContent(NotionBlocks.toText(blocks), NotionBlocks.isEditable(blocks));
     }
 
     // ===================== 생성·수정·삭제 =====================
@@ -117,6 +126,14 @@ public class NotionApiClient {
 
     /** 제목과 본문을 바꾼다. 본문은 기존 블록을 지우고 새로 넣는다. */
     public NotionPage updatePage(String token, String pageId, String titleProperty, String title, String text) {
+        List<Map<String, Object>> current = List.of();
+        if (text != null) {
+            current = getChildren(token, pageId);
+            if (!NotionBlocks.isEditable(current)) {
+                // 이미지·표·하위 블록이 지워지지 않도록 본문 교체를 막는다. 제목도 바꾸지 않는다.
+                throw new BusinessException(ErrorCode.NOTION_BODY_NOT_EDITABLE);
+            }
+        }
         if (title != null) {
             Map<String, Object> body = Map.of("properties",
                     Map.of(titleProperty, Map.of("title", NotionBlocks.richText(title))));
@@ -124,12 +141,13 @@ public class NotionApiClient {
                     .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JSON));
         }
         if (text != null) {
-            for (Map<String, Object> block : getChildren(token, pageId)) {
+            // 새 본문을 먼저 붙이고 기존 블록을 지운다. 중간에 실패해도 내용이 사라지지 않고 중복으로 남는다.
+            appendChildren(token, pageId, NotionBlocks.fromText(text));
+            for (Map<String, Object> block : current) {
                 String blockId = str(block, "id");
                 call("blocks.delete", () -> request(token).delete().uri(BASE + "/blocks/{id}", blockId)
                         .retrieve().body(JSON));
             }
-            appendChildren(token, pageId, NotionBlocks.fromText(text));
         }
         return getPage(token, pageId);
     }

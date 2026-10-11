@@ -7,8 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param model          텍스트 생성 모델 (논의 분석, 후보 추출)
  * @param embeddingModel 임베딩 모델 (통합 검색)
- * @param timeoutSeconds 응답 타임아웃. 논의 분석 30초 목표에 맞춘다.
- * @param maxRetries     429·5xx·타임아웃일 때 다시 시도하는 횟수
+ * @param timeoutSeconds 재시도를 포함한 전체 대기 시간. 논의 분석 30초 목표에 맞춘다.
+ * @param maxRetries     429·5xx·타임아웃일 때 다시 시도하는 최대 횟수 (남은 시간이 있을 때만)
  */
 @ConfigurationProperties(prefix = "togather.gemini")
 public record GeminiProperties(

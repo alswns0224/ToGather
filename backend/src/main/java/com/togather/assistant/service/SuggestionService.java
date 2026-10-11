@@ -77,6 +77,12 @@ public class SuggestionService {
     private final PromptTemplates promptTemplates;
     private final UserService userService;
 
+    /**
+     * 워크스페이스·사용자별로 Gemini에 보낸 마지막 메시지의 작성 시각. 이보다 오래된 메시지는 다시 보내지 않는다.
+     * (후보가 없던 메시지를 매번 다시 분석하지 않도록. 서버를 다시 켜면 처음부터 본다)
+     */
+    private final Map<String, LocalDateTime> scannedUntil = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** Gemini 응답 형식 (resources/prompts/assistant-candidates.txt) */
     public record AiResult(List<AiCandidate> candidates) {
     }
@@ -113,6 +119,9 @@ public class SuggestionService {
                 "today", LocalDate.now(SlackApiClient.ZONE).toString(),
                 "messages", lines.toString()));
         AiResult result = geminiClient.generateJson(prompt, AiResult.class);
+        messages.stream().map(ContentRef::getCreatedAt).filter(Objects::nonNull).max(Comparator.naturalOrder())
+                .ifPresent(latest -> scannedUntil.merge(scanKey(workspaceId, userId), latest,
+                        (a, b) -> a.isAfter(b) ? a : b));
 
         List<Suggestion> candidates = new ArrayList<>();
         for (AiCandidate c : result.candidates() == null ? List.<AiCandidate>of() : result.candidates()) {
@@ -212,11 +221,13 @@ public class SuggestionService {
         List<ContentRef> all = new ArrayList<>(slackContentService.findMessagesByUser(workspaceId, userId));
         all.addAll(contentRefRepository.findAllByWorkspaceIdAndOwnerUserIdAndProviderAndCreatedAtAfterOrderByCreatedAtDesc(
                 workspaceId, userId, Provider.GMAIL, after));
+        LocalDateTime scanned = scannedUntil.get(scanKey(workspaceId, userId));
         Set<Long> seen = suggestionRepository.findAllByOwnerUserIdAndSourceContentRefIdIn(userId,
                         all.stream().map(ContentRef::getContentRefId).toList()).stream()
                 .map(Suggestion::getSourceContentRefId).collect(Collectors.toSet());
         return all.stream()
                 .filter(m -> !m.isOriginDeleted() && !seen.contains(m.getContentRefId()))
+                .filter(m -> scanned == null || (m.getCreatedAt() != null && m.getCreatedAt().isAfter(scanned)))
                 .collect(Collectors.toMap(ContentRef::getContentRefId, Function.identity(), (a, b) -> a,
                         LinkedHashMap::new))
                 .values().stream()
@@ -224,6 +235,10 @@ public class SuggestionService {
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(MAX_MESSAGES)
                 .toList();
+    }
+
+    private static String scanKey(Long workspaceId, Long userId) {
+        return workspaceId + ":" + userId;
     }
 
     /** 명세서 excludeDuplicateCandidates: 대기 중 후보, 개인 할 일, 담당 Task와 제목이 겹치면 제외 */

@@ -32,7 +32,6 @@ import com.togather.content.slack.service.SlackContentService;
 import com.togather.content.slack.service.SlackContentService.ThreadMessage;
 import com.togather.content.slack.service.SlackDirectory;
 import com.togather.content.slack.service.SlackMessageFormat;
-import com.togather.integration.service.IntegrationService;
 import com.togather.workspace.service.WorkspaceMemberService;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -51,6 +50,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import com.togather.content.service.TeamTokenResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -81,9 +81,12 @@ public class AnalysisService {
     private final ContentRefRepository contentRefRepository;
     private final SlackContentService slackContentService;
     private final SlackDirectory slackDirectory;
-    private final IntegrationService integrationService;
+    private final TeamTokenResolver teamTokenResolver;
     private final UserService userService;
     private final WorkspaceMemberService workspaceMemberService;
+
+    /** 지금 분석 중인 스레드 (동시 분석 방지) */
+    private final Set<Long> runningThreads = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     // ===================== 분석 (SD-08-01) =====================
 
@@ -95,33 +98,51 @@ public class AnalysisService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AnalysisResultDTO analyzeThread(Long workspaceId, Long contentRefId, Long requestedBy) {
         ContentRef root = getThreadRoot(workspaceId, contentRefId);
-        List<ThreadMessage> messages = slackContentService.getThreadMessages(root.getContentRefId(), null);
+        // 같은 스레드를 동시에 두 번 분석하지 않는다. (서버 한 대 기준)
+        if (!runningThreads.add(contentRefId)) {
+            throw new BusinessException(ErrorCode.ANALYSIS_IN_PROGRESS);
+        }
+        try {
+            return analyze(workspaceId, root, requestedBy);
+        } finally {
+            runningThreads.remove(contentRefId);
+        }
+    }
+
+    private AnalysisResultDTO analyze(Long workspaceId, ContentRef root, Long requestedBy) {
+        Long contentRefId = root.getContentRefId();
+        List<ThreadMessage> messages = slackContentService.getThreadMessages(contentRefId, null);
         List<DiscussionAnalysis> history = analysisRepository.findAllByContentRefIdOrderByAnalysisIdAsc(contentRefId);
         LocalDateTime analyzedUntil = determineAnalysisRange(history);
         LocalDateTime lastMessageAt = lastMessageAt(messages);
 
-        Optional<DiscussionAnalysis> latest = history.stream()
-                .filter(a -> a.getStatus() != AnalysisStatus.FAILED).reduce((a, b) -> b);
-        if (latest.isPresent() && analyzedUntil != null && !lastMessageAt.isAfter(analyzedUntil)) {
-            return getAnalysis(workspaceId, latest.get().getAnalysisId()); // 새 메시지 없음
+        Optional<DiscussionAnalysis> last = history.isEmpty() ? Optional.empty() : Optional.of(history.getLast());
+        if (last.isPresent() && analyzedUntil != null && !lastMessageAt.isAfter(analyzedUntil)) {
+            Long latestId = history.stream().filter(a -> a.getStatus() != AnalysisStatus.FAILED)
+                    .reduce((a, b) -> b).orElse(last.get()).getAnalysisId();
+            return getAnalysis(workspaceId, latestId); // 새 메시지 없음
         }
+        // 확정 전 분석이 있으면 그 분석에 이어서 항목을 추가한다.
+        Long reuseId = last.filter(a -> a.getStatus() != AnalysisStatus.CONFIRMED)
+                .map(DiscussionAnalysis::getAnalysisId).orElse(null);
 
-        Long analysisId = analysisStore.start(contentRefId, requestedBy);
+        AnalysisStore.Begin begin = analysisStore.begin(reuseId, contentRefId, requestedBy);
         try {
             List<String> previousItems = previousItems(history);
             DiscussionAnalyzer.Result result = discussionAnalyzer.analyze(
                     slackDirectory.getCachedChannelName(workspaceId, root.getChannelId()), messages, analyzedUntil,
                     previousItems, LocalDate.now(SlackApiClient.ZONE));
             List<NewItem> items = toNewItems(workspaceId, requestedBy, result.candidates());
-            analysisStore.saveResult(analysisId, items, lastMessageAt);
-            log.info("논의 분석 완료: workspaceId={}, analysisId={}, items={}", workspaceId, analysisId, items.size());
+            analysisStore.saveResult(begin.analysisId(), items, lastMessageAt);
+            log.info("논의 분석 완료: workspaceId={}, analysisId={}, items={}, reused={}", workspaceId,
+                    begin.analysisId(), items.size(), begin.reused());
         } catch (RuntimeException e) {
-            analysisStore.markFailed(analysisId);
-            log.warn("논의 분석 실패: workspaceId={}, analysisId={}, error={}", workspaceId, analysisId,
+            analysisStore.markFailed(begin);
+            log.warn("논의 분석 실패: workspaceId={}, analysisId={}, error={}", workspaceId, begin.analysisId(),
                     e instanceof BusinessException be ? be.getErrorCode() : e.getClass().getSimpleName());
             throw e instanceof BusinessException be ? be : new BusinessException(ErrorCode.AI_CALL_FAILED);
         }
-        return getAnalysis(workspaceId, analysisId);
+        return getAnalysis(workspaceId, begin.analysisId());
     }
 
     /**
@@ -418,10 +439,7 @@ public class AnalysisService {
 
     private Map<String, Long> mapMembers(Long workspaceId, Long requestedBy, Collection<String> slackIds) {
         try {
-            Optional<String> token = requestedBy != null
-                    ? integrationService.findAccessToken(workspaceId, requestedBy, Provider.SLACK)
-                    : integrationService.findTargetAccess(workspaceId, Provider.SLACK)
-                            .map(IntegrationService.TargetAccess::accessToken);
+            Optional<String> token = teamTokenResolver.findTokenFor(workspaceId, Provider.SLACK, null, requestedBy);
             if (token.isEmpty()) {
                 return Map.of();
             }

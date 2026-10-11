@@ -96,7 +96,7 @@ class SuggestionServiceTest extends IntegrationTestSupport {
         assertThat(meeting.sourceProvider()).isEqualTo(Provider.GMAIL);
 
         DetectResultResponse again = suggestionService.detectCandidates(workspaceId, userId, null);
-        assertThat(again.scannedMessages()).isEqualTo(1); // 후보가 없던 멘션 메시지만 다시 본다
+        assertThat(again.scannedMessages()).isZero(); // 이미 Gemini에 보낸 메시지는 다시 보내지 않는다
     }
 
     @Test

@@ -173,8 +173,9 @@ function PageDetail({
             title="문서 수정"
             initial={page.data}
             onCancel={() => setEditing(false)}
+            bodyLocked={!page.data.bodyEditable}
             onSubmit={async (form) => {
-              await updatePage(workspaceId, id, { title: form.title, body: form.body });
+              await updatePage(workspaceId, id, page.data!.bodyEditable ? { title: form.title, body: form.body } : { title: form.title });
               setEditing(false);
               page.reload();
               onChanged();
@@ -226,12 +227,15 @@ function PageEditor({
   title,
   initial,
   databases,
+  bodyLocked = false,
   onSubmit,
   onCancel,
 }: {
   title: string;
   initial?: NotionPageDetailResponse;
   databases?: NotionDatabaseResponse[];
+  /** 본문을 수정할 수 없는 문서 (제목만 수정) */
+  bodyLocked?: boolean;
   onSubmit: (form: { title: string; body: string; databaseId?: string }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -285,6 +289,11 @@ function PageEditor({
           onChange={(e) => setForm({ ...form, title: e.target.value })}
         />
       </label>
+      {bodyLocked ? (
+        <div className="alert alert-error small">
+          이미지·표·하위 블록이 있는 문서라 본문은 Notion에서 직접 수정해 주세요. 여기서는 제목만 바꿀 수 있습니다.
+        </div>
+      ) : (
       <label>
         본문
         <textarea
@@ -295,6 +304,7 @@ function PageEditor({
         />
         <span className="small muted"># 제목, - 목록, 1. 번호, [ ] 할 일, &gt; 인용 형식을 Notion 블록으로 바꿉니다.</span>
       </label>
+      )}
       {error && <div className="alert alert-error">저장하지 못했습니다. {error}</div>}
       <div className="row">
         <span className="spacer" />

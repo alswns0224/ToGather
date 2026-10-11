@@ -37,6 +37,7 @@ public class ContentRefService {
                 .map(existing -> {
                     existing.applySync(command.title(), command.content(), command.deepLink(),
                             command.lastModifiedAt(), command.authorExternalId(), command.authorName());
+                    existing.attachToParent(command.parentRefId());
                     return existing;
                 })
                 .orElseGet(() -> contentRefRepository.save(ContentRef.builder()

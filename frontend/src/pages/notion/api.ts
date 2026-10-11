@@ -27,6 +27,8 @@ export interface NotionPageDetailResponse {
   fromAnalysis: boolean;
   isOriginDeleted: boolean;
   refreshFailed: boolean;
+  /** false면 이미지·표·하위 블록이 있어 본문을 ToGather에서 수정할 수 없다 (제목만 가능) */
+  bodyEditable: boolean;
 }
 
 export interface ContentRefDTO {

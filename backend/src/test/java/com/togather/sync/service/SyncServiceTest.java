@@ -100,6 +100,15 @@ class SyncServiceTest {
         verify(stateService, never()).recordFailure(anyLong(), any(), any());
     }
 
+    @Test
+    void 직접_요청해도_1분_안에_다시_동기화하지_않는다() {
+        state.recordSuccess(SYNCED, java.time.LocalDateTime.now().minusSeconds(20));
+
+        syncService.syncNow(1L, Provider.SLACK, 7L);
+
+        assertThat(adapter.contexts).isEmpty();
+    }
+
     static class FakeAdapter implements SyncAdapter {
 
         final List<SyncContext> contexts = new ArrayList<>();

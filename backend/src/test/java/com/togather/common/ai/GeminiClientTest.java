@@ -87,6 +87,20 @@ class GeminiClientTest {
     }
 
     @Test
+    void 남은_시간이_없으면_다시_시도하지_않는다() {
+        // 전체 6초, 한 번 호출 5초(최소값). 백오프 2초면 다시 시도할 시간이 없다.
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer tight = MockRestServiceServer.bindTo(builder).build();
+        GeminiClient shortBudget = new GeminiClient(builder.build(),
+                new GeminiProperties("test-key", BASE, "gen-model", "embed-model", 6, 2),
+                JsonMapper.builder().build(), 2000);
+        tight.expect(times(1), requestTo(BASE + "/models/gen-model:generateContent")).andRespond(withServerError());
+
+        assertThatThrownBy(() -> shortBudget.generate("안녕")).isInstanceOf(BusinessException.class);
+        tight.verify();
+    }
+
+    @Test
     void 잘못된_요청은_다시_시도하지_않는다() {
         server.expect(times(1), requestTo(BASE + "/models/gen-model:generateContent")).andRespond(withBadRequest());
 
