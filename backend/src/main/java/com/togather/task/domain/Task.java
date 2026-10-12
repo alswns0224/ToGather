@@ -1,19 +1,16 @@
 package com.togather.task.domain;
 
-import com.togather.auth.domain.User;
 import com.togather.common.domain.BaseTimeEntity;
 import com.togather.common.enums.RiskLevel;
 import com.togather.common.enums.TaskStatus;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
@@ -47,9 +44,8 @@ public class Task extends BaseTimeEntity {
     private TaskStatus status;
 
     /** 미지정 시 null */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "assignee_id")
-    private User assignee;
+    @Column(name = "assignee_id")
+    private Long assigneeId;
 
     /** 생성 근거 결정사항(AnalysisItem) */
     private Long originAnalysisItemId;
@@ -57,7 +53,13 @@ public class Task extends BaseTimeEntity {
     @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TaskDeliverable> deliverables = new ArrayList<>();
 
-    public Task(Long workspaceId, String title, String description, LocalDate dueDate, TaskStatus status) {
+    public Task(
+        Long workspaceId,
+        String title,
+        String description,
+        LocalDate dueDate,
+        TaskStatus status
+    ) {
         this.workspaceId = workspaceId;
         this.title = title;
         this.description = description;
@@ -74,7 +76,11 @@ public class Task extends BaseTimeEntity {
         if (deliverables.isEmpty()) {
             return status == TaskStatus.DONE ? 100 : 0;
         }
-        long submitted = deliverables.stream().filter(TaskDeliverable::isSubmitted).count();
+
+        long submitted = deliverables.stream()
+            .filter(TaskDeliverable::isSubmitted)
+            .count();
+
         return (int) (submitted * 100 / deliverables.size());
     }
 
@@ -83,19 +89,23 @@ public class Task extends BaseTimeEntity {
         if (status == TaskStatus.DONE || dueDate == null) {
             return RiskLevel.NORMAL;
         }
+
         long daysLeft = ChronoUnit.DAYS.between(today, dueDate);
         int progress = calculateProgress();
+
         if (daysLeft < 0 || (daysLeft <= 2 && progress < 50)) {
             return RiskLevel.DANGER;
         }
+
         if (daysLeft <= 5 && progress < 80) {
             return RiskLevel.WARNING;
         }
+
         return RiskLevel.NORMAL;
     }
 
-    public void assignTo(User assignee) {
-        this.assignee = assignee;
+    public void assignTo(Long assigneeId) {
+        this.assigneeId = assigneeId;
     }
 
     public TaskDeliverable addDeliverable(String name, String ext) {
@@ -119,7 +129,12 @@ public class Task extends BaseTimeEntity {
         if (deliverables.isEmpty()) {
             return;
         }
-        boolean allSubmitted = deliverables.stream().allMatch(TaskDeliverable::isSubmitted);
-        this.status = allSubmitted ? TaskStatus.DONE : TaskStatus.IN_PROGRESS;
+
+        boolean allSubmitted = deliverables.stream()
+            .allMatch(TaskDeliverable::isSubmitted);
+
+        this.status = allSubmitted
+            ? TaskStatus.DONE
+            : TaskStatus.IN_PROGRESS;
     }
 }
