@@ -110,4 +110,44 @@ public class TaskService {
             .map(task -> TaskSummary.from(task, today))
             .toList();
     }
+
+    /** Task 수정 */
+    @Transactional
+    public TaskSummary updateTask(
+        Long workspaceId,
+        Long taskId,
+        String title,
+        String description,
+        Long assigneeId,
+        LocalDate dueDate,
+        TaskStatus status
+    ) {
+        Task task = taskRepository.findById(taskId)
+            .filter(t -> t.getWorkspaceId().equals(workspaceId))
+            .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
+
+        if (assigneeId != null
+            && !workspaceMemberService.isMember(workspaceId, assigneeId)) {
+            throw new BusinessException(ErrorCode.MEMBER_NOT_FOUND);
+        }
+
+        task.update(title, description, dueDate);
+        task.assignTo(assigneeId);
+
+        if (status != null) {
+            task.changeStatus(status);
+        }
+
+        return TaskSummary.from(task, LocalDate.now());
+    }
+
+    /** Task 삭제 */
+    @Transactional
+    public void deleteTask(Long workspaceId, Long taskId) {
+        Task task = taskRepository.findById(taskId)
+            .filter(t -> t.getWorkspaceId().equals(workspaceId))
+            .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
+
+        taskRepository.delete(task);
+    }
 }
