@@ -19,6 +19,18 @@ export interface TaskSummary {
   riskLevel: RiskLevel;
 }
 
+export interface TaskDetail {
+  taskId: number;
+  workspaceId: number;
+  title: string;
+  description: string | null;
+  assigneeId: number | null;
+  dueDate: string | null;
+  status: TaskStatus;
+  progress: number;
+  riskLevel: RiskLevel;
+}
+
 export interface TaskCreateRequest {
   title: string;
   description?: string;
@@ -46,7 +58,7 @@ export const getTask = (
   workspaceId: string | number,
   taskId: string | number,
 ) =>
-  http.get<TaskSummary>(ws(workspaceId, `/tasks/${taskId}`));
+  http.get<TaskDetail>(ws(workspaceId, `/tasks/${taskId}`));
 
 export const createTask = (
   workspaceId: string | number,

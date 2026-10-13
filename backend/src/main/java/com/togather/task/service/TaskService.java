@@ -8,6 +8,7 @@ import com.togather.task.dto.TaskCommand;
 import com.togather.task.dto.TaskSummary;
 import com.togather.task.repository.TaskRepository;
 import com.togather.workspace.service.WorkspaceMemberService;
+import com.togather.task.dto.TaskDetailResponse;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
@@ -149,5 +150,14 @@ public class TaskService {
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
         taskRepository.delete(task);
+    }
+
+    /** 화면용 Task 상세 조회 */
+    public TaskDetailResponse getTaskDetail(Long workspaceId, Long taskId) {
+        Task task = taskRepository.findById(taskId)
+            .filter(t -> t.getWorkspaceId().equals(workspaceId))
+            .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
+
+        return TaskDetailResponse.from(task, LocalDate.now());
     }
 }

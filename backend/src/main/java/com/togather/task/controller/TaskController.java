@@ -2,13 +2,12 @@ package com.togather.task.controller;
 
 import com.togather.common.auth.LoginUser;
 import com.togather.common.auth.WorkspaceAccessChecker;
-import com.togather.common.exception.BusinessException;
-import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.ApiResponse;
 import com.togather.task.dto.TaskCreateRequest;
 import com.togather.task.dto.TaskSummary;
 import com.togather.task.dto.TaskUpdateRequest;
 import com.togather.task.service.TaskService;
+import com.togather.task.dto.TaskDetailResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -50,20 +49,16 @@ public class TaskController {
 
     /** Task 상세 조회 */
     @GetMapping("/{taskId}")
-    public ApiResponse<TaskSummary> getTask(
+    public ApiResponse<TaskDetailResponse> getTask(
         @LoginUser Long userId,
         @PathVariable Long workspaceId,
         @PathVariable Long taskId
     ) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
 
-        TaskSummary task = taskService.getTask(taskId);
-
-        if (!workspaceId.equals(task.workspaceId())) {
-            throw new BusinessException(ErrorCode.TASK_NOT_FOUND);
-        }
-
-        return ApiResponse.ok(task);
+        return ApiResponse.ok(
+            taskService.getTaskDetail(workspaceId, taskId)
+        );
     }
 
     /** Task 생성 */
