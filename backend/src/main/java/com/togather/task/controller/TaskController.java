@@ -3,13 +3,15 @@ package com.togather.task.controller;
 import com.togather.common.auth.LoginUser;
 import com.togather.common.auth.WorkspaceAccessChecker;
 import com.togather.common.response.ApiResponse;
+import com.togather.common.response.PageResponse;
 import com.togather.task.dto.TaskCreateRequest;
+import com.togather.task.dto.TaskDetailResponse;
 import com.togather.task.dto.TaskSummary;
 import com.togather.task.dto.TaskUpdateRequest;
 import com.togather.task.service.TaskService;
-import com.togather.task.dto.TaskDetailResponse;
 import jakarta.validation.Valid;
-import com.togather.common.response.PageResponse;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,8 +39,10 @@ public class TaskController {
         @LoginUser Long userId,
         @PathVariable Long workspaceId,
         @RequestParam(required = false, defaultValue = "false") boolean mine,
-        @RequestParam(required = false, defaultValue = "0") int page,
-        @RequestParam(required = false, defaultValue = "20") int size
+        @RequestParam(required = false, defaultValue = "0")
+        @Min(0) int page,
+        @RequestParam(required = false, defaultValue = "20")
+        @Min(1) @Max(100) int size
     ) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
 
