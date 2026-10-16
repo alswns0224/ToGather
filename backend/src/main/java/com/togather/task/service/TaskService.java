@@ -9,12 +9,14 @@ import com.togather.task.dto.TaskSummary;
 import com.togather.task.repository.TaskRepository;
 import com.togather.workspace.service.WorkspaceMemberService;
 import com.togather.task.dto.TaskDetailResponse;
+import com.togather.common.response.PageResponse;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -132,8 +134,15 @@ public class TaskService {
             throw new BusinessException(ErrorCode.MEMBER_NOT_FOUND);
         }
 
-        task.update(title, description, dueDate);
-        task.assignTo(assigneeId);
+        task.update(
+            title != null ? title : task.getTitle(),
+            description != null ? description : task.getDescription(),
+            dueDate != null ? dueDate : task.getDueDate()
+        );
+
+        if (assigneeId != null) {
+            task.assignTo(assigneeId);
+        }
 
         if (status != null) {
             task.changeStatus(status);
@@ -159,5 +168,36 @@ public class TaskService {
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
         return TaskDetailResponse.from(task, LocalDate.now());
+    }
+
+    /** 화면용: 워크스페이스 Task 페이지 조회 */
+    public PageResponse<TaskSummary> getTaskPage(
+        Long workspaceId,
+        Long userId,
+        boolean mine,
+        int page,
+        int size
+    ) {
+        LocalDate today = LocalDate.now();
+        PageRequest pageable = PageRequest.of(page, size);
+
+        if (mine) {
+            return PageResponse.from(
+                taskRepository.findAllByWorkspaceIdAndAssigneeIdOrderByCreatedAtDesc(
+                    workspaceId,
+                    userId,
+                    pageable
+                ),
+                task -> TaskSummary.from(task, today)
+            );
+        }
+
+        return PageResponse.from(
+            taskRepository.findAllByWorkspaceIdOrderByCreatedAtDesc(
+                workspaceId,
+                pageable
+            ),
+            task -> TaskSummary.from(task, today)
+        );
     }
 }

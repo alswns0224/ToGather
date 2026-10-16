@@ -9,7 +9,7 @@ import com.togather.task.dto.TaskUpdateRequest;
 import com.togather.task.service.TaskService;
 import com.togather.task.dto.TaskDetailResponse;
 import jakarta.validation.Valid;
-import java.util.List;
+import com.togather.common.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,18 +33,24 @@ public class TaskController {
 
     /** 워크스페이스 Task 목록 */
     @GetMapping
-    public ApiResponse<List<TaskSummary>> getTasks(
+    public ApiResponse<PageResponse<TaskSummary>> getTasks(
         @LoginUser Long userId,
         @PathVariable Long workspaceId,
-        @RequestParam(required = false, defaultValue = "false") boolean mine
+        @RequestParam(required = false, defaultValue = "false") boolean mine,
+        @RequestParam(required = false, defaultValue = "0") int page,
+        @RequestParam(required = false, defaultValue = "20") int size
     ) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
 
-        List<TaskSummary> tasks = mine
-            ? taskService.getMyTasks(userId)
-            : taskService.getTasksByWorkspace(workspaceId);
-
-        return ApiResponse.ok(tasks);
+        return ApiResponse.ok(
+            taskService.getTaskPage(
+                workspaceId,
+                userId,
+                mine,
+                page,
+                size
+            )
+        );
     }
 
     /** Task 상세 조회 */

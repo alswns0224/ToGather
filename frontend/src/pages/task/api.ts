@@ -48,11 +48,30 @@ export interface TaskUpdateRequest {
   status?: TaskStatus;
 }
 
-export const getTasks = (workspaceId: string | number) =>
-  http.get<TaskSummary[]>(ws(workspaceId, '/tasks'));
+export interface PageResponse<T> {
+  items: T[];
+  page: number;
+  size: number;
+  total: number;
+}
 
-export const getMyTasks = (workspaceId: string | number) =>
-  http.get<TaskSummary[]>(ws(workspaceId, '/tasks?mine=true'));
+export const getTasks = (
+  workspaceId: string | number,
+  page = 0,
+  size = 20,
+) =>
+  http.get<PageResponse<TaskSummary>>(
+    ws(workspaceId, `/tasks?page=${page}&size=${size}`),
+  );
+
+export const getMyTasks = (
+  workspaceId: string | number,
+  page = 0,
+  size = 20,
+) =>
+  http.get<PageResponse<TaskSummary>>(
+    ws(workspaceId, `/tasks?mine=true&page=${page}&size=${size}`),
+  );
 
 export const getTask = (
   workspaceId: string | number,
