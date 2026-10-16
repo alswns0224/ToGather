@@ -199,6 +199,7 @@ record DeliverableInput(String name, String ext) {}
 
 // [결정 2] Entity 대신 DTO 반환
 TaskSummary getTask(Long taskId);
+List<TaskSummary> getTasks(Collection<Long> taskIds);     // 여러 Task 한 번에 조회 (회의 안건 목록). 없는 ID는 결과에서 빠짐
 List<TaskSummary> getTasksInProgress(Long workspaceId);  // 회의 안건 후보 (UI-10)
 List<TaskSummary> getMyTasks(Long userId);              // AI 업무 보조 중복 후보 제외
 record TaskSummary(Long taskId, Long workspaceId, String title, Long assigneeId, LocalDate dueDate,
@@ -240,5 +241,5 @@ List<ContentRefDTO> getContentsByUser(Long userId);
      │
      └── ContentRefService (A·C가 콘텐츠 저장 시 호출)
 
-   A (회의) ── getTask, getTasksInProgress, getTaskContext ──▶ C
+   A (회의) ── getTask, getTasks, getTasksInProgress, getTaskContext ──▶ C
 ```
