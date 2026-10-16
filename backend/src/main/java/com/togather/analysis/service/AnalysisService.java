@@ -206,7 +206,7 @@ public class AnalysisService {
             ContentRef thread = threads.get(a.getContentRefId());
             return new AnalysisSummaryDTO(a.getAnalysisId(), a.getContentRefId(),
                     thread == null ? null : thread.getTitle(), thread == null ? null : preview(thread),
-                    a.getStatus(), a.getRequestedBy() == null, itemCounts.getOrDefault(a.getAnalysisId(), 0L),
+                    effectiveStatus(a), a.getRequestedBy() == null, itemCounts.getOrDefault(a.getAnalysisId(), 0L),
                     a.getCreatedAt());
         }).toList();
     }
@@ -232,7 +232,7 @@ public class AnalysisService {
                         until != null && m.createdAt() != null && !m.createdAt().isAfter(until)))
                 .toList();
         return new AnalysisResultDTO(analysis.getAnalysisId(), root.getContentRefId(), root.getChannelId(),
-                root.getTitle(), preview(root), root.getDeepLink(), analysis.getStatus(),
+                root.getTitle(), preview(root), root.getDeepLink(), effectiveStatus(analysis),
                 analysis.getRequestedBy() == null, until, analysis.getCreatedAt(), toResponses(workspaceId, items),
                 messageResponses, analysis.getNotionPageRefId(), analysis.getNotionOutputStatus());
     }
@@ -243,11 +243,11 @@ public class AnalysisService {
     public AnalysisItemResponse updateItem(Long workspaceId, Long itemId, AnalysisItemUpdateRequest request) {
         AnalysisItem item = getItemEntity(workspaceId, itemId);
         DiscussionAnalysis analysis = getEditableAnalysis(workspaceId, item.getAnalysisId());
-        validateMembers(analysisWorkspace(analysis), request.suggestedAssigneeId(), request.suggestedParticipantIds());
-        item.update(request.content().strip(), request.suggestedAssigneeId(), request.suggestedDueDate(),
+        ItemValues v = ItemValues.of(item.getItemType(), request.suggestedAssigneeId(), request.suggestedDueDate(),
                 request.suggestedDatetime(), request.suggestedParticipantIds());
-        item.markUndetermined(isUndetermined(item.getItemType(), request.suggestedAssigneeId(),
-                request.suggestedDueDate(), request.suggestedDatetime()));
+        validateMembers(analysisWorkspace(analysis), v.assigneeId(), v.participantIds());
+        item.update(request.content().strip(), v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds());
+        item.markUndetermined(isUndetermined(item.getItemType(), v.assigneeId(), v.dueDate(), v.datetime()));
         return toResponses(workspaceId, List.of(item)).getFirst();
     }
 
@@ -255,12 +255,12 @@ public class AnalysisService {
     @Transactional
     public AnalysisItemResponse addItem(Long workspaceId, Long analysisId, AnalysisItemRequest request) {
         DiscussionAnalysis analysis = getEditableAnalysis(workspaceId, analysisId);
-        validateMembers(analysisWorkspace(analysis), request.suggestedAssigneeId(), request.suggestedParticipantIds());
-        AnalysisItem item = new AnalysisItem(analysisId, request.itemType(), request.content().strip(),
-                isUndetermined(request.itemType(), request.suggestedAssigneeId(), request.suggestedDueDate(),
-                        request.suggestedDatetime()));
-        item.update(request.content().strip(), request.suggestedAssigneeId(), request.suggestedDueDate(),
+        ItemValues v = ItemValues.of(request.itemType(), request.suggestedAssigneeId(), request.suggestedDueDate(),
                 request.suggestedDatetime(), request.suggestedParticipantIds());
+        validateMembers(analysisWorkspace(analysis), v.assigneeId(), v.participantIds());
+        AnalysisItem item = new AnalysisItem(analysisId, request.itemType(), request.content().strip(),
+                isUndetermined(request.itemType(), v.assigneeId(), v.dueDate(), v.datetime()));
+        item.update(request.content().strip(), v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds());
         itemRepository.save(item);
         if (analysis.getStatus() != AnalysisStatus.REVIEWING) {
             analysis.changeStatus(AnalysisStatus.REVIEWING); // NO_CONTENT·FAILED에서 직접 작성
@@ -396,6 +396,21 @@ public class AnalysisService {
                 .orElse(null);
     }
 
+    /**
+     * 항목 유형에 맞는 값만 남긴다. 담당자·마감일은 후속 작업에만, 일시·참여자는 회의 제안에만 둔다.
+     * (AI가 결정사항에 일시를 붙여 주는 경우 등)
+     */
+    record ItemValues(Long assigneeId, LocalDate dueDate, LocalDateTime datetime, List<Long> participantIds) {
+
+        static ItemValues of(ItemType type, Long assigneeId, LocalDate dueDate, LocalDateTime datetime,
+                             List<Long> participantIds) {
+            boolean followUp = type == ItemType.FOLLOW_UP;
+            boolean meeting = type == ItemType.MEETING_PROPOSAL;
+            return new ItemValues(followUp ? assigneeId : null, followUp ? dueDate : null,
+                    meeting ? datetime : null, meeting && participantIds != null ? participantIds : List.of());
+        }
+    }
+
     static boolean isUndetermined(ItemType type, Long assigneeId, LocalDate dueDate, LocalDateTime datetime) {
         return switch (type) {
             case FOLLOW_UP -> assigneeId == null || dueDate == null;
@@ -438,10 +453,10 @@ public class AnalysisService {
             Long assignee = c.assigneeSlackId() == null ? null : members.get(c.assigneeSlackId());
             List<Long> participants = c.participantSlackIds().stream().map(members::get).filter(Objects::nonNull)
                     .distinct().toList();
+            ItemValues v = ItemValues.of(c.itemType(), assignee, c.dueDate(), c.datetime(), participants);
             items.add(new NewItem(c.itemType(), c.content(),
-                    isUndetermined(c.itemType(), assignee, c.dueDate(), c.datetime()),
-                    c.itemType() == ItemType.FOLLOW_UP ? assignee : null, c.dueDate(), c.datetime(), participants,
-                    c.evidenceContentRefIds()));
+                    isUndetermined(c.itemType(), v.assigneeId(), v.dueDate(), v.datetime()),
+                    v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds(), c.evidenceContentRefIds()));
         }
         return items;
     }
@@ -500,9 +515,24 @@ public class AnalysisService {
             throw new BusinessException(ErrorCode.ANALYSIS_ALREADY_CONFIRMED);
         }
         if (analysis.getStatus() == AnalysisStatus.ANALYZING) {
-            throw new BusinessException(ErrorCode.ANALYSIS_IN_PROGRESS);
+            if (runningThreads.contains(analysis.getContentRefId())) {
+                throw new BusinessException(ErrorCode.ANALYSIS_IN_PROGRESS);
+            }
+            analysis.changeStatus(effectiveStatus(analysis)); // 서버가 분석 중에 꺼져 남은 상태를 푼다.
         }
         return analysis;
+    }
+
+    /**
+     * 화면에 보여줄 상태. 서버가 분석 중에 꺼져 ANALYZING으로 남았으면(지금 분석하고 있지 않으면)
+     * 항목이 있으면 검토 대기, 없으면 실패로 본다. 그래야 편집·다시 분석이 막히지 않는다.
+     */
+    private AnalysisStatus effectiveStatus(DiscussionAnalysis analysis) {
+        if (analysis.getStatus() != AnalysisStatus.ANALYZING || runningThreads.contains(analysis.getContentRefId())) {
+            return analysis.getStatus();
+        }
+        return itemRepository.countByAnalysisId(analysis.getAnalysisId()) > 0
+                ? AnalysisStatus.REVIEWING : AnalysisStatus.FAILED;
     }
 
     private Long analysisWorkspace(DiscussionAnalysis analysis) {

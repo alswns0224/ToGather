@@ -118,6 +118,17 @@ class NotionContentServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 바뀌지_않은_페이지는_본문을_다시_읽지_않는다() {
+        notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, null, userId));
+
+        notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, T0.plusHours(1), userId));
+
+        // 처음 동기화에서 한 번씩만 읽었다. (두 번째는 수정 시각이 지나지 않아 건너뜀)
+        verify(notionApiClient, org.mockito.Mockito.times(1)).getPageText(TOKEN, "p1");
+        verify(notionApiClient, org.mockito.Mockito.times(1)).getPageText(TOKEN, "p2");
+    }
+
+    @Test
     void 연동하지_않은_데이터베이스에는_만들_수_없다() {
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                         notionContentService.createContent(workspaceId, userId, "제목", "본문", "other-db"))

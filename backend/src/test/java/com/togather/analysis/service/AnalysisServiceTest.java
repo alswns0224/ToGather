@@ -199,7 +199,7 @@ class AnalysisServiceTest extends IntegrationTestSupport {
     @Test
     void 다른_스레드의_메시지는_근거로_연결할_수_없고_팀원이_아니면_담당자가_될_수_없다() {
         when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
-                new AiItem("DECISION", "결정", List.of("m1"), null, null, null, null)), true));
+                new AiItem("FOLLOW_UP", "후속 작업", List.of("m1"), null, null, null, null)), true));
         AnalysisResultDTO result = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
         Long itemId = result.items().getFirst().itemId();
         ContentRefDTO other = slack("2.0", null, "U1", "철준", "다른 스레드", t0);
@@ -235,6 +235,38 @@ class AnalysisServiceTest extends IntegrationTestSupport {
         assertThat(count).isEqualTo(1); // root 스레드만 (2시간 전에 끝남)
         assertThat(analysisService.findLatestAnalysisId(workspaceId, active.contentRefId())).isEmpty();
         verify(integrationService, never()).getAccessToken(any(), any(), any());
+    }
+
+    @Test
+    void 항목_유형에_맞는_값만_저장한다() {
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiItem("DECISION", "금요일에 발표", List.of("m1"), "U2", "2026-10-16", "2026-10-16T14:00", List.of("U2")),
+                new AiItem("MEETING_PROPOSAL", "리허설", List.of("m1"), "U2", "2026-10-16", "2026-10-20T16:00", List.of())),
+                true));
+
+        AnalysisResultDTO result = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
+
+        AnalysisItemResponse decision = result.items().getFirst();
+        assertThat(decision.suggestedAssigneeId()).isNull();
+        assertThat(decision.suggestedDueDate()).isNull();
+        assertThat(decision.suggestedDatetime()).isNull();
+        AnalysisItemResponse meeting = result.items().get(1);
+        assertThat(meeting.suggestedDatetime()).isEqualTo(LocalDateTime.of(2026, 10, 20, 16, 0));
+        assertThat(meeting.suggestedDueDate()).isNull();
+    }
+
+    @Test
+    void 서버가_분석_중에_꺼져_남은_분석은_다시_편집할_수_있다() {
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiItem("DECISION", "결정", List.of("m1"), null, null, null, null)), true));
+        AnalysisResultDTO result = analysisService.analyzeThread(workspaceId, root.contentRefId(), userId);
+        jdbc.update("update discussion_analysis set status = 'ANALYZING' where analysis_id = ?", result.analysisId());
+
+        assertThat(analysisService.getAnalysis(workspaceId, result.analysisId()).status())
+                .isEqualTo(AnalysisStatus.REVIEWING);
+        AnalysisItemResponse updated = analysisService.updateItem(workspaceId, result.items().getFirst().itemId(),
+                new AnalysisItemUpdateRequest("결정 수정", null, null, null, null));
+        assertThat(updated.content()).isEqualTo("결정 수정");
     }
 
     @Test

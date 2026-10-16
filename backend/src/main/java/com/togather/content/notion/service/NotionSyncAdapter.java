@@ -59,6 +59,12 @@ public class NotionSyncAdapter implements SyncAdapter {
                 context.requestedBy());
         List<NotionPage> pages = notionApiClient.queryDatabase(token, databaseId, MAX_QUERY_PAGES);
 
+        // 이미 저장한 페이지를 한 번에 가져온다. (페이지마다 조회하지 않도록, README N+1 규칙)
+        Set<String> stored = contentRefRepository
+                .findAllByWorkspaceIdAndProviderAndChannelIdAndIsOriginDeletedFalse(context.workspaceId(),
+                        Provider.NOTION, databaseId)
+                .stream().map(ContentRef::getOriginId).collect(Collectors.toSet());
+
         int saved = 0;
         for (NotionPage page : pages) {
             if (page.archived()) {
@@ -66,7 +72,7 @@ public class NotionSyncAdapter implements SyncAdapter {
             }
             boolean changed = context.since() == null || page.lastEditedAt() == null
                     || !page.lastEditedAt().isBefore(context.since().minusMinutes(1))
-                    || contentRefService.findByOrigin(context.workspaceId(), Provider.NOTION, page.id()).isEmpty();
+                    || !stored.contains(page.id());
             if (changed && save(context.workspaceId(), token, page, null) != null) {
                 saved++;
             }
