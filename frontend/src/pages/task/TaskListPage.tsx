@@ -22,6 +22,11 @@ export default function TaskListPage() {
   const [members, setMembers] = useState<MemberResponse[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
 
+  // 페이지네이션
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
+
   // Task 생성 폼
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -55,10 +60,11 @@ export default function TaskListPage() {
       setError(null);
 
       const result = mineOnly
-        ? await getMyTasks(workspaceId)
-        : await getTasks(workspaceId);
+        ? await getMyTasks(workspaceId, page, pageSize)
+        : await getTasks(workspaceId, page, pageSize);
 
-      setTasks(result);
+      setTasks(result.items);
+      setTotal(result.total);
     } catch (e) {
       setError(
         e instanceof Error
@@ -90,7 +96,7 @@ export default function TaskListPage() {
 
   useEffect(() => {
     void loadTasks();
-  }, [workspaceId, mineOnly]);
+  }, [workspaceId, mineOnly, page]);
 
   useEffect(() => {
     void loadMembers();
@@ -126,6 +132,7 @@ export default function TaskListPage() {
       setAssigneeId('');
       setDueDate('');
 
+      setPage(0);
       await loadTasks();
     } catch (e) {
       setError(
@@ -276,6 +283,11 @@ export default function TaskListPage() {
     return member?.name ?? '알 수 없음';
   };
 
+  const totalPages = Math.max(
+    1,
+    Math.ceil(total / pageSize),
+  );
+
   return (
     <section>
       <h1>Task</h1>
@@ -284,7 +296,10 @@ export default function TaskListPage() {
       <div>
         <button
           type="button"
-          onClick={() => setMineOnly(false)}
+          onClick={() => {
+            setMineOnly(false);
+            setPage(0);
+          }}
           disabled={!mineOnly}
         >
           전체 Task
@@ -292,7 +307,10 @@ export default function TaskListPage() {
 
         <button
           type="button"
-          onClick={() => setMineOnly(true)}
+          onClick={() => {
+            setMineOnly(true);
+            setPage(0);
+          }}
           disabled={mineOnly}
         >
           내 Task
@@ -570,6 +588,41 @@ export default function TaskListPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* 페이지네이션 */}
+      {!loading && total > 0 && (
+        <div>
+          <button
+            type="button"
+            disabled={page === 0}
+            onClick={() =>
+              setPage((current) => current - 1)
+            }
+          >
+            이전
+          </button>
+
+          <span>
+            {page + 1} / {totalPages}
+          </span>
+
+          <button
+            type="button"
+            disabled={
+              (page + 1) * pageSize >= total
+            }
+            onClick={() =>
+              setPage((current) => current + 1)
+            }
+          >
+            다음
+          </button>
+
+          <span>
+            총 {total}개
+          </span>
+        </div>
       )}
     </section>
   );
