@@ -18,6 +18,7 @@ import {
   type TimeCandidate,
 } from './api';
 import { STATUS_TEXT } from './MeetingListPage';
+import MeetingEditForm from './MeetingEditForm';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorBox, Loading } from '../../components/Status';
 import { addDays, formatDate, formatDateTime, formatTime, fromLocalIso, startOfDay, toLocalIso } from '../../utils/date';
@@ -28,6 +29,7 @@ export default function MeetingDetailPage() {
   const { workspaceId = '', meetingId = '' } = useParams();
   const meeting = useAsync(() => getMeeting(workspaceId, meetingId), [workspaceId, meetingId]);
   const [actionError, setActionError] = useState<Error>();
+  const [editing, setEditing] = useState(false);
   const m = meeting.data;
 
   const run = async (fn: () => Promise<MeetingDetailResponse | void>) => {
@@ -56,6 +58,11 @@ export default function MeetingDetailPage() {
         <h1>{m.title}</h1>
         <span className={`badge status-${m.status.toLowerCase()}`}>{STATUS_TEXT[m.status]}</span>
         <span className="spacer" />
+        {m.canManage && scheduling && !editing && (
+          <button className="btn" onClick={() => setEditing(true)}>
+            수정
+          </button>
+        )}
         {m.canManage && m.status !== 'CANCELED' && (
           <button
             className="btn btn-danger"
@@ -73,6 +80,17 @@ export default function MeetingDetailPage() {
         {formatDateTime(m.candidateEndAt)}
       </p>
       {actionError && <ErrorBox error={actionError} />}
+      {editing && (
+        <MeetingEditForm
+          workspaceId={workspaceId}
+          meeting={m}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => {
+            meeting.setData(updated);
+            setEditing(false);
+          }}
+        />
+      )}
 
       {m.status === 'CONFIRMED' && m.startAt && (
         <div className="card stack confirmed">
@@ -106,11 +124,17 @@ export default function MeetingDetailPage() {
         <>
           <Responses meeting={m} />
           {m.participating ? (
-            <AvailabilityGrid workspaceId={workspaceId} meetingId={m.meetingId} onSaved={meeting.reload} />
+            <AvailabilityGrid
+              key={`grid-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
+              workspaceId={workspaceId}
+              meetingId={m.meetingId}
+              onSaved={meeting.reload}
+            />
           ) : (
             <p className="muted">회의 참여자만 가용 시간을 입력할 수 있습니다.</p>
           )}
           <Recommendations
+            key={`rec-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
             workspaceId={workspaceId}
             meeting={m}
             onConfirm={(startAt) => run(() => confirmMeeting(workspaceId, m.meetingId, startAt))}

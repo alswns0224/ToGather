@@ -195,7 +195,27 @@ class PartAFlowIntegrationTest {
         call(json(post(mt + "/availability/me"), slots(monday, "10:00")), owner)
                 .andExpect(jsonPath("$.error.code").value("MEETING_NOT_SCHEDULING"));
 
-        call(get(ws + "/meetings"), member).andExpect(jsonPath("$.data[0].status").value("CONFIRMED"));
+        // 확정된 회의는 수정할 수 없다
+        call(json(patch(mt), "{\"title\":\"바뀐 제목\"}"), owner)
+                .andExpect(jsonPath("$.error.code").value("MEETING_NOT_SCHEDULING"));
+
+        // 회의 수정 (UC-10-02): 제목·참여자 변경, 후보 기간을 바꾸면 응답 초기화
+        MvcResult second = call(json(post(ws + "/meetings"), meetingBody), owner).andReturn();
+        int secondId = JsonPath.read(second.getResponse().getContentAsString(), "$.data.meetingId");
+        String mt2 = ws + "/meetings/" + secondId;
+        call(json(post(mt2 + "/availability/me"), slots(monday, "10:00")), owner).andExpect(status().isOk());
+        call(json(patch(mt2), "{\"title\":\"회의 수정\"}"), member).andExpect(status().isForbidden());
+        call(json(patch(mt2), "{\"title\":\"회의 수정\",\"participantIds\":[%d]}".formatted(ownerId)), owner)
+                .andExpect(jsonPath("$.data.title").value("회의 수정"))
+                .andExpect(jsonPath("$.data.participants.length()").value(1))
+                .andExpect(jsonPath("$.data.participants[0].hasResponded").value(true));
+        call(json(patch(mt2), "{\"candidateEndAt\":\"%s\"}".formatted(monday.atTime(20, 0))), owner)
+                .andExpect(jsonPath("$.data.candidateEndAt").value(monday + "T20:00:00"))
+                .andExpect(jsonPath("$.data.participants[0].hasResponded").value(false));
+        call(json(patch(mt2), "{\"candidateEndAt\":\"%s\"}".formatted(monday.atTime(9, 30))), owner)
+                .andExpect(jsonPath("$.error.code").value("INVALID_TIME_RANGE"));
+
+        call(get(ws + "/meetings"), member).andExpect(jsonPath("$.data[1].status").value("CONFIRMED"));
         call(post(mt + "/cancel"), owner).andExpect(status().isNoContent());
         call(get(mt), member).andExpect(jsonPath("$.data.status").value("CANCELED"));
 
