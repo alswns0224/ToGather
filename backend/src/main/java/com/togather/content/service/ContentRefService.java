@@ -93,6 +93,23 @@ public class ContentRefService {
         return toDtos(refs);
     }
 
+    /**
+     * 한 워크스페이스에서 연결한 개인 콘텐츠만 소유자 조건으로 조회한다. (C-05 Gmail 요청)
+     * 개인 서비스 연결이 워크스페이스마다 따로라서, 다른 워크스페이스의 메일·일정이 섞이지 않게 한다.
+     *
+     * @param since 이 시각 이후에 수정된 것만. null이면 전체
+     */
+    public List<ContentRefDTO> getPersonalContents(Long workspaceId, Long ownerUserId, Provider provider,
+                                                   LocalDateTime since) {
+        List<ContentRef> refs = since == null
+                ? contentRefRepository.findAllByWorkspaceIdAndOwnerUserIdAndProviderOrderByLastModifiedAtDesc(
+                        workspaceId, ownerUserId, provider)
+                : contentRefRepository
+                        .findAllByWorkspaceIdAndOwnerUserIdAndProviderAndLastModifiedAtGreaterThanEqualOrderByLastModifiedAtDesc(
+                                workspaceId, ownerUserId, provider, since);
+        return toDtos(refs);
+    }
+
     @Transactional
     public void updateContent(Long contentRefId, String title, String content) {
         find(contentRefId).updateContent(title, content);

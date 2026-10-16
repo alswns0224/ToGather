@@ -79,6 +79,23 @@ class ContentRefServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 워크스페이스를_지정하면_그_워크스페이스의_개인_콘텐츠만_조회한다() {
+        Long otherWorkspaceId = createWorkspace(userId);
+        contentRefService.upsert(mail("m1", userId, T0));
+        contentRefService.upsert(mail("m2", otherUserId, T0));
+        contentRefService.upsert(new ContentRefUpsert(otherWorkspaceId, userId, Provider.GMAIL, ContentType.MAIL,
+                "other-ws-mail", null, null, "다른 워크스페이스", "본문", null, T0));
+        contentRefService.upsert(mail("m3", userId, T0.minusDays(3)));
+
+        assertThat(contentRefService.getPersonalContents(workspaceId, userId, Provider.GMAIL, null))
+                .extracting(ContentRefDTO::externalId).containsExactly("m1", "m3");
+        assertThat(contentRefService.getPersonalContents(workspaceId, userId, Provider.GMAIL, T0.minusDays(1)))
+                .extracting(ContentRefDTO::externalId).containsExactly("m1");
+        assertThat(contentRefService.getPersonalContents(otherWorkspaceId, userId, Provider.GMAIL, null))
+                .extracting(ContentRefDTO::externalId).containsExactly("other-ws-mail");
+    }
+
+    @Test
     void 원본이_삭제되면_사본을_본문으로_준다() {
         ContentRefDTO saved = contentRefService.upsert(message("1.0", null, "남길 내용", T0, null));
 

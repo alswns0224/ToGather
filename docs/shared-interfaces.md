@@ -131,6 +131,8 @@ void markSyncFailed(Long workspaceId, Provider provider, String originId);   // 
 
 // 개인 콘텐츠(Gmail, Calendar)는 ownerUserId 조건이 들어간 메서드만 사용 (README 10번). since가 null이면 전체
 List<ContentRefDTO> getPersonalContents(Long ownerUserId, Provider provider, LocalDateTime since);
+// 한 워크스페이스에서 연결한 개인 콘텐츠만 (C-05 Gmail 요청). 다른 워크스페이스의 메일·일정이 섞이지 않는다
+List<ContentRefDTO> getPersonalContents(Long workspaceId, Long ownerUserId, Provider provider, LocalDateTime since);
 ```
 
 사용처: A(Calendar 일정 저장), C(Drive·Gmail 저장, 검색, 협업 맥락)
