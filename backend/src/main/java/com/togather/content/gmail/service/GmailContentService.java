@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -30,6 +31,7 @@ public class GmailContentService {
      * 오래된 경우 먼저 증분 동기화를 시도한 뒤
      * 저장된 ContentRef(MAIL)를 반환한다.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<ContentRefDTO> getContentsByUser(
         Long workspaceId,
         Long userId
