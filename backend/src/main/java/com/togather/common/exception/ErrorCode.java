@@ -57,7 +57,6 @@ public enum ErrorCode {
     ANALYSIS_TARGET_INVALID(HttpStatus.BAD_REQUEST, "Slack 스레드의 첫 메시지만 분석할 수 있습니다."),
     ANALYSIS_OUTPUT_ALREADY_DONE(HttpStatus.CONFLICT, "이미 생성했습니다. 중복으로 만들지 않습니다."),
     ANALYSIS_ITEM_TYPE_MISMATCH(HttpStatus.BAD_REQUEST, "이 항목 유형으로는 할 수 없는 작업입니다."),
-    TASK_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Task 생성 기능이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요."),
     SUGGESTION_TIME_REQUIRED(HttpStatus.BAD_REQUEST, "일시가 정해지지 않은 일정입니다. 일시를 입력한 뒤 승인해 주세요."),
     SUGGESTION_ALREADY_HANDLED(HttpStatus.CONFLICT, "이미 승인하거나 무시한 후보입니다."),
     PERSONAL_TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "할 일을 찾을 수 없습니다."),

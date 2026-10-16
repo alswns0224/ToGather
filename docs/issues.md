@@ -90,7 +90,7 @@ GitHub Issues에 등록할 목록입니다. 한 이슈 = 한 브랜치 = 한 PR�
 
 > B-0 ~ B-09는 `feature/b-*` 브랜치에 순서대로 쌓아 구현했습니다. (B-0: V4 마이그레이션 — 리뷰 2명 필요)
 > 실제 Slack·Notion·Gemini 호출 확인은 OAuth 앱 등록과 API 키 발급 후 진행합니다.
-> C 연동 대기: 후속 작업 → Task 생성과 담당 Task 표시는 `analysis.service.TaskGateway`의 TODO를 C-01 완료 후 연결합니다.
+> 후속 작업 → Task 생성과 담당 Task 표시는 `analysis.service.TaskGateway`에서 C의 `TaskService`(C-01)로 연결했습니다.
 
 ### B-01. ContentRefService와 공통 콘텐츠 DTO ✅
 - 브랜치: `b-content-ref` · 1주차

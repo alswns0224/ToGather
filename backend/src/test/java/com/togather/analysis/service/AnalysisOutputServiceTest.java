@@ -59,6 +59,8 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
     private AnalysisOutputService outputService;
     @Autowired
     private ContentRefService contentRefService;
+    @Autowired
+    private TaskGateway taskGateway;
 
     private Long userId;
     private Long memberId;
@@ -120,15 +122,31 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 실패한_단계는_FAILED로_기록되고_다시_시도할_수_있다() {
+    void 실패한_단계는_FAILED로_기록되고_다시_시도하면_Task가_생성된다() {
         analysisService.confirmAnalysis(workspaceId, analysis.analysisId());
         AnalysisItemResponse followUp = item(ItemType.FOLLOW_UP);
+        Long stranger = createUser("외부인", "x@test.com");
 
+        // 팀원이 아닌 담당자 → C의 TaskService가 거부 → 실패로 기록
+        assertThatThrownBy(() -> outputService.createFollowUpTask(workspaceId, followUp.itemId(),
+                new FollowUpTaskRequest("자료 준비", null, stranger, LocalDate.of(2026, 10, 15))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.MEMBER_NOT_FOUND));
+        assertThat(item(ItemType.FOLLOW_UP).outputStatus()).isEqualTo(OutputStatus.FAILED);
+
+        // 다시 시도 → C의 Task 생성, 근거 결정사항 연결
+        var result = outputService.createFollowUpTask(workspaceId, followUp.itemId(),
+                new FollowUpTaskRequest("자료 준비", "발표 자료", memberId, LocalDate.of(2026, 10, 15)));
+        assertThat(item(ItemType.FOLLOW_UP).outputStatus()).isEqualTo(OutputStatus.SUCCESS);
+        assertThat(jdbc.queryForObject("select origin_analysis_item_id from task where task_id = ?", Long.class,
+                result.targetId())).isEqualTo(followUp.itemId());
+        assertThat(taskGateway.getMyTasks(memberId)).extracting(TaskGateway.MyTask::title).contains("자료 준비");
+
+        // 이미 만든 Task는 중복 생성하지 않는다.
         assertThatThrownBy(() -> outputService.createFollowUpTask(workspaceId, followUp.itemId(),
                 new FollowUpTaskRequest("자료 준비", null, memberId, LocalDate.of(2026, 10, 15))))
                 .isInstanceOfSatisfying(BusinessException.class,
-                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.TASK_SERVICE_UNAVAILABLE));
-        assertThat(item(ItemType.FOLLOW_UP).outputStatus()).isEqualTo(OutputStatus.FAILED);
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ANALYSIS_OUTPUT_ALREADY_DONE));
     }
 
     @Test

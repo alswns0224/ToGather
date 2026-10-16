@@ -233,8 +233,7 @@ record TaskSummary(Long taskId, Long workspaceId, String title, Long assigneeId,
 
 사용처: A(회의 안건 SD-10-04·05), B(후속 Task 생성 SD-08-04, AI 업무 보조 SD-13-02)
 
-> B는 `analysis.service.TaskGateway`에서만 `createTask`, `getMyTasks`를 호출합니다. C 구현 전까지는 Task 생성이
-> `TASK_SERVICE_UNAVAILABLE`(실패 단계로 기록, 나중에 재시도)로 처리되고 담당 Task 목록은 비어 있습니다.
+> B는 `analysis.service.TaskGateway`에서만 `createTask`, `getMyTasks`를 호출합니다. (C-01 연결 완료)
 
 ### 협업 맥락 (TaskContextService)
 
