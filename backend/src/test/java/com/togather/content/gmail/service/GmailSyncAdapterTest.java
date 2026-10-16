@@ -1,10 +1,11 @@
 package com.togather.content.gmail.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,6 +17,8 @@ import com.togather.common.exception.BusinessException;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.gmail.client.GmailApiClient;
 import com.togather.content.gmail.client.GmailApiClient.GmailMessage;
+import com.togather.content.gmail.client.GmailApiClient.GmailProfile;
+import com.togather.content.gmail.client.GmailApiClient.HistoryResult;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.integration.service.IntegrationService;
@@ -80,7 +83,10 @@ class GmailSyncAdapterTest {
 
         assertEquals(1, targets.size());
         assertEquals("", targets.get(0).targetId());
-        assertEquals(userId, targets.get(0).ownerUserId());
+        assertEquals(
+            userId,
+            targets.get(0).ownerUserId()
+        );
     }
 
     @Test
@@ -158,6 +164,14 @@ class GmailSyncAdapterTest {
             Provider.GMAIL
         )).thenReturn(token);
 
+        when(gmailApiClient.getProfile(token))
+            .thenReturn(
+                new GmailProfile(
+                    "user@example.com",
+                    "1000"
+                )
+            );
+
         when(gmailApiClient.listMessageIds(
             eq(token),
             any(LocalDateTime.class),
@@ -195,6 +209,7 @@ class GmailSyncAdapterTest {
                 "",
                 userId,
                 null,
+                null,
                 userId
             );
 
@@ -206,16 +221,29 @@ class GmailSyncAdapterTest {
             result.savedCount()
         );
 
+        assertEquals(
+            "1000",
+            result.syncCursor()
+        );
+
+        assertNotNull(
+            result.syncedUntil()
+        );
+
+        verify(gmailApiClient)
+            .getProfile(token);
+
         ArgumentCaptor<LocalDateTime> afterCaptor =
             ArgumentCaptor.forClass(
                 LocalDateTime.class
             );
 
-        verify(gmailApiClient).listMessageIds(
-            eq(token),
-            afterCaptor.capture(),
-            eq(10)
-        );
+        verify(gmailApiClient)
+            .listMessageIds(
+                eq(token),
+                afterCaptor.capture(),
+                eq(10)
+            );
 
         LocalDateTime now =
             LocalDateTime.now(
@@ -241,9 +269,10 @@ class GmailSyncAdapterTest {
                 ContentRefUpsert.class
             );
 
-        verify(contentRefService).upsert(
-            upsertCaptor.capture()
-        );
+        verify(contentRefService)
+            .upsert(
+                upsertCaptor.capture()
+            );
 
         ContentRefUpsert command =
             upsertCaptor.getValue();
@@ -278,7 +307,7 @@ class GmailSyncAdapterTest {
             command.title()
         );
 
-        // content가 비어 있으므로 snippet을 저장해야 한다.
+        // 본문이 비어 있으므로 snippet을 저장한다.
         assertEquals(
             "메일 미리보기",
             command.content()
@@ -291,12 +320,15 @@ class GmailSyncAdapterTest {
     }
 
     @Test
-    void sync_incrementalSyncUsesFiveMinuteLookback() {
+    void sync_incrementalSyncUsesHistoryId() {
         Long workspaceId = 1L;
         Long userId = 10L;
         String token = "test-token";
 
-        LocalDateTime since =
+        String previousHistoryId = "1000";
+        String latestHistoryId = "1050";
+
+        LocalDateTime createdAt =
             LocalDateTime.of(
                 2026,
                 10,
@@ -305,24 +337,145 @@ class GmailSyncAdapterTest {
                 0
             );
 
+        GmailMessage message =
+            new GmailMessage(
+                "message-2",
+                "thread-2",
+                latestHistoryId,
+                "증분 메일",
+                "sender@example.com",
+                "receiver@example.com",
+                "증분 본문",
+                "증분 미리보기",
+                createdAt,
+                "https://mail.google.com/mail/u/0/#all/message-2"
+            );
+
         when(integrationService.getAccessToken(
             workspaceId,
             userId,
             Provider.GMAIL
         )).thenReturn(token);
 
-        when(gmailApiClient.listMessageIds(
+        when(gmailApiClient.listHistory(
             token,
-            since.minusMinutes(5),
+            previousHistoryId,
             5
-        )).thenReturn(List.of());
+        )).thenReturn(
+            new HistoryResult(
+                List.of("message-2"),
+                List.of(),
+                latestHistoryId
+            )
+        );
+
+        when(gmailApiClient.getMessage(
+            token,
+            "message-2"
+        )).thenReturn(message);
+
+        when(contentRefService.upsert(
+            any(ContentRefUpsert.class)
+        )).thenReturn(
+            new ContentRefDTO(
+                101L,
+                Provider.GMAIL,
+                ContentType.MAIL,
+                "message-2",
+                "증분 메일",
+                "증분 본문",
+                message.deepLink(),
+                null,
+                createdAt,
+                0,
+                false
+            )
+        );
 
         SyncContext context =
             new SyncContext(
                 workspaceId,
                 "",
                 userId,
-                since,
+                null,
+                previousHistoryId,
+                userId
+            );
+
+        var result =
+            gmailSyncAdapter.sync(context);
+
+        assertEquals(
+            1,
+            result.savedCount()
+        );
+
+        assertEquals(
+            latestHistoryId,
+            result.syncCursor()
+        );
+
+        assertNotNull(
+            result.syncedUntil()
+        );
+
+        verify(gmailApiClient)
+            .listHistory(
+                token,
+                previousHistoryId,
+                5
+            );
+
+        verify(
+            gmailApiClient,
+            never()
+        ).listMessageIds(
+            any(String.class),
+            any(LocalDateTime.class),
+            anyInt()
+        );
+
+        verify(
+            gmailApiClient,
+            never()
+        ).getProfile(
+            any(String.class)
+        );
+    }
+
+    @Test
+    void sync_incrementalSyncKeepsPreviousCursorWhenLatestCursorIsMissing() {
+        Long workspaceId = 1L;
+        Long userId = 10L;
+        String token = "test-token";
+
+        String previousHistoryId = "1000";
+
+        when(integrationService.getAccessToken(
+            workspaceId,
+            userId,
+            Provider.GMAIL
+        )).thenReturn(token);
+
+        when(gmailApiClient.listHistory(
+            token,
+            previousHistoryId,
+            5
+        )).thenReturn(
+            new HistoryResult(
+                List.of(),
+                List.of(),
+                null
+            )
+        );
+
+        SyncContext context =
+            new SyncContext(
+                workspaceId,
+                "",
+                userId,
+                null,
+                previousHistoryId,
                 userId
             );
 
@@ -334,10 +487,9 @@ class GmailSyncAdapterTest {
             result.savedCount()
         );
 
-        verify(gmailApiClient).listMessageIds(
-            token,
-            since.minusMinutes(5),
-            5
+        assertEquals(
+            previousHistoryId,
+            result.syncCursor()
         );
     }
 
@@ -347,6 +499,7 @@ class GmailSyncAdapterTest {
             new SyncContext(
                 1L,
                 "",
+                null,
                 null,
                 null,
                 null
@@ -364,6 +517,15 @@ class GmailSyncAdapterTest {
         Long userId = 10L;
         String token = "test-token";
 
+        LocalDateTime createdAt =
+            LocalDateTime.of(
+                2026,
+                10,
+                17,
+                10,
+                0
+            );
+
         GmailMessage message =
             new GmailMessage(
                 "message-1",
@@ -374,13 +536,7 @@ class GmailSyncAdapterTest {
                 "receiver@example.com",
                 "본문",
                 "미리보기",
-                LocalDateTime.of(
-                    2026,
-                    10,
-                    17,
-                    10,
-                    0
-                ),
+                createdAt,
                 "https://mail.google.com/mail/u/0/#all/message-1"
             );
 
@@ -389,6 +545,14 @@ class GmailSyncAdapterTest {
             userId,
             Provider.GMAIL
         )).thenReturn(token);
+
+        when(gmailApiClient.getProfile(token))
+            .thenReturn(
+                new GmailProfile(
+                    "user@example.com",
+                    "1000"
+                )
+            );
 
         when(gmailApiClient.listMessageIds(
             eq(token),
@@ -417,6 +581,7 @@ class GmailSyncAdapterTest {
                 "",
                 userId,
                 null,
+                null,
                 userId
             );
 
@@ -428,6 +593,11 @@ class GmailSyncAdapterTest {
             result.savedCount()
         );
 
+        assertEquals(
+            "1000",
+            result.syncCursor()
+        );
+
         verify(contentRefService)
             .markSyncFailed(
                 workspaceId,
@@ -435,8 +605,192 @@ class GmailSyncAdapterTest {
                 "message-1"
             );
 
-        assertFalse(
-            result.syncedUntil() == null
+        assertNotNull(
+            result.syncedUntil()
+        );
+    }
+
+    @Test
+    void sync_recoversWhenHistoryIdExpired() {
+        Long workspaceId = 1L;
+        Long userId = 10L;
+        String token = "test-token";
+
+        String expiredHistoryId = "1000";
+        String recoveredHistoryId = "2000";
+
+        LocalDateTime createdAt =
+            LocalDateTime.of(
+                2026,
+                10,
+                17,
+                13,
+                0
+            );
+
+        GmailMessage message =
+            new GmailMessage(
+                "message-3",
+                "thread-3",
+                recoveredHistoryId,
+                "복구 메일",
+                "sender@example.com",
+                "receiver@example.com",
+                "복구 본문",
+                "복구 미리보기",
+                createdAt,
+                "https://mail.google.com/mail/u/0/#all/message-3"
+            );
+
+        when(integrationService.getAccessToken(
+            workspaceId,
+            userId,
+            Provider.GMAIL
+        )).thenReturn(token);
+
+        /*
+         * 기존 historyId가 만료된 상황.
+         */
+        when(gmailApiClient.listHistory(
+            token,
+            expiredHistoryId,
+            5
+        )).thenThrow(
+            new GmailApiClient.HistoryExpiredException()
+        );
+
+        /*
+         * 복구 시 현재 Gmail profile에서
+         * 새로운 historyId를 가져온다.
+         */
+        when(gmailApiClient.getProfile(token))
+            .thenReturn(
+                new GmailProfile(
+                    "user@example.com",
+                    recoveredHistoryId
+                )
+            );
+
+        /*
+         * 최근 30일 메일을 다시 수집한다.
+         */
+        when(gmailApiClient.listMessageIds(
+            eq(token),
+            any(LocalDateTime.class),
+            eq(10)
+        )).thenReturn(
+            List.of("message-3")
+        );
+
+        when(gmailApiClient.getMessage(
+            token,
+            "message-3"
+        )).thenReturn(message);
+
+        when(contentRefService.upsert(
+            any(ContentRefUpsert.class)
+        )).thenReturn(
+            new ContentRefDTO(
+                102L,
+                Provider.GMAIL,
+                ContentType.MAIL,
+                "message-3",
+                "복구 메일",
+                "복구 본문",
+                message.deepLink(),
+                null,
+                createdAt,
+                0,
+                false
+            )
+        );
+
+        SyncContext context =
+            new SyncContext(
+                workspaceId,
+                "",
+                userId,
+                null,
+                expiredHistoryId,
+                userId
+            );
+
+        var result =
+            gmailSyncAdapter.sync(context);
+
+        assertEquals(
+            1,
+            result.savedCount()
+        );
+
+        /*
+         * 만료된 historyId가 아니라
+         * 새 historyId로 cursor가 교체되어야 한다.
+         */
+        assertEquals(
+            recoveredHistoryId,
+            result.syncCursor()
+        );
+
+        assertNotNull(
+            result.syncedUntil()
+        );
+
+        /*
+         * 기존 historyId로 증분 조회를 먼저 시도했는지 확인.
+         */
+        verify(gmailApiClient)
+            .listHistory(
+                token,
+                expiredHistoryId,
+                5
+            );
+
+        /*
+         * 만료 복구를 위해 현재 profile을 다시 조회했는지 확인.
+         */
+        verify(gmailApiClient)
+            .getProfile(token);
+
+        verify(gmailApiClient)
+            .getMessage(
+                token,
+                "message-3"
+            );
+
+        /*
+         * 최근 30일 범위로 재수집했는지 확인.
+         * ArgumentCaptor 하나로 호출 여부와 조회 기준 시각을 함께 검증한다.
+         */
+        ArgumentCaptor<LocalDateTime> afterCaptor =
+            ArgumentCaptor.forClass(
+                LocalDateTime.class
+            );
+
+        verify(gmailApiClient)
+            .listMessageIds(
+                eq(token),
+                afterCaptor.capture(),
+                eq(10)
+            );
+
+        LocalDateTime now =
+            LocalDateTime.now(
+                GmailApiClient.ZONE
+            );
+
+        assertTrue(
+            afterCaptor.getValue()
+                .isAfter(
+                    now.minusDays(31)
+                )
+        );
+
+        assertTrue(
+            afterCaptor.getValue()
+                .isBefore(
+                    now.minusDays(29)
+                )
         );
     }
 }
