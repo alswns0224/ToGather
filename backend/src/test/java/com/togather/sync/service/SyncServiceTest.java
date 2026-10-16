@@ -50,17 +50,38 @@ class SyncServiceTest {
         assertThat(adapter.contexts).hasSize(1);
         assertThat(adapter.contexts.getFirst().since()).isNull();
         assertThat(adapter.contexts.getFirst().requestedBy()).isEqualTo(7L);
-        verify(stateService).recordSuccess(any(), eq(SYNCED), any());
+        verify(stateService).recordSuccess(any(), eq(SYNCED), any(), any());
     }
 
     @Test
     void 다음_동기화는_마지막_성공_시각_이후만_가져온다() {
-        state.recordSuccess(SYNCED, SYNCED);
+        state.recordSuccess(SYNCED, null, SYNCED);
         adapter.result = new SyncResult(0, SYNCED.plusMinutes(5));
 
         syncService.syncNow(1L, Provider.SLACK, 7L);
 
         assertThat(adapter.contexts.getFirst().since()).isEqualTo(SYNCED);
+    }
+
+    @Test
+    void 마지막에_돌려준_cursor를_다음_동기화에_넘기고_새_cursor를_저장한다() {
+        state.recordSuccess(SYNCED, "history-100", SYNCED);
+        adapter.result = new SyncResult(2, SYNCED.plusMinutes(5), "history-120");
+
+        syncService.syncNow(1L, Provider.SLACK, 7L);
+
+        assertThat(adapter.contexts.getFirst().syncCursor()).isEqualTo("history-100");
+        verify(stateService).recordSuccess(any(), eq(SYNCED.plusMinutes(5)), eq("history-120"), any());
+    }
+
+    @Test
+    void cursor를_쓰지_않는_어댑터는_null로_받는다() {
+        adapter.result = new SyncResult(1, SYNCED);
+
+        syncService.syncNow(1L, Provider.SLACK, 7L);
+
+        assertThat(adapter.contexts.getFirst().syncCursor()).isNull();
+        verify(stateService).recordSuccess(any(), eq(SYNCED), eq(null), any());
     }
 
     @Test
@@ -70,7 +91,7 @@ class SyncServiceTest {
         syncService.syncNow(1L, Provider.SLACK, 7L);
 
         verify(stateService).recordFailure(any(), eq("EXTERNAL_API_ERROR"), any());
-        verify(stateService, never()).recordSuccess(any(), any(), any());
+        verify(stateService, never()).recordSuccess(any(), any(), any(), any());
     }
 
     @Test
@@ -86,7 +107,7 @@ class SyncServiceTest {
         failing.recordFailure("EXTERNAL_API_ERROR", now.minusMinutes(21));
         assertThat(SyncService.isBackingOff(failing, now)).isFalse(); // 3번 실패: 20분 대기
 
-        failing.recordSuccess(now, now);
+        failing.recordSuccess(now, null, now);
         assertThat(SyncService.isBackingOff(failing, now)).isFalse();
     }
 
@@ -102,7 +123,7 @@ class SyncServiceTest {
 
     @Test
     void 직접_요청해도_1분_안에_다시_동기화하지_않는다() {
-        state.recordSuccess(SYNCED, java.time.LocalDateTime.now().minusSeconds(20));
+        state.recordSuccess(SYNCED, null, java.time.LocalDateTime.now().minusSeconds(20));
 
         syncService.syncNow(1L, Provider.SLACK, 7L);
 

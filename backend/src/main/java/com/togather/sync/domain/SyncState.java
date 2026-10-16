@@ -43,6 +43,9 @@ public class SyncState extends BaseTimeEntity {
     /** 다음 증분 동기화의 기준 시각. 한 번도 성공하지 않았으면 null(전체 동기화) */
     private LocalDateTime lastSyncedAt;
 
+    /** 서비스가 주는 동기화 위치 (예: Gmail historyId). 시각으로 이어받는 서비스는 null */
+    private String syncCursor;
+
     private LocalDateTime lastAttemptAt;
 
     private int failureCount;
@@ -56,9 +59,13 @@ public class SyncState extends BaseTimeEntity {
         this.ownerUserId = ownerUserId;
     }
 
-    /** @param syncedUntil 이번 동기화가 반영한 시점. 다음에는 이 시각 이후만 가져온다. */
-    public void recordSuccess(LocalDateTime syncedUntil, LocalDateTime attemptedAt) {
+    /**
+     * @param syncedUntil 이번 동기화가 반영한 시점. 다음에는 이 시각 이후만 가져온다.
+     * @param syncCursor  다음 동기화 위치 (cursor를 쓰지 않는 서비스는 null)
+     */
+    public void recordSuccess(LocalDateTime syncedUntil, String syncCursor, LocalDateTime attemptedAt) {
         this.lastSyncedAt = syncedUntil;
+        this.syncCursor = syncCursor;
         this.lastAttemptAt = attemptedAt;
         this.failureCount = 0;
         this.lastError = null;

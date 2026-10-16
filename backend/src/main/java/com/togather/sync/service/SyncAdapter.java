@@ -48,9 +48,28 @@ public interface SyncAdapter {
      * @param since       마지막으로 성공한 동기화 기준 시각. null이면 처음(전체) 동기화
      * @param requestedBy 사용자가 직접 요청했으면 그 사용자, 스케줄러면 null
      */
-    record SyncContext(Long workspaceId, String targetId, Long ownerUserId, LocalDateTime since, Long requestedBy) {
+    /**
+     * @param syncCursor 서비스가 주는 동기화 위치 (예: Gmail historyId). 마지막 성공 때 SyncResult로 돌려준 값이다.
+     *                   시각(since)으로 이어받는 서비스는 쓰지 않는다. 처음이면 null
+     */
+    record SyncContext(Long workspaceId, String targetId, Long ownerUserId, LocalDateTime since, String syncCursor,
+                       Long requestedBy) {
+
+        /** cursor를 쓰지 않는 어댑터용 (기존 코드 호환) */
+        public SyncContext(Long workspaceId, String targetId, Long ownerUserId, LocalDateTime since,
+                           Long requestedBy) {
+            this(workspaceId, targetId, ownerUserId, since, null, requestedBy);
+        }
     }
 
-    record SyncResult(int savedCount, LocalDateTime syncedUntil) {
+    /**
+     * @param syncCursor 다음 동기화에 넘겨줄 위치. 성공하면 그대로 저장한다. (cursor를 쓰지 않으면 null)
+     */
+    record SyncResult(int savedCount, LocalDateTime syncedUntil, String syncCursor) {
+
+        /** cursor를 쓰지 않는 어댑터용 (기존 코드 호환) */
+        public SyncResult(int savedCount, LocalDateTime syncedUntil) {
+            this(savedCount, syncedUntil, null);
+        }
     }
 }
