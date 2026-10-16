@@ -13,6 +13,8 @@ export interface ConnectionStatusDTO {
   provider: Provider;
   status: ConnectionStatus;
   externalAccountId: string | null;
+  /** 화면에 보여줄 계정 이름 (Slack 팀, Notion 워크스페이스, Google 이메일) */
+  accountLabel: string | null;
   connectedByUserId: number;
   connectedByName: string | null;
   mine: boolean;

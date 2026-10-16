@@ -120,7 +120,7 @@ export default function IntegrationsPage() {
                   <div className="row">
                     <span className={`badge ${status.className}`}>{status.text}</span>
                     <span className="small">
-                      {conn.externalAccountId ?? '-'} · {conn.mine ? '내가 연결' : `${conn.connectedByName}님이 연결`}
+                      {conn.accountLabel ?? conn.externalAccountId ?? '-'} · {conn.mine ? '내가 연결' : `${conn.connectedByName}님이 연결`}
                     </span>
                     <span className="spacer" />
                     {conn.status === 'REAUTH_REQUIRED' && conn.mine && (

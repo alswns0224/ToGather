@@ -70,7 +70,7 @@ public class NotionOAuthClient implements OAuthProviderClient {
                 "grant_type", "authorization_code",
                 "code", code,
                 "redirect_uri", redirectUri));
-        return new AuthResult(toToken(json, null), str(json, "workspace_id"));
+        return new AuthResult(toToken(json, null), str(json, "workspace_id"), str(json, "workspace_name"));
     }
 
     @Override
