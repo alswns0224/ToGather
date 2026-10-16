@@ -64,7 +64,7 @@ public class GoogleIntegrationClient implements OAuthProviderClient {
     public AuthResult exchangeCode(Provider provider, String code, String redirectUri) {
         OAuthToken token = googleOAuthClient.exchangeCode(code, redirectUri);
         GoogleUserInfo user = googleOAuthClient.getUserInfo(token.accessToken());
-        return new AuthResult(token, user.email());
+        return new AuthResult(token, user.email(), user.email());
     }
 
     @Override

@@ -37,6 +37,9 @@ public class ServiceConnection extends BaseTimeEntity {
 
     private String externalAccountId;
 
+    /** 화면 표시용 계정 이름 (V5). 없으면 externalAccountId를 보여준다. */
+    private String accountLabel;
+
     private String encryptedTokens;
 
     private String scope;
@@ -62,6 +65,12 @@ public class ServiceConnection extends BaseTimeEntity {
         this.encryptedTokens = encryptedTokens;
         this.scope = scope;
         this.expiresAt = expiresAt;
+    }
+
+    public void changeAccountLabel(String accountLabel) {
+        if (accountLabel != null && !accountLabel.isBlank()) {
+            this.accountLabel = accountLabel;
+        }
     }
 
     public void changeStatus(ConnectionStatus status) {

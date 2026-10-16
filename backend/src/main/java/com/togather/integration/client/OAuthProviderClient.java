@@ -32,8 +32,11 @@ public interface OAuthProviderClient {
     /** 연결 해제 시 토큰 무효화. 실패해도 예외를 던지지 않는다. */
     void revoke(String accessToken);
 
-    /** @param externalAccountId 재인증 시 같은 계정인지 비교하는 값 */
-    record AuthResult(OAuthToken token, String externalAccountId) {
+    /**
+     * @param externalAccountId 재인증 시 같은 계정인지 비교하는 값 (바뀌지 않는 ID)
+     * @param accountLabel      화면에 보여줄 계정 이름 (이메일, Slack 팀 이름, Notion 워크스페이스 이름)
+     */
+    record AuthResult(OAuthToken token, String externalAccountId, String accountLabel) {
     }
 
     record TargetOption(String id, String name) {

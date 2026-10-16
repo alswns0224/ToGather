@@ -127,6 +127,7 @@ public class IntegrationService {
                         provider, result.externalAccountId(), encrypted, token.scope(), expiresAt));
             }
         }
+        connection.changeAccountLabel(result.accountLabel());
         refreshTargetStatus(connection, client);
         return connection.getConnectionId();
     }
@@ -363,6 +364,7 @@ public class IntegrationService {
             status = ConnectionStatus.REAUTH_REQUIRED;
         }
         return new ConnectionStatusDTO(c.getConnectionId(), c.getProvider(), status, c.getExternalAccountId(),
+                c.getAccountLabel() != null ? c.getAccountLabel() : c.getExternalAccountId(),
                 c.getUserId(), connectedBy == null ? null : connectedBy.name(), c.getUserId().equals(currentUserId),
                 targets.stream().map(t -> new TargetResponse(t.getExternalTargetId(), t.getName())).toList());
     }

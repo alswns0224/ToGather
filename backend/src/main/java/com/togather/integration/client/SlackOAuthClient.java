@@ -80,7 +80,7 @@ public class SlackOAuthClient implements OAuthProviderClient {
         OAuthToken token = new OAuthToken(str(user, "access_token"), str(user, "refresh_token"),
                 longValue(user, "expires_in"), str(user, "scope"));
         String accountId = str(obj(json, "team"), "id") + ":" + str(user, "id");
-        return new AuthResult(token, accountId);
+        return new AuthResult(token, accountId, str(obj(json, "team"), "name"));
     }
 
     /** 토큰 교체(rotation)를 켠 앱에서만 쓰인다. */
