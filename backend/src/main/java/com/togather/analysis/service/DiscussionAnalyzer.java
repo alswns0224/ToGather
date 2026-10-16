@@ -28,7 +28,7 @@ public class DiscussionAnalyzer {
     /** 프롬프트가 너무 길어지지 않도록 최근 메시지만, 메시지당 길이도 자른다. */
     static final int MAX_MESSAGES = 150;
     static final int MAX_MESSAGE_LENGTH = 1000;
-    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd(E) HH:mm", java.util.Locale.KOREAN);
 
     private final GeminiClient geminiClient;
     private final PromptTemplates promptTemplates;
@@ -74,7 +74,8 @@ public class DiscussionAnalyzer {
                     .append(truncate(m.text())).append('\n');
         }
         String prompt = promptTemplates.render("discussion-analysis", Map.of(
-                "today", today.toString(),
+                "today", PromptTemplates.today(today),
+                "calendar", PromptTemplates.calendar(today, 21),
                 "channel", channelName == null ? "" : channelName,
                 "previousItems", previousItems.isEmpty() ? "(없음)"
                         : previousItems.stream().map(s -> "- " + s).collect(Collectors.joining("\n")),

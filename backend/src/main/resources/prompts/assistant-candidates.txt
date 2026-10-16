@@ -8,8 +8,11 @@
 - source에는 근거 메시지 번호(예: "s2")를 하나 적는다.
 - SCHEDULE의 datetime은 "YYYY-MM-DDTHH:mm" 형식이다. 날짜나 시간이 명확하지 않으면 null로 둔다. (시간 미정)
 - TASK의 dueDate는 "YYYY-MM-DD" 형식이다. 마감이 없으면 null.
-- "내일", "다음 주 월요일"처럼 상대적인 표현은 각 메시지의 작성 시각을 기준으로 계산한다. 오늘은 {{today}}(서울 시간)이다.
+- "내일", "다음 주 월요일"처럼 상대적인 표현은 각 메시지의 작성 시각을 기준으로 계산한다. 오늘은 {{today}}(서울 시간)이다. 요일은 아래 날짜표에서 확인한다.
 - 찾은 것이 없으면 candidates를 빈 배열로 둔다.
+
+## 날짜표 (날짜(요일))
+{{calendar}}
 
 ## 응답 형식 (JSON만 출력)
 {"candidates": [{"type": "SCHEDULE", "title": "...", "source": "s1", "datetime": null, "dueDate": null}]}

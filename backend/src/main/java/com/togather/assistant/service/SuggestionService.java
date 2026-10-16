@@ -65,7 +65,7 @@ public class SuggestionService {
     static final int MAX_MESSAGES = 60;
     private static final int MAX_MESSAGE_LENGTH = 800;
     private static final int EXCERPT_LENGTH = 120;
-    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd(E) HH:mm", java.util.Locale.KOREAN);
 
     private final SuggestionRepository suggestionRepository;
     private final PersonalTaskRepository personalTaskRepository;
@@ -116,7 +116,8 @@ public class SuggestionService {
         }
         String prompt = promptTemplates.render("assistant-candidates", Map.of(
                 "userName", userService.getUser(userId).name(),
-                "today", LocalDate.now(SlackApiClient.ZONE).toString(),
+                "today", PromptTemplates.today(LocalDate.now(SlackApiClient.ZONE)),
+                "calendar", PromptTemplates.calendar(LocalDate.now(SlackApiClient.ZONE).minusDays(14), 35),
                 "messages", lines.toString()));
         AiResult result = geminiClient.generateJson(prompt, AiResult.class);
         messages.stream().map(ContentRef::getCreatedAt).filter(Objects::nonNull).max(Comparator.naturalOrder())
