@@ -98,6 +98,14 @@ class PartAFlowIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
 
+        // 공통 예외 처리: 잘못된 파라미터·JSON은 400, 없는 주소는 404 (500으로 떨어지면 안 됨)
+        call(get(ws + "/tasks?size=0"), owner).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+        call(get(ws + "/tasks?page=abc"), owner).andExpect(status().isBadRequest());
+        call(json(post("/api/workspaces"), "{not json"), owner).andExpect(status().isBadRequest());
+        call(get("/api/does-not-exist"), owner).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+
         // 멤버가 아니면 403
         call(get(ws), outsider).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("WORKSPACE_ACCESS_DENIED"));
