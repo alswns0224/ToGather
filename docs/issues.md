@@ -88,38 +88,42 @@ GitHub Issues에 등록할 목록입니다. 한 이슈 = 한 브랜치 = 한 PR�
 
 ## B. 수집·Slack·Notion·AI (정철준)
 
-### B-01. ContentRefService와 공통 콘텐츠 DTO
+> B-0 ~ B-09는 `feature/b-*` 브랜치에 순서대로 쌓아 구현했습니다. (B-0: V4 마이그레이션 — 리뷰 2명 필요)
+> 실제 Slack·Notion·Gemini 호출 확인은 OAuth 앱 등록과 API 키 발급 후 진행합니다.
+> 후속 작업 → Task 생성과 담당 Task 표시는 `analysis.service.TaskGateway`에서 C의 `TaskService`(C-01)로 연결했습니다.
+
+### B-01. ContentRefService와 공통 콘텐츠 DTO ✅
 - 브랜치: `b-content-ref` · 1주차
 - [ ] `ContentRefService` (upsert, 조회, 수정, 원본 삭제 표시, 개인 콘텐츠 조회)
 - [ ] `ContentRefDTO`, `ContentDetailDTO`
 
-### B-02. GeminiClient
+### B-02. GeminiClient ✅
 - 브랜치: `b-gemini-client` · 1주차
 - [ ] `generate`, `generateJson`, `embed`, `embedAll`
 - [ ] 호출 실패 시 `AI_CALL_FAILED`, 재시도 정책
 
-### B-03. 증분 동기화 프레임워크
+### B-03. 증분 동기화 프레임워크 ✅
 - 브랜치: `b-sync-framework` · 2주차 · 선행: B-01
 - [ ] 스케줄러, 서비스별 어댑터 인터페이스, 마지막 동기화 시각 관리
 - [ ] 외부 API 실패 시 기존 데이터 유지, 실패 기록
 
-### B-04. Slack 콘텐츠 조회
+### B-04. Slack 콘텐츠 조회 ✅
 - 브랜치: `b-slack-read` · UC-04-01 · SD-04-01 · UI-04 · 3주차 · 선행: A-04, B-03
 - [ ] 채널 메시지 조회(시간순), 스레드 답글 조회, Slack 증분 동기화
 - [ ] `getContents`, `getContentsByUser`, `getContentDetail` 제공 (C 사용)
 - [ ] 채널 목록 + 메시지 화면, 스레드 화면
 
-### B-05. Slack 메시지 작성·수정·삭제
+### B-05. Slack 메시지 작성·수정·삭제 ✅
 - 브랜치: `b-slack-write` · UC-04-02~04 · SD-04-02~04 · UI-04 · 4주차 · 선행: B-04
 - [ ] 채널·스레드에 작성, 수정, 삭제
 - [ ] 전송 실패 시 입력 내용 유지와 재시도
 
-### B-06. Notion 문서
+### B-06. Notion 문서 ✅
 - 브랜치: `b-notion` · UC-05-01~04 · SD-05-01~04 · UI-05 · 5주차 · 선행: A-04, B-03
 - [ ] 페이지 목록·조회, 생성, 수정, 삭제, 증분 동기화
 - [ ] 문서 목록 화면(결정사항 문서 구분), 편집 화면
 
-### B-07. Slack 논의 분석
+### B-07. Slack 논의 분석 ✅
 - 브랜치: `b-discussion-analysis` · UC-08-01~02 · SD-08-01~02 · UI-08 · 6주차 · 선행: B-02, B-04
 - [ ] 스레드 분석(결정사항, 근거 발언, 후속 작업, 미결 사항, 회의 제안) — 30초 이내
 - [ ] 자동 수집 분석(`AnalysisScheduler`), 분석 범위(`analyzedUntil`)
@@ -127,13 +131,13 @@ GitHub Issues에 등록할 목록입니다. 한 이슈 = 한 브랜치 = 한 PR�
 - [ ] `getItemSummary` 제공 (C 사용)
 - [ ] 분석 결과 화면(처리 단계 표시, 빈 양식)
 
-### B-08. 분석 결과 실행 연계
+### B-08. 분석 결과 실행 연계 ✅
 - 브랜치: `b-analysis-output` · UC-08-03~05 · SD-08-03~05 · UI-08 · 7주차 · 선행: B-06, B-07, A-06, C-01
 - [ ] 확정 결과로 Notion 문서 생성(미리보기 포함)
 - [ ] 후속 작업 → Task 생성, 회의 제안 → Calendar 등록
 - [ ] 단계별 성공·실패 기록과 재시도, 처리 결과 화면
 
-### B-09. AI 업무 보조
+### B-09. AI 업무 보조 ✅
 - 브랜치: `b-ai-assistant` · UC-13-01~02 · SD-13-01~02 · UI-13 · 8주차 · 선행: B-02, C-05, A-06
 - [ ] Gmail·Slack 메시지에서 일정·할 일 후보 추출, 중복 후보 제외
 - [ ] 후보 수정, 승인(일정 → Calendar, 할 일 → 개인 할 일), 무시

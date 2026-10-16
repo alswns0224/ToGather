@@ -108,24 +108,28 @@ record MeetingSummary(Long meetingId, String title, MeetingStatus status, LocalD
 
 ## 2. B가 제공 (정철준)
 
-> A의 Calendar 구현에 필요해서 `ContentRefService`(upsert, getContentRef, getContentRefs, findByOrigin, getOwner, updateContent, markOriginDeleted)와
-> `ContentRefDTO`, `ContentDetailDTO`를 먼저 만들어 두었습니다. B가 이어서 확장합니다. (`getPersonalContents`는 아직 없음)
+> B-01에서 `getPersonalContents`, `markSyncFailed`를 추가하고, DTO의 `lastModifiedAt`·`messageCount`·`syncFailed`를 실제 값으로 채우도록 바꿨습니다.
 
 ### ContentRef 저장 · 조회 [결정 1]
 
 ```java
 // ContentRefService
-ContentRef upsert(ContentRefUpsert command);     // workspaceId + provider + originId 기준
+ContentRefDTO upsert(ContentRefUpsert command);  // workspaceId + provider + originId 기준. 있으면 최신 원본으로 갱신
+// 기존 11개 인자 생성자도 그대로 쓸 수 있다. (수정 시각·작성자 없이 저장)
 record ContentRefUpsert(Long workspaceId, Long ownerUserId, Provider provider, ContentType contentType,
                         String originId, String channelId, Long parentRefId,
-                        String title, String content, String deepLink, LocalDateTime createdAt) {}
+                        String title, String content, String deepLink, LocalDateTime createdAt,
+                        LocalDateTime lastModifiedAt, String authorExternalId, String authorName) {}
 
 ContentRefDTO getContentRef(Long contentRefId);
-List<ContentRefDTO> getContentRefs(List<Long> contentRefIds);
+List<ContentRefDTO> getContentRefs(Collection<Long> contentRefIds);
+Optional<ContentRefDTO> findByOrigin(Long workspaceId, Provider provider, String originId);
+ContentOwner getOwner(Long contentRefId);
 void updateContent(Long contentRefId, String title, String content);
 void markOriginDeleted(Long contentRefId);
+void markSyncFailed(Long workspaceId, Provider provider, String originId);   // 동기화 중 이 콘텐츠 저장 실패 표시
 
-// 개인 콘텐츠(Gmail, Calendar)는 ownerUserId 조건이 들어간 메서드만 사용 (README 10번)
+// 개인 콘텐츠(Gmail, Calendar)는 ownerUserId 조건이 들어간 메서드만 사용 (README 10번). since가 null이면 전체
 List<ContentRefDTO> getPersonalContents(Long ownerUserId, Provider provider, LocalDateTime since);
 ```
 
@@ -149,18 +153,22 @@ record ContentDetailDTO(Long contentRefId, Provider provider, String title, Stri
 
 ```java
 // SlackContentService
-List<ContentRefDTO> getContents(Long workspaceId);
-List<ContentRefDTO> getContentsByUser(Long userId);    // AI 업무 보조 후보 추출용
-ContentDetailDTO getContentDetail(Long contentRefId);
+List<ContentRefDTO> getContents(Long workspaceId);      // 스레드 root 최근 200개
+// [변경] workspaceId 추가 — Slack 연결이 워크스페이스 단위라서. B 내부(AI 업무 보조)에서만 사용
+List<ContentRefDTO> getContentsByUser(Long workspaceId, Long userId);  // 본인이 쓰거나 멘션된 최근 14일 메시지
+ContentDetailDTO getContentDetail(Long contentRefId);   // 스레드면 participants에 참여자 이름
 
 // NotionContentService
-List<ContentRefDTO> getContents(Long workspaceId);
-ContentDetailDTO getContentDetail(Long contentRefId);
+List<ContentRefDTO> getContents(Long workspaceId);        // 삭제되지 않은 페이지, 최근 수정순
+ContentDetailDTO getContentDetail(Long contentRefId);     // body는 "# 제목, - 목록" 형식의 텍스트
 ```
 
 사용처: C(Task 관련 자료 후보 SD-09-05, 통합 검색 결과 상세 SD-12-01)
 
 ### Gemini (GeminiClient) [결정 7]
+
+위치: `common.ai.GeminiClient` (여러 파트가 같이 쓰므로 common). 실패하면 `AI_CALL_FAILED`(502), 429·5xx·타임아웃은 2번까지 다시 시도.
+프롬프트는 `resources/prompts/{이름}.txt`에 두고 `PromptTemplates.render(이름, 변수)`로 읽는다.
 
 ```java
 String generate(String prompt);                 // 텍스트 생성 (논의 분석, 후보 추출)
@@ -171,11 +179,28 @@ List<float[]> embedAll(List<String> texts);
 
 사용처: C(임베딩, 통합 검색)
 
+### 증분 동기화 (SyncAdapter) — C의 Drive·Gmail도 사용
+
+```java
+// sync.service.SyncAdapter를 구현해 @Component로 등록하면 스케줄러(5분 간격)와 즉시 동기화가 자동으로 사용한다.
+Provider provider();
+List<SyncTarget> findTargets(Long workspaceId, Long requestedBy);   // 팀: SyncTarget.team(폴더 ID), 개인: SyncTarget.personal(userId)
+SyncResult sync(SyncContext context);   // context.since()가 null이면 처음 동기화. 실패하면 예외를 그대로 던진다
+record SyncResult(int savedCount, LocalDateTime syncedUntil) {}
+
+// SyncService
+void syncIfStale(Long workspaceId, Provider provider, Long requestedBy, Duration maxAge);  // 화면 진입 시
+List<SyncStatusResponse> syncNow(Long workspaceId, Provider provider, Long requestedBy);  // POST /api/workspaces/{id}/sync/{provider}
+```
+
+- 실패하면 저장된 콘텐츠는 그대로 두고 `sync_state`에 실패만 기록한다. 다음 동기화에서 같은 범위를 다시 가져온다.
+- 연속 실패한 대상은 자동 동기화를 5분 → 10분 → … 최대 2시간까지 늦춘다.
+
 ### 결정사항 [결정 8]
 
 ```java
-// AnalysisService
-AnalysisItemDTO getItemSummary(Long itemId);
+// AnalysisService (analysis.dto.AnalysisItemDTO)
+AnalysisItemDTO getItemSummary(Long itemId);   // 없으면 ANALYSIS_ITEM_NOT_FOUND
 record AnalysisItemDTO(Long itemId, ItemType itemType, String content, List<Long> evidenceContentRefIds) {}
 ```
 
@@ -208,6 +233,8 @@ record TaskSummary(Long taskId, Long workspaceId, String title, Long assigneeId,
 
 사용처: A(회의 안건 SD-10-04·05), B(후속 Task 생성 SD-08-04, AI 업무 보조 SD-13-02)
 
+> B는 `analysis.service.TaskGateway`에서만 `createTask`, `getMyTasks`를 호출합니다. (C-01 연결 완료)
+
 ### 협업 맥락 (TaskContextService)
 
 ```java
@@ -224,6 +251,9 @@ List<ContentRefDTO> getContentsByUser(Long userId);
 ```
 
 사용처: B(AI 업무 보조 일정·할 일 후보 추출 SD-13-01·02)
+
+> B는 C가 `ContentRefService.upsert`로 저장한 메일(provider=GMAIL, ownerUserId=본인)을 content_ref에서 직접 읽습니다.
+> 그래서 C는 메일을 저장할 때 `ownerUserId`, `title`(제목), `content`(본문), `authorName`(보낸 사람), `createdAt`을 채워 주세요.
 
 ---
 

@@ -46,6 +46,23 @@ public enum ErrorCode {
     // ===== B. 수집·Slack·Notion·AI =====
     ANALYSIS_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 결과를 찾을 수 없습니다."),
     AI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "AI 분석 호출에 실패했습니다."),
+    SLACK_ACTION_FORBIDDEN(HttpStatus.FORBIDDEN, "Slack에서 허용되지 않은 작업입니다. 본인 메시지인지, 채널에 참여 중인지 확인해 주세요."),
+    SLACK_OWN_CONNECTION_REQUIRED(HttpStatus.FORBIDDEN, "메시지를 작성하려면 본인 Slack 계정을 먼저 연동해 주세요."),
+    SLACK_CHANNEL_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동 대상으로 선택한 채널이 아닙니다."),
+    NOTION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "Notion에서 이 문서에 접근할 수 없습니다. 연동 시 공유한 데이터베이스인지 확인해 주세요."),
+    ANALYSIS_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 항목을 찾을 수 없습니다."),
+    ANALYSIS_IN_PROGRESS(HttpStatus.CONFLICT, "이 스레드는 지금 분석 중입니다. 잠시 후 다시 확인해 주세요."),
+    ANALYSIS_ALREADY_CONFIRMED(HttpStatus.BAD_REQUEST, "이미 확정된 분석은 수정할 수 없습니다."),
+    ANALYSIS_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "분석을 먼저 확정해 주세요."),
+    ANALYSIS_TARGET_INVALID(HttpStatus.BAD_REQUEST, "Slack 스레드의 첫 메시지만 분석할 수 있습니다."),
+    ANALYSIS_OUTPUT_ALREADY_DONE(HttpStatus.CONFLICT, "이미 생성했습니다. 중복으로 만들지 않습니다."),
+    ANALYSIS_ITEM_TYPE_MISMATCH(HttpStatus.BAD_REQUEST, "이 항목 유형으로는 할 수 없는 작업입니다."),
+    SUGGESTION_TIME_REQUIRED(HttpStatus.BAD_REQUEST, "일시가 정해지지 않은 일정입니다. 일시를 입력한 뒤 승인해 주세요."),
+    SUGGESTION_ALREADY_HANDLED(HttpStatus.CONFLICT, "이미 승인하거나 무시한 후보입니다."),
+    PERSONAL_TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "할 일을 찾을 수 없습니다."),
+    EVIDENCE_NOT_IN_THREAD(HttpStatus.BAD_REQUEST, "같은 스레드의 메시지만 근거로 연결할 수 있습니다."),
+    NOTION_BODY_NOT_EDITABLE(HttpStatus.CONFLICT, "이미지·표·하위 블록이 있는 문서는 본문이 지워질 수 있어 Notion에서 직접 수정해 주세요."),
+    NOTION_DATABASE_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동된 Notion 데이터베이스가 없습니다. 연동 관리에서 데이터베이스를 선택해 주세요."),
 
     // ===== C. Drive·Gmail·Task·검색 =====
     TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Task를 찾을 수 없습니다."),

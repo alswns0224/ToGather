@@ -59,10 +59,22 @@ public class ContentRef {
 
     private LocalDateTime createdAt;
 
+    /** 외부 원본의 최종 수정 시각. 모르면 createdAt과 같다. */
+    private LocalDateTime lastModifiedAt;
+
+    /** 마지막 동기화에서 이 콘텐츠의 저장·갱신에 실패했는지 */
+    private boolean syncFailed;
+
+    /** 작성자의 외부 서비스 ID (Slack 사용자 ID 등) */
+    private String authorExternalId;
+
+    private String authorName;
+
     @Builder
     private ContentRef(Long workspaceId, Long ownerUserId, Provider provider, ContentType contentType,
                        String originId, String channelId, Long parentRefId, String content,
-                       String title, String deepLink, LocalDateTime createdAt) {
+                       String title, String deepLink, LocalDateTime createdAt, LocalDateTime lastModifiedAt,
+                       String authorExternalId, String authorName) {
         this.workspaceId = workspaceId;
         this.ownerUserId = ownerUserId;
         this.provider = provider;
@@ -74,11 +86,45 @@ public class ContentRef {
         this.title = title;
         this.deepLink = deepLink;
         this.createdAt = createdAt;
+        this.lastModifiedAt = lastModifiedAt != null ? lastModifiedAt : createdAt;
+        this.authorExternalId = authorExternalId;
+        this.authorName = authorName;
     }
 
     public void updateContent(String title, String content) {
         this.title = title;
         this.content = content;
+    }
+
+    /** 동기화로 받은 최신 원본을 반영한다. null인 값은 바꾸지 않는다. */
+    public void applySync(String title, String content, String deepLink, LocalDateTime lastModifiedAt,
+                          String authorExternalId, String authorName) {
+        this.title = title;
+        this.content = content;
+        if (deepLink != null) {
+            this.deepLink = deepLink;
+        }
+        if (lastModifiedAt != null) {
+            this.lastModifiedAt = lastModifiedAt;
+        }
+        if (authorExternalId != null) {
+            this.authorExternalId = authorExternalId;
+        }
+        if (authorName != null) {
+            this.authorName = authorName;
+        }
+        this.syncFailed = false;
+    }
+
+    /** 채널 메시지로 먼저 저장된 답글(Slack "채널에도 보내기")을 스레드에 붙인다. */
+    public void attachToParent(Long parentRefId) {
+        if (this.parentRefId == null && parentRefId != null && !parentRefId.equals(this.contentRefId)) {
+            this.parentRefId = parentRefId;
+        }
+    }
+
+    public void markSyncFailed() {
+        this.syncFailed = true;
     }
 
     /** 원본이 외부에서 삭제되면 마지막 본문을 사본으로 보관한다. */
