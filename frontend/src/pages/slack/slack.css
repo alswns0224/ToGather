@@ -1,59 +1,79 @@
-/* UI-04 대화(Slack) 화면 (담당: B). Figma Make 프로토타입의 chat-layout을 옮김 */
+/* UI-04 Slack 화면 전용 (담당: B) */
 
-.chat-layout { height: calc(100vh - 62px); display: grid; grid-template-columns: 205px minmax(430px, 1fr) 350px; background: #fff; overflow: hidden; }
-.channel-panel { border-right: 1px solid #e5e8ed; background: #fafbfc; padding: 17px 10px; overflow-y: auto; }
-.channel-heading { min-height: 48px; padding: 0 8px 13px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #e7e9ed; }
-.channel-heading > div { display: flex; flex-direction: column; gap: 3px; }.channel-heading strong { color: #273141; font-size: 15px; }.channel-heading span { color: #9199a5; font-size: 12px; }
-.slack-status { padding: 3px 6px; border-radius: 8px; color: #07875f !important; background: #e5f7ef; font-size: 11px !important; font-weight: 650; }
-.channel-section-title { display: flex; align-items: center; justify-content: space-between; padding: 17px 8px 6px; color: #8e97a4; font-size: 12px; font-weight: 650; }
-.channel-section-title button { width: 22px; height: 22px; border: 0; border-radius: 5px; display: grid; place-items: center; color: #8a93a1; background: transparent; cursor: pointer; }
-.channel-section-title button:hover { background: #edf0f4; }
-.channel-list, .dm-list { display: flex; flex-direction: column; gap: 2px; }
-.channel-list button, .dm-list button { width: 100%; height: 34px; padding: 0 9px; border: 0; border-radius: 6px; display: flex; align-items: center; gap: 8px; color: #667181; background: transparent; font-size: 13px; cursor: pointer; }
-.channel-list button > span { color: #a0a7b2; font-size: 16px; }.channel-list button i { margin-left: auto; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; display: grid; place-items: center; color: #fff; background: #7c3aed; font-size: 11px; font-style: normal; }
-.channel-list button.active { color: #2563eb; background: #eaf1ff; font-weight: 650; }.channel-list button.active > span { color: #2563eb; }
-.dm-list button .avatar-chip { width: 23px; height: 23px; flex-basis: 23px; font-size: 11px; }.dm-list button i { width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: #10b981; }
-.message-panel { min-width: 0; display: flex; flex-direction: column; background: #fff; }
-.message-header, .thread-header { min-height: 63px; padding: 0 17px; border-bottom: 1px solid #e5e8ed; display: flex; align-items: center; justify-content: space-between; }
-.message-header > div, .thread-header > div { display: flex; flex-direction: column; gap: 4px; }.message-header strong, .thread-header strong { color: #293344; font-size: 15px; }.message-header span, .thread-header span { color: #949ca8; font-size: 12px; }
-.message-list { flex: 1; overflow-y: auto; padding: 5px 0 12px; }
-.day-divider { height: 38px; display: flex; align-items: center; justify-content: center; position: relative; }.day-divider::before { content: ""; position: absolute; left: 18px; right: 18px; height: 1px; background: #edf0f3; }.day-divider span { z-index: 1; padding: 0 9px; color: #969eaa; background: #fff; font-size: 11px; }
-.chat-message { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 10px 17px; cursor: pointer; }
-.chat-message:hover, .chat-message.selected { background: #f8faff; }.chat-message > .avatar-chip { margin-top: 1px; }
-.message-content { flex: 1; min-width: 0; }.message-author { display: flex; align-items: baseline; gap: 6px; }.message-author strong { color: #313c4c; font-size: 13px; }.message-author span { color: #a0a7b2; font-size: 11px; }
-.message-content > p, .thread-original p, .thread-reply p { margin: 4px 0 0; color: #4f5b6c; font-size: 13px; line-height: 1.6; }
-.message-menu-wrap { position: relative; margin-left: auto; }.message-more { width: 29px; height: 24px; border: 1px solid transparent; border-radius: 5px; color: #929aa7; background: transparent; letter-spacing: 1px; cursor: pointer; opacity: 0; }.chat-message:hover .message-more, .message-menu-wrap:focus-within .message-more { opacity: 1; }
-.message-menu { position: absolute; z-index: 5; top: 27px; right: 0; width: 100px; padding: 4px; border: 1px solid #e0e4e9; border-radius: 7px; background: #fff; box-shadow: 0 7px 20px rgba(32,43,60,.12); }.message-menu button { width: 100%; height: 30px; padding: 0 7px; border: 0; border-radius: 5px; display: flex; align-items: center; gap: 7px; color: #5c6675; background: transparent; font-size: 12px; cursor: pointer; }.message-menu button:hover { background: #f4f6f8; }.message-menu button.danger { color: #dc2626; }
-.message-attachment, .thread-file { margin-top: 8px; min-width: 190px; padding: 7px; border: 1px solid #e5e8ed; border-radius: 7px; display: inline-flex; align-items: center; gap: 8px; color: #596576; background: #fff; cursor: pointer; }.message-attachment > span, .thread-file > span { width: 29px; height: 29px; border-radius: 5px; display: grid; place-items: center; color: #dc4f4f; background: #fff0f0; }.message-attachment > div, .thread-file > div { display: flex; flex-direction: column; gap: 2px; }.message-attachment strong, .thread-file strong { font-size: 12px; }.message-attachment small, .thread-file small { color: #9aa2ae; font-size: 11px; }
-.reply-count { margin-top: 7px; padding: 0; border: 0; display: flex; align-items: center; gap: 5px; color: #2563eb; background: transparent; font-size: 12px; font-weight: 600; cursor: pointer; }.mini-avatars { display: flex; margin-right: 3px; }.mini-avatars .avatar-chip { width: 20px; height: 20px; flex-basis: 20px; margin-left: -5px; font-size: 11px; }.mini-avatars .avatar-chip:first-child { margin-left: 0; }
-.message-edit textarea { width: 100%; min-height: 64px; margin-top: 6px; padding: 8px; border: 1px solid #8caef3; border-radius: 6px; outline: 0; color: #465264; font-size: 13px; resize: vertical; }.message-edit > div { display: flex; justify-content: flex-end; gap: 5px; margin-top: 6px; }.message-edit .ui-button { min-height: 28px; padding: 0 9px; font-size: 12px; }
-.message-composer { margin: 0 16px 14px; border: 1px solid #d8dde4; border-radius: 8px; overflow: hidden; background: #fff; }.message-composer > textarea { width: 100%; min-height: 54px; padding: 11px; border: 0; outline: 0; resize: none; color: #455163; font-size: 13px; }.composer-actions { min-height: 38px; padding: 5px 7px; border-top: 1px solid #eff1f4; display: flex; align-items: center; gap: 8px; }.composer-actions > button:first-child { width: 27px; height: 27px; border: 0; display: grid; place-items: center; color: #798391; background: transparent; cursor: pointer; }.composer-actions > span { color: #a0a7b2; font-size: 11px; }.composer-actions .ui-button { min-height: 28px; margin-left: auto; padding: 0 11px; font-size: 12px; }
-.thread-panel { min-width: 0; border-left: 1px solid #e5e8ed; display: flex; flex-direction: column; background: #fafbfc; }
-.thread-scroll { flex: 1; overflow-y: auto; padding: 18px 17px; }
-.thread-original, .thread-reply { display: flex; align-items: flex-start; gap: 9px; }.thread-original > div:last-child, .thread-reply > div:last-child { flex: 1; min-width: 0; }
-.thread-divider { height: 45px; display: flex; align-items: center; position: relative; }.thread-divider::before { content: ""; position: absolute; left: 0; right: 0; height: 1px; background: #e7e9ed; }.thread-divider span { z-index: 1; padding-right: 8px; color: #939ba7; background: #fafbfc; font-size: 11px; }
-.thread-reply { margin-bottom: 17px; }
-.thread-footer { padding: 11px 14px 14px; border-top: 1px solid #e4e7eb; background: #fff; }.thread-input { display: flex; align-items: flex-end; gap: 6px; padding: 7px; border: 1px solid #dce1e7; border-radius: 7px; }.thread-input textarea { flex: 1; min-height: 35px; max-height: 80px; border: 0; outline: 0; resize: none; color: #4d596a; font-size: 12px; }.thread-input .ui-button { min-height: 28px; padding: 0 9px; font-size: 12px; }
-.slack-link { width: 100%; margin-top: 8px; padding: 5px 0; border: 0; display: flex; align-items: center; justify-content: center; gap: 5px; color: #2563eb; background: transparent; font-size: 12px; font-weight: 600; cursor: pointer; }
-.thread-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #98a1ad; text-align: center; }.thread-empty > svg { margin-bottom: 12px; color: #aab2bd; }.thread-empty strong { color: #566172; font-size: 13px; }.thread-empty span { max-width: 210px; margin-top: 5px; font-size: 12px; line-height: 1.5; }
-@media (max-width: 1280px) { .chat-layout { grid-template-columns: 180px minmax(400px, 1fr) 310px; } }
+.slack-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
 
-/* ===== 프로토타입에 없던 보완 ===== */
-.chat-layout { height: calc(100vh - 62px); }
-.channel-list button { justify-content: flex-start; }
-.channel-list button .status-tag { margin-left: auto; }
-.message-list .load-older { display: flex; justify-content: center; padding: 8px 0; }
-.chat-message .message-author .edited { color: #a0a7b2; }
-.chat-message.deleted p { color: #a0a7b2; font-style: italic; }
-.message-attachment, .thread-file { text-decoration: none; }
-.message-content > p, .thread-original p, .thread-reply p { white-space: pre-wrap; word-break: break-word; }
-.message-menu a { width: 100%; height: 30px; padding: 0 7px; border-radius: 5px; display: flex; align-items: center; gap: 7px; color: #5c6675; font-size: 12px; text-decoration: none; }
-.message-menu a:hover { background: #f4f6f8; }
-.composer-error { margin: 0 16px 8px; }
-.thread-header .ui-button { min-height: 30px; padding: 0 10px; }
-.thread-header .actions { display: flex; flex-direction: row !important; align-items: center; gap: 6px !important; }
-.sync-badge { display: flex; align-items: center; gap: 6px; }
-.thread-scroll { overflow-x: hidden; }
-.thread-original > div:nth-child(2), .thread-reply > div:nth-child(2) { flex: 1; min-width: 0; }
-.thread-original .message-menu-wrap, .thread-reply .message-menu-wrap { margin-left: 0; }
-.thread-original:hover .message-more, .thread-reply:hover .message-more { opacity: 1; }
+.slack-layout.with-thread {
+  grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 380px);
+}
+
+.slack-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.slack-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.slack-channel.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.slack-message-list {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.slack-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slack-message.selected {
+  background: var(--primary-soft);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.slack-text {
+  margin: 0;
+  word-break: break-word;
+}
+
+.slack-replies {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+}
+
+.slack-composer textarea.input {
+  min-height: 60px;
+}
+
+@media (max-width: 900px) {
+  .slack-layout,
+  .slack-layout.with-thread {
+    grid-template-columns: 1fr;
+  }
+}

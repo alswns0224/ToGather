@@ -1,37 +1,39 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../../../api/client';
-import Icon from '../../../components/Icon';
 
 /**
- * 메시지 입력창 (UI-04). 전송에 실패하면 입력 내용을 그대로 두고 다시 보낼 수 있게 한다.
+ * 메시지 입력창. 전송에 실패하면 입력 내용을 그대로 두고 다시 보낼 수 있게 한다. (UI-04)
  * Enter: 전송, Shift+Enter: 줄바꿈
- *
- * @param variant message: 채널 하단 입력창, thread: 스레드 답글 입력창
  */
 export default function Composer({
-  variant,
   placeholder,
+  initialText = '',
+  submitLabel = '전송',
   onSubmit,
+  onCancel,
 }: {
-  variant: 'message' | 'thread';
   placeholder: string;
+  initialText?: string;
+  submitLabel?: string;
   onSubmit: (text: string) => Promise<void>;
+  onCancel?: () => void;
 }) {
   const { workspaceId = '' } = useParams();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<ApiError | Error | null>(null);
 
-  const send = async () => {
+  const send = async (e?: FormEvent) => {
+    e?.preventDefault();
     if (!text.trim() || sending) return;
     setSending(true);
     setError(null);
     try {
       await onSubmit(text.trim());
       setText('');
-    } catch (e) {
-      setError(e as Error); // 입력 내용은 지우지 않는다.
+    } catch (err) {
+      setError(err as Error); // 입력 내용은 지우지 않는다.
     } finally {
       setSending(false);
     }
@@ -45,65 +47,48 @@ export default function Composer({
   };
 
   const needsOwnConnection = error instanceof ApiError && error.code === 'SLACK_OWN_CONNECTION_REQUIRED';
-  const errorBox = error && (
-    <div className={`notice error ${variant === 'message' ? 'composer-error' : ''}`} role="alert">
-      <Icon name="alert" size={16} />
-      {needsOwnConnection ? (
-        <span>
-          {error.message} <Link to={`/workspaces/${workspaceId}/integrations`}>서비스 연동으로 이동</Link>
-        </span>
-      ) : (
-        <>
-          <span>전송하지 못했어요. {error.message}</span>
-          <button type="button" className="ui-button secondary" onClick={() => void send()} disabled={sending}>
-            다시 시도
-          </button>
-        </>
-      )}
-    </div>
-  );
-
-  if (variant === 'thread') {
-    return (
-      <div className="thread-footer">
-        {errorBox}
-        <div className="thread-input">
-          <textarea
-            value={text}
-            maxLength={4000}
-            placeholder={placeholder}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={onKeyDown}
-            disabled={sending}
-          />
-          <button type="button" className="ui-button primary" onClick={() => void send()} disabled={sending || !text.trim()}>
-            {sending ? '보내는 중' : '답글'}
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <>
-      {errorBox}
-      <div className="message-composer">
-        <textarea
-          value={text}
-          maxLength={4000}
-          placeholder={placeholder}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={sending}
-        />
-        <div className="composer-actions">
-          <span>Enter로 전송 · Shift+Enter로 줄바꿈</span>
-          <button type="button" className="ui-button primary" onClick={() => void send()} disabled={sending || !text.trim()}>
-            <Icon name="send" size={14} />
-            {sending ? '보내는 중' : '보내기'}
-          </button>
+    <form className="slack-composer stack" onSubmit={send}>
+      {error && (
+        <div className="alert alert-error">
+          <span>
+            {needsOwnConnection ? (
+              <>
+                {error.message} <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리로 이동</Link>
+              </>
+            ) : (
+              `전송하지 못했습니다. ${error.message}`
+            )}
+          </span>
+          {!needsOwnConnection && (
+            <button type="button" className="btn btn-small" onClick={() => void send()} disabled={sending}>
+              다시 시도
+            </button>
+          )}
         </div>
+      )}
+      <textarea
+        className="input"
+        placeholder={placeholder}
+        value={text}
+        maxLength={4000}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={onKeyDown}
+        disabled={sending}
+      />
+      <div className="row">
+        <span className="small muted">Enter 전송 · Shift+Enter 줄바꿈</span>
+        <span className="spacer" />
+        {onCancel && (
+          <button type="button" className="btn btn-small" onClick={onCancel} disabled={sending}>
+            취소
+          </button>
+        )}
+        <button className="btn btn-primary btn-small" disabled={sending || !text.trim()}>
+          {sending ? '보내는 중...' : submitLabel}
+        </button>
       </div>
-    </>
+    </form>
   );
 }
