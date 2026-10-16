@@ -154,9 +154,12 @@ public class SuggestionService {
                 .filter(t -> workspaceId.equals(t.workspaceId()))
                 .map(t -> new MyTodoListDTO.AssignedTask(t.taskId(), t.workspaceId(), t.title(), t.dueDate()))
                 .toList();
-        List<PersonalTaskResponse> personal = personalTaskRepository
+        List<PersonalTaskResponse> personal = new ArrayList<>(personalTaskRepository
                 .findAllByOwnerUserIdAndStatusOrderByDueDateAscPersonalTaskIdAsc(userId, PersonalTaskStatus.TODO)
-                .stream().map(SuggestionService::toResponse).toList();
+                .stream().map(SuggestionService::toResponse).toList());
+        personal.addAll(personalTaskRepository
+                .findTop20ByOwnerUserIdAndStatusOrderByUpdatedAtDesc(userId, PersonalTaskStatus.DONE)
+                .stream().map(SuggestionService::toResponse).toList());
         return new MyTodoListDTO(assigned, personal, getSuggestions(workspaceId, userId, SuggestionType.TASK));
     }
 
@@ -208,9 +211,36 @@ public class SuggestionService {
 
     @Transactional
     public void completePersonalTask(Long userId, Long personalTaskId) {
-        personalTaskRepository.findByPersonalTaskIdAndOwnerUserId(personalTaskId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PERSONAL_TASK_NOT_FOUND))
-                .complete();
+        getPersonalTask(userId, personalTaskId).complete();
+    }
+
+    // ===================== 개인 할 일 직접 관리 (UI-13 내 할 일) =====================
+
+    @Transactional
+    public PersonalTaskResponse createPersonalTask(Long userId, String title, LocalDate dueDate) {
+        return toResponse(personalTaskRepository.save(new PersonalTask(userId, title.strip(), dueDate, null)));
+    }
+
+    @Transactional
+    public PersonalTaskResponse updatePersonalTask(Long userId, Long personalTaskId, String title, LocalDate dueDate) {
+        PersonalTask task = getPersonalTask(userId, personalTaskId);
+        task.update(title.strip(), dueDate);
+        return toResponse(task);
+    }
+
+    @Transactional
+    public void reopenPersonalTask(Long userId, Long personalTaskId) {
+        getPersonalTask(userId, personalTaskId).reopen();
+    }
+
+    @Transactional
+    public void deletePersonalTask(Long userId, Long personalTaskId) {
+        personalTaskRepository.delete(getPersonalTask(userId, personalTaskId));
+    }
+
+    private PersonalTask getPersonalTask(Long userId, Long personalTaskId) {
+        return personalTaskRepository.findByPersonalTaskIdAndOwnerUserId(personalTaskId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PERSONAL_TASK_NOT_FOUND));
     }
 
     // ===================== 내부 =====================

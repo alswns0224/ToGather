@@ -12,5 +12,8 @@ public interface PersonalTaskRepository extends JpaRepository<PersonalTask, Long
     List<PersonalTask> findAllByOwnerUserIdAndStatusOrderByDueDateAscPersonalTaskIdAsc(Long ownerUserId,
                                                                                       PersonalTaskStatus status);
 
+    /** 최근 완료한 할 일 (화면에 취소선으로 잠깐 보여준다) */
+    List<PersonalTask> findTop20ByOwnerUserIdAndStatusOrderByUpdatedAtDesc(Long ownerUserId, PersonalTaskStatus status);
+
     Optional<PersonalTask> findByPersonalTaskIdAndOwnerUserId(Long personalTaskId, Long ownerUserId);
 }

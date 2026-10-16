@@ -65,3 +65,15 @@ export const getMyTodoList = (workspaceId: string) => http.get<MyTodoListDTO>(ba
 
 export const completePersonalTask = (workspaceId: string, id: number) =>
   http.post<void>(base(workspaceId, `/personal-tasks/${id}/complete`));
+
+export const createPersonalTask = (workspaceId: string, body: { title: string; dueDate: string | null }) =>
+  http.post<PersonalTaskResponse>(base(workspaceId, '/personal-tasks'), body);
+
+export const updatePersonalTask = (workspaceId: string, id: number, body: { title: string; dueDate: string | null }) =>
+  http.patch<PersonalTaskResponse>(base(workspaceId, `/personal-tasks/${id}`), body);
+
+export const reopenPersonalTask = (workspaceId: string, id: number) =>
+  http.post<void>(base(workspaceId, `/personal-tasks/${id}/reopen`));
+
+export const deletePersonalTask = (workspaceId: string, id: number) =>
+  http.delete<void>(base(workspaceId, `/personal-tasks/${id}`));

@@ -2,6 +2,8 @@ package com.togather.assistant.controller;
 
 import com.togather.assistant.dto.DetectResultResponse;
 import com.togather.assistant.dto.MyTodoListDTO;
+import com.togather.assistant.dto.PersonalTaskRequest;
+import com.togather.assistant.dto.PersonalTaskResponse;
 import com.togather.assistant.dto.SuggestionDTO;
 import com.togather.assistant.dto.SuggestionUpdateRequest;
 import com.togather.assistant.service.SuggestionService;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -90,6 +93,39 @@ public class SuggestionController {
                                   @PathVariable Long suggestionId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         suggestionService.dismissSuggestion(workspaceId, userId, suggestionId);
+    }
+
+    @PostMapping("/personal-tasks")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<PersonalTaskResponse> createPersonalTask(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                                @Valid @RequestBody PersonalTaskRequest request) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(suggestionService.createPersonalTask(userId, request.title(), request.dueDate()));
+    }
+
+    @PatchMapping("/personal-tasks/{personalTaskId}")
+    public ApiResponse<PersonalTaskResponse> updatePersonalTask(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                                @PathVariable Long personalTaskId,
+                                                                @Valid @RequestBody PersonalTaskRequest request) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(suggestionService.updatePersonalTask(userId, personalTaskId, request.title(),
+                request.dueDate()));
+    }
+
+    @DeleteMapping("/personal-tasks/{personalTaskId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deletePersonalTask(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                   @PathVariable Long personalTaskId) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        suggestionService.deletePersonalTask(userId, personalTaskId);
+    }
+
+    @PostMapping("/personal-tasks/{personalTaskId}/reopen")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reopenPersonalTask(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                   @PathVariable Long personalTaskId) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        suggestionService.reopenPersonalTask(userId, personalTaskId);
     }
 
     @PostMapping("/personal-tasks/{personalTaskId}/complete")

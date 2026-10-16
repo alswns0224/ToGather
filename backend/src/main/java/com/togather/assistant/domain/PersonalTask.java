@@ -47,4 +47,14 @@ public class PersonalTask extends BaseTimeEntity {
     public void complete() {
         this.status = PersonalTaskStatus.DONE;
     }
+
+    /** 완료 취소 */
+    public void reopen() {
+        this.status = PersonalTaskStatus.TODO;
+    }
+
+    public void update(String title, LocalDate dueDate) {
+        this.title = title;
+        this.dueDate = dueDate;
+    }
 }

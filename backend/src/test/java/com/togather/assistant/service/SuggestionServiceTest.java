@@ -154,6 +154,27 @@ class SuggestionServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 개인_할_일을_직접_추가하고_완료했다가_되돌리고_삭제한다() {
+        var task = suggestionService.createPersonalTask(userId, " 회의록 정리 ", LocalDate.of(2026, 10, 20));
+        assertThat(task.title()).isEqualTo("회의록 정리");
+
+        suggestionService.completePersonalTask(userId, task.personalTaskId());
+        assertThat(suggestionService.getMyTodoList(workspaceId, userId).personalTasks())
+                .extracting(t -> t.status().name()).containsExactly("DONE"); // 완료한 것도 잠깐 보여준다
+
+        suggestionService.reopenPersonalTask(userId, task.personalTaskId());
+        suggestionService.updatePersonalTask(userId, task.personalTaskId(), "회의록 공유", null);
+        assertThat(suggestionService.getMyTodoList(workspaceId, userId).personalTasks())
+                .extracting(t -> t.title() + ":" + t.status()).containsExactly("회의록 공유:TODO");
+
+        assertThatThrownBy(() -> suggestionService.deletePersonalTask(otherId, task.personalTaskId()))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PERSONAL_TASK_NOT_FOUND));
+        suggestionService.deletePersonalTask(userId, task.personalTaskId());
+        assertThat(suggestionService.getMyTodoList(workspaceId, userId).personalTasks()).isEmpty();
+    }
+
+    @Test
     void 제목_유사도() {
         assertThat(SuggestionService.isSimilar(SuggestionService.normalize("발표 자료 작성"),
                 SuggestionService.normalize("발표자료작성!"))).isTrue();
