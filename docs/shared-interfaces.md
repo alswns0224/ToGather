@@ -188,7 +188,11 @@ List<float[]> embedAll(List<String> texts);
 Provider provider();
 List<SyncTarget> findTargets(Long workspaceId, Long requestedBy);   // 팀: SyncTarget.team(폴더 ID), 개인: SyncTarget.personal(userId)
 SyncResult sync(SyncContext context);   // context.since()가 null이면 처음 동기화. 실패하면 예외를 그대로 던진다
-record SyncResult(int savedCount, LocalDateTime syncedUntil) {}
+record SyncContext(Long workspaceId, String targetId, Long ownerUserId, LocalDateTime since, String syncCursor, Long requestedBy) {}
+record SyncResult(int savedCount, LocalDateTime syncedUntil, String syncCursor) {}
+// syncCursor: 시각 대신 서비스가 주는 위치로 이어받을 때 사용 (예: Gmail historyId).
+//   SyncResult로 돌려준 값을 sync_state.sync_cursor에 저장했다가 다음 SyncContext로 넘겨준다. 처음이면 null.
+//   쓰지 않는 어댑터는 기존 생성자 new SyncContext(5개 인자) / new SyncResult(savedCount, syncedUntil)를 그대로 쓰면 된다 (cursor = null).
 
 // SyncService
 void syncIfStale(Long workspaceId, Provider provider, Long requestedBy, Duration maxAge);  // 화면 진입 시

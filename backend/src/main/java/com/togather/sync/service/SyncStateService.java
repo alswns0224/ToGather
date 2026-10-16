@@ -27,8 +27,9 @@ public class SyncStateService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordSuccess(Long syncStateId, LocalDateTime syncedUntil, LocalDateTime attemptedAt) {
-        syncStateRepository.findById(syncStateId).ifPresent(s -> s.recordSuccess(syncedUntil, attemptedAt));
+    public void recordSuccess(Long syncStateId, LocalDateTime syncedUntil, String syncCursor,
+                              LocalDateTime attemptedAt) {
+        syncStateRepository.findById(syncStateId).ifPresent(s -> s.recordSuccess(syncedUntil, syncCursor, attemptedAt));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

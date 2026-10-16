@@ -147,9 +147,9 @@ public class SyncService {
             }
             try {
                 SyncResult result = adapter.sync(new SyncContext(workspaceId, target.targetId(), target.ownerUserId(),
-                        state.getLastSyncedAt(), requestedBy));
+                        state.getLastSyncedAt(), state.getSyncCursor(), requestedBy));
                 LocalDateTime syncedUntil = result.syncedUntil() != null ? result.syncedUntil() : now;
-                syncStateService.recordSuccess(state.getSyncStateId(), syncedUntil, now);
+                syncStateService.recordSuccess(state.getSyncStateId(), syncedUntil, result.syncCursor(), now);
                 log.info("동기화 완료: workspaceId={}, provider={}, target={}, saved={}",
                         workspaceId, adapter.provider(), target.targetId(), result.savedCount());
             } catch (RuntimeException e) {
