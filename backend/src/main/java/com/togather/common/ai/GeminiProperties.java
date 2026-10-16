@@ -22,7 +22,7 @@ public record GeminiProperties(
 
     public GeminiProperties {
         baseUrl = blankToDefault(baseUrl, "https://generativelanguage.googleapis.com/v1beta");
-        model = blankToDefault(model, "gemini-2.5-flash");
+        model = blankToDefault(model, "gemini-3.5-flash");
         embeddingModel = blankToDefault(embeddingModel, "gemini-embedding-001");
         timeoutSeconds = timeoutSeconds == null ? 30 : timeoutSeconds;
         maxRetries = maxRetries == null ? 2 : maxRetries;

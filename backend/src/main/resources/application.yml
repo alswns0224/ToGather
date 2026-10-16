@@ -55,7 +55,7 @@ togather:
   gemini:
     api-key: ${GEMINI_API_KEY:}
     # 모델 이름은 Google AI Studio의 최신 모델로 바꿀 수 있다.
-    model: ${GEMINI_MODEL:gemini-2.5-flash}
+    model: ${GEMINI_MODEL:gemini-3.5-flash}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
     timeout-seconds: 30
     max-retries: 2
