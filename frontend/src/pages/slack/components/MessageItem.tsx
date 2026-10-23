@@ -3,6 +3,16 @@ import type { SlackMessageResponse } from '../api';
 import { formatDateTime } from '../../../utils/date';
 import Composer from './Composer';
 
+const AVATAR_COLORS = ['#4F46E5', '#7C3AED', '#0D9488', '#E11D48', '#2563EB', '#D97706'];
+
+/** 이름마다 늘 같은 아바타 색 */
+function avatarColor(name: string | null) {
+  const s = name ?? '';
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
 /** 메시지 한 건: 작성자, 작성 시각, 본문, 첨부 파일 (UI-04) */
 export default function MessageItem({
   message,
@@ -33,8 +43,14 @@ export default function MessageItem({
   return (
     <li className={`slack-message${selected ? ' selected' : ''}`}>
       <div className="row">
-        <strong>{message.authorName ?? '알 수 없음'}</strong>
-        <span className="small muted">{formatDateTime(message.createdAt)}</span>
+        <span
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900"
+          style={{ background: avatarColor(message.authorName) }}
+        >
+          {(message.authorName ?? '?').slice(0, 2)}
+        </span>
+        <strong className="text-xs">{message.authorName ?? '알 수 없음'}</strong>
+        <span className="text-[10px] muted">{formatDateTime(message.createdAt)}</span>
         {message.edited && <span className="small muted">(수정됨)</span>}
         {message.syncFailed && <span className="badge badge-warning">동기화 실패</span>}
         <span className="spacer" />
@@ -91,9 +107,11 @@ export default function MessageItem({
       {deleteError && <div className="alert alert-error">삭제하지 못했습니다. {deleteError}</div>}
 
       {onOpenThread && (
-        <button className="link-button small" onClick={onOpenThread}>
-          {message.replyCount > 0 ? `답글 ${message.replyCount}개` : '스레드 열기'}
-        </button>
+        <div className="mt-1 flex justify-end border-0 border-t border-solid border-slate-200/40 pt-2 dark:border-white/10">
+          <button className="link-button text-[11px] font-bold" onClick={onOpenThread}>
+            {message.replyCount > 0 ? `답글 ${message.replyCount}개 →` : '스레드 열기 →'}
+          </button>
+        </div>
       )}
     </li>
   );

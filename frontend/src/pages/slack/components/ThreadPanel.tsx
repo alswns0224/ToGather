@@ -31,11 +31,11 @@ export default function ThreadPanel({
   return (
     <aside className="slack-thread card stack">
       <div className="row">
-        <h2>스레드</h2>
+        <h2 className="!text-sm">스레드</h2>
         <span className="spacer" />
         {thread.data && onAnalyze && !thread.data.root.isOriginDeleted && (
           <button className="btn btn-small btn-primary" onClick={() => onAnalyze(thread.data!.root)}>
-            논의 정리
+            ✨ AI 논의 정리
           </button>
         )}
         <button className="btn btn-small" onClick={onClose}>
