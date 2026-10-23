@@ -30,7 +30,11 @@ export interface IntegrationStatusResponse {
 
 export const PROVIDER_LABELS: Record<Provider, { name: string; target: string; description: string }> = {
   SLACK: { name: 'Slack', target: '채널', description: '채널 대화를 보고 메시지를 작성합니다.' },
-  NOTION: { name: 'Notion', target: '데이터베이스', description: '데이터베이스의 문서를 관리합니다.' },
+  NOTION: {
+    name: 'Notion',
+    target: '페이지·데이터베이스',
+    description: '고른 페이지(하위 페이지 포함)와 데이터베이스의 문서를 가져옵니다.',
+  },
   GOOGLE_DRIVE: { name: 'Google Drive', target: '폴더', description: '폴더의 파일과 산출물을 관리합니다.' },
   GOOGLE_CALENDAR: {
     name: 'Google Calendar',

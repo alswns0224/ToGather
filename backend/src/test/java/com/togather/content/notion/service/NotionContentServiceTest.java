@@ -160,6 +160,87 @@ class NotionContentServiceTest extends IntegrationTestSupport {
         verify(notionApiClient).queryDatabase(eq("my-own-token"), eq("db1"), anyInt());
     }
 
+    @Test
+    void 페이지를_연동하면_하위_페이지와_데이터베이스_행까지_가져온다() {
+        usePageTarget();
+
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
+
+        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::title)
+                .containsExactlyInAnyOrder("카페를 만들어보자", "카페 기능", "menu_id");
+        // 모두 연동 대상(페이지)에 묶여 저장된다.
+        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::databaseId)
+                .containsOnly(PAGE_TARGET);
+    }
+
+    @Test
+    void 페이지_아래에서_사라진_하위_페이지는_원본_삭제로_표시한다() {
+        usePageTarget();
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
+        when(notionApiClient.crawlPage(eq(TOKEN), eq("root"), anyInt(), anyInt())).thenReturn(
+                new NotionApiClient.PageTree(List.of(plainPage("root", "카페를 만들어보자")), false));
+
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, T0.plusHours(1), userId));
+
+        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::title)
+                .containsExactly("카페를 만들어보자");
+    }
+
+    @Test
+    void 페이지를_다_가져오지_못했으면_사라진_것으로_보지_않는다() {
+        usePageTarget();
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
+        when(notionApiClient.crawlPage(eq(TOKEN), eq("root"), anyInt(), anyInt())).thenReturn(
+                new NotionApiClient.PageTree(List.of(plainPage("root", "카페를 만들어보자")), true));
+
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, T0.plusHours(1), userId));
+
+        assertThat(notionContentService.getPages(workspaceId)).hasSize(3);
+    }
+
+    @Test
+    void 새_문서를_만들_곳에는_페이지_대상이_나오지_않는다() {
+        usePageTarget();
+
+        assertThat(notionContentService.getDatabases(workspaceId, userId))
+                .extracting(r -> r.databaseId()).containsExactly("db1");
+    }
+
+    @Test
+    void 일반_페이지의_제목은_title_속성으로_수정한다() {
+        usePageTarget();
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
+        Long id = notionContentService.getPages(workspaceId).stream()
+                .filter(p -> p.title().equals("카페 기능")).findFirst().orElseThrow().contentRefId();
+        when(notionApiClient.getPage(TOKEN, "child")).thenReturn(plainPage("child", "카페 기능"));
+        when(notionApiClient.updatePage(TOKEN, "child", "title", "카페 기능 정리", null))
+                .thenReturn(plainPage("child", "카페 기능 정리"));
+
+        ContentRefDTO updated = notionContentService.updateContent(workspaceId, userId, id, "카페 기능 정리", null);
+
+        assertThat(updated.title()).isEqualTo("카페 기능 정리");
+    }
+
+    /** "카페를 만들어보자" 페이지를 연동 대상으로 고른 상태: 하위 페이지 1개, 페이지 안 데이터베이스 행 1개 */
+    private void usePageTarget() {
+        when(integrationService.getConnectionTargets(workspaceId, Provider.NOTION))
+                .thenReturn(List.of("db1", PAGE_TARGET));
+        when(integrationService.findTargetAccess(workspaceId, Provider.NOTION))
+                .thenReturn(Optional.of(new TargetAccess(1L, userId, TOKEN, List.of("db1", PAGE_TARGET))));
+        when(notionApiClient.crawlPage(eq(TOKEN), eq("root"), anyInt(), anyInt())).thenReturn(
+                new NotionApiClient.PageTree(List.of(plainPage("root", "카페를 만들어보자"),
+                        plainPage("child", "카페 기능"),
+                        new NotionPage("row", "inline-db", "menu_id", "https://notion.so/row", T0, T0, false)),
+                        false));
+        when(notionApiClient.getPageText(eq(TOKEN), any())).thenReturn("본문");
+    }
+
+    private static final String PAGE_TARGET = "page:root";
+
+    private static NotionPage plainPage(String id, String title) {
+        return new NotionPage(id, null, title, "https://notion.so/" + id, T0.minusDays(1), T0, false);
+    }
+
     private static NotionPage page(String id, String title, LocalDateTime edited) {
         return new NotionPage(id, "db1", title, "https://notion.so/" + id, edited.minusDays(3), edited, false);
     }

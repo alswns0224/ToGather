@@ -283,7 +283,7 @@ function TargetSelectDialog({
         {options.data && options.data.length === 0 && (
           <Empty>
             선택할 수 있는 {label.target}이(가) 없습니다.
-            {connection.provider === 'NOTION' && ' Notion에서 데이터베이스를 이 통합에 공유했는지 확인하세요.'}
+            {connection.provider === 'NOTION' && ' Notion 연결 화면에서 페이지나 데이터베이스를 공유했는지 확인하세요.'}
           </Empty>
         )}
         {options.data && options.data.length > 0 && (
