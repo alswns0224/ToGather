@@ -17,6 +17,7 @@ import {
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
+import { BTN_DANGER, BTN_PRIMARY, BTN_SUB, CARD, EYEBROW, SUB_CARD } from '../../components/ui';
 
 const STATUS_LABELS: Record<ConnectionStatus, { text: string; className: string }> = {
   CONNECTED: { text: '● 연결됨', className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
@@ -24,13 +25,6 @@ const STATUS_LABELS: Record<ConnectionStatus, { text: string; className: string 
   REAUTH_REQUIRED: { text: '⚠️ 재인증 필요', className: 'animate-pulse bg-amber-500/20 text-amber-600 dark:text-amber-400' },
   DISCONNECTED: { text: '○ 연결 안 됨', className: 'bg-slate-500/15 text-slate-500 dark:text-slate-400' },
 };
-
-const CARD =
-  'flex flex-col justify-between rounded-[28px] border border-slate-200/80 bg-white/90 p-6 shadow-[0_4px_24px_-6px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-white/10 dark:bg-[#12141D]/90 dark:shadow-xl';
-const SUB_CARD = 'rounded-2xl border border-slate-200/70 bg-slate-50/90 dark:border-white/10 dark:bg-white/[0.04]';
-const BTN = 'inline-flex cursor-pointer items-center rounded-xl px-3.5 py-2 text-xs font-bold no-underline transition';
-const BTN_PRIMARY = `${BTN} border-0 bg-indigo-600 text-white hover:bg-indigo-500`;
-const BTN_SUB = `${BTN} ${SUB_CARD} text-slate-700 hover:border-indigo-400 dark:text-slate-200`;
 
 function StatusPill({ status }: { status: ConnectionStatus }) {
   const s = STATUS_LABELS[status];
@@ -81,7 +75,7 @@ export default function IntegrationsPage() {
   return (
     <section className="space-y-6">
       <div>
-        <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-[11px] font-bold text-indigo-500">
+        <span className={EYEBROW}>
           OAUTH 2.0 INTEGRATIONS
         </span>
         <h1 className="mt-2 text-2xl font-bold">연동 관리</h1>
@@ -119,7 +113,7 @@ export default function IntegrationsPage() {
           const primary = item.personal ? mine : item.connections[0];
           const needsReauth = item.connections.some((c) => c.status === 'REAUTH_REQUIRED');
           return (
-            <div key={item.provider} className={`${CARD} ${needsReauth ? 'ring-2 ring-amber-500/60' : ''}`}>
+            <div key={item.provider} className={`${CARD} flex flex-col justify-between p-6 ${needsReauth ? 'ring-2 ring-amber-500/60' : ''}`}>
               <div>
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
@@ -156,7 +150,7 @@ export default function IntegrationsPage() {
                       <span className="flex-1" />
                       {conn.status === 'REAUTH_REQUIRED' && conn.mine && (
                         <a
-                          className={`${BTN} border-0 bg-amber-500 text-white hover:bg-amber-400`}
+                          className={`${BTN_PRIMARY} !bg-amber-500 hover:!bg-amber-400`}
                           href={reauthUrl(workspaceId, conn.connectionId)}
                         >
                           🔄 재인증
@@ -167,7 +161,7 @@ export default function IntegrationsPage() {
                           {label.target} 선택
                         </button>
                       )}
-                      <button className={`${BTN_SUB} !text-rose-500`} onClick={() => remove(conn)}>
+                      <button className={BTN_DANGER} onClick={() => remove(conn)}>
                         해제
                       </button>
                     </div>
