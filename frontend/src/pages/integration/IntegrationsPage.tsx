@@ -16,13 +16,26 @@ import {
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
+import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
 
 const STATUS_LABELS: Record<ConnectionStatus, { text: string; className: string }> = {
-  CONNECTED: { text: '연결됨', className: 'badge-success' },
-  TARGET_NOT_SELECTED: { text: '대상 선택 필요', className: 'badge-warning' },
-  REAUTH_REQUIRED: { text: '재인증 필요', className: 'badge-danger' },
-  DISCONNECTED: { text: '연결 안 됨', className: '' },
+  CONNECTED: { text: '● 연결됨', className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+  TARGET_NOT_SELECTED: { text: '◎ 대상 선택 필요', className: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
+  REAUTH_REQUIRED: { text: '⚠️ 재인증 필요', className: 'animate-pulse bg-amber-500/20 text-amber-600 dark:text-amber-400' },
+  DISCONNECTED: { text: '○ 연결 안 됨', className: 'bg-slate-500/15 text-slate-500 dark:text-slate-400' },
 };
+
+const CARD =
+  'flex flex-col justify-between rounded-[28px] border border-slate-200/80 bg-white/90 p-6 shadow-[0_4px_24px_-6px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-white/10 dark:bg-[#12141D]/90 dark:shadow-xl';
+const SUB_CARD = 'rounded-2xl border border-slate-200/70 bg-slate-50/90 dark:border-white/10 dark:bg-white/[0.04]';
+const BTN = 'inline-flex cursor-pointer items-center rounded-xl px-3.5 py-2 text-xs font-bold no-underline transition';
+const BTN_PRIMARY = `${BTN} border-0 bg-indigo-600 text-white hover:bg-indigo-500`;
+const BTN_SUB = `${BTN} ${SUB_CARD} text-slate-700 hover:border-indigo-400 dark:text-slate-200`;
+
+function StatusPill({ status }: { status: ConnectionStatus }) {
+  const s = STATUS_LABELS[status];
+  return <span className={`whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold ${s.className}`}>{s.text}</span>;
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   CANCELED: '인증을 취소했습니다.',
@@ -66,11 +79,16 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <section className="stack">
-      <h1>연동 관리</h1>
-      <p className="muted">
-        Slack · Notion · Drive는 팀에서 한 명이 연결하면 모두가 사용합니다. Gmail · Calendar는 각자 연결합니다.
-      </p>
+    <section className="space-y-6">
+      <div>
+        <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-[11px] font-bold text-indigo-500">
+          OAUTH 2.0 INTEGRATIONS
+        </span>
+        <h1 className="mt-2 text-2xl font-bold">연동 관리</h1>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Slack · Notion · Drive는 팀에서 한 명이 연결하면 모두가 사용합니다. Gmail · Calendar는 각자 연결합니다.
+        </p>
+      </div>
 
       {connectedProvider && !errorCode && (
         <div className="alert alert-success">
@@ -93,65 +111,99 @@ export default function IntegrationsPage() {
       {loading && <Loading />}
       {error && <ErrorBox error={error} onRetry={reload} />}
 
-      {data?.map((item) => {
-        const label = PROVIDER_LABELS[item.provider];
-        const mine = item.connections.find((c) => c.mine);
-        return (
-          <div key={item.provider} className="card stack">
-            <div className="row">
-              <strong>{label.name}</strong>
-              {item.personal && <span className="badge">개인</span>}
-              <span className="spacer" />
-              {item.configured ? (
-                <a className="btn btn-small" href={connectUrl(workspaceId, item.provider)}>
-                  {mine ? '다른 계정으로 다시 연결' : '연결하기'}
-                </a>
-              ) : (
-                <span className="muted small">서버 설정 필요</span>
-              )}
-            </div>
-            <p className="muted small">{label.description}</p>
-
-            {item.connections.length === 0 && <Empty>연결되지 않았습니다.</Empty>}
-            {item.connections.map((conn) => {
-              const status = STATUS_LABELS[conn.status];
-              return (
-                <div key={conn.connectionId} className="connection">
-                  <div className="row">
-                    <span className={`badge ${status.className}`}>{status.text}</span>
-                    <span className="small">
-                      {conn.accountLabel ?? conn.externalAccountId ?? '-'} · {conn.mine ? '내가 연결' : `${conn.connectedByName}님이 연결`}
-                    </span>
-                    <span className="spacer" />
-                    {conn.status === 'REAUTH_REQUIRED' && conn.mine && (
-                      <a className="btn btn-small btn-primary" href={reauthUrl(workspaceId, conn.connectionId)}>
-                        재인증
-                      </a>
-                    )}
-                    {label.target && (
-                      <button className="btn btn-small" onClick={() => setSelecting(conn)}>
-                        {label.target} 선택
-                      </button>
-                    )}
-                    <button className="btn btn-small btn-danger" onClick={() => remove(conn)}>
-                      해제
-                    </button>
-                  </div>
-                  {conn.targets.length > 0 && (
-                    <div className="tags">
-                      {conn.targets.map((t) => (
-                        <span key={t.id} className="tag">
-                          {t.name ?? t.id}
-                        </span>
-                      ))}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        {data?.map((item) => {
+          const label = PROVIDER_LABELS[item.provider];
+          const mine = item.connections.find((c) => c.mine);
+          // 카드 머리의 대표 상태: 개인 서비스는 내 연결, 팀 서비스는 첫 연결
+          const primary = item.personal ? mine : item.connections[0];
+          const needsReauth = item.connections.some((c) => c.status === 'REAUTH_REQUIRED');
+          return (
+            <div key={item.provider} className={`${CARD} ${needsReauth ? 'ring-2 ring-amber-500/60' : ''}`}>
+              <div>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                      <ServiceLogo service={PROVIDER_LOGO[item.provider]} />
                     </div>
-                  )}
+                    <div className="min-w-0">
+                      <h3 className="m-0 flex items-center gap-2 text-lg font-bold">
+                        {label.name}
+                        {item.personal && (
+                          <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                            개인
+                          </span>
+                        )}
+                      </h3>
+                      <p className="m-0 truncate text-xs text-slate-500 dark:text-slate-400">
+                        {primary ? (primary.accountLabel ?? primary.externalAccountId ?? '-') : '연결된 계정 없음'}
+                      </p>
+                    </div>
+                  </div>
+                  <StatusPill status={primary?.status ?? 'DISCONNECTED'} />
                 </div>
-              );
-            })}
-          </div>
-        );
-      })}
+
+                <p className="mb-4 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{label.description}</p>
+
+                {item.connections.map((conn) => (
+                  <div key={conn.connectionId} className={`${SUB_CARD} mb-3 space-y-2 p-3`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.connections.length > 1 && <StatusPill status={conn.status} />}
+                      <span className="text-xs text-slate-600 dark:text-slate-300">
+                        {conn.accountLabel ?? conn.externalAccountId ?? '-'} ·{' '}
+                        {conn.mine ? '내가 연결' : `${conn.connectedByName}님이 연결`}
+                      </span>
+                      <span className="flex-1" />
+                      {conn.status === 'REAUTH_REQUIRED' && conn.mine && (
+                        <a
+                          className={`${BTN} border-0 bg-amber-500 text-white hover:bg-amber-400`}
+                          href={reauthUrl(workspaceId, conn.connectionId)}
+                        >
+                          🔄 재인증
+                        </a>
+                      )}
+                      {label.target && (
+                        <button className={BTN_PRIMARY} onClick={() => setSelecting(conn)}>
+                          {label.target} 선택
+                        </button>
+                      )}
+                      <button className={`${BTN_SUB} !text-rose-500`} onClick={() => remove(conn)}>
+                        해제
+                      </button>
+                    </div>
+                    {conn.targets.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{label.target}:</span>
+                        {conn.targets.map((t) => (
+                          <span
+                            key={t.id}
+                            className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-bold text-indigo-600 dark:text-indigo-300"
+                          >
+                            {t.name ?? t.id}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 dark:border-white/10">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {item.connections.length === 0 ? '연결되지 않았습니다.' : `연결 ${item.connections.length}개`}
+                </span>
+                {item.configured ? (
+                  <a className={mine ? BTN_SUB : BTN_PRIMARY} href={connectUrl(workspaceId, item.provider)}>
+                    {mine ? '다른 계정으로 다시 연결' : '+ 연동 시작'}
+                  </a>
+                ) : (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">서버 설정 필요</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {selecting && (
         <TargetSelectDialog
