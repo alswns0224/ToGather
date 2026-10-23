@@ -2,11 +2,12 @@
 
 .analysis-steps {
   margin: 0;
-  padding-left: 32px;
+  padding-left: 48px !important;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   color: var(--muted);
+  font-size: 14px;
 }
 
 .analysis-steps li.active {
@@ -22,16 +23,43 @@
   content: ' ✓';
 }
 
-.analysis-item {
-  gap: 6px;
+.list > li.analysis-item {
+  border-bottom: none;
 }
 
+.list:has(> li.analysis-item) {
+  gap: 10px;
+}
+
+/* 항목 한 건: 시안의 subCard */
+.analysis-item {
+  gap: 8px;
+  padding: 14px 16px !important;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+/* 근거 발언: 보라색 인용 상자 */
 .analysis-evidences {
-  border-left: 3px solid var(--border);
-  padding-left: 10px;
+  border-left: 3px solid rgba(139, 92, 246, 0.5);
+  border-radius: 0 12px 12px 0;
+  background: rgba(139, 92, 246, 0.06);
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.analysis-evidences > .small.muted:first-child {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b5cf6;
+}
+
+.analysis-evidences > .small.muted:first-child::before {
+  content: '📌 ';
 }
 
 .analysis-new-message {

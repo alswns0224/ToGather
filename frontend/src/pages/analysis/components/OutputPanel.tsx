@@ -33,11 +33,11 @@ export default function OutputPanel({
 
   return (
     <div className="stack">
-      <h2>처리 결과</h2>
+      <h2 className="!text-lg">✅ 처리 결과</h2>
 
       <div className="card stack">
         <div className="row">
-          <h3>Notion 결정사항 문서</h3>
+          <h3 className="m-0 text-sm">📄 Notion 결정사항 문서</h3>
           <StatusBadge status={analysis.notionOutputStatus} />
         </div>
         {analysis.notionOutputStatus === 'SUCCESS' && analysis.notionPageRefId ? (
@@ -49,7 +49,7 @@ export default function OutputPanel({
 
       {followUps.length > 0 && (
         <div className="card stack">
-          <h3>후속 작업 → Task</h3>
+          <h3 className="m-0 text-sm">✅ 후속 작업 → Task</h3>
           <ul className="list analysis-output">
             {followUps.map((item) => (
               <li key={item.itemId}>
@@ -62,7 +62,7 @@ export default function OutputPanel({
 
       {meetings.length > 0 && (
         <div className="card stack">
-          <h3>회의 제안 → Calendar 일정</h3>
+          <h3 className="m-0 text-sm">📅 회의 제안 → Calendar 일정</h3>
           <ul className="list analysis-output">
             {meetings.map((item) => (
               <li key={item.itemId}>
