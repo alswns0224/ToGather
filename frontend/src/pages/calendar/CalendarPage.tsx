@@ -6,6 +6,8 @@ import { getMembers, type MemberResponse } from '../workspace/api';
 import { useAsync } from '../../hooks/useAsync';
 import { ApiError } from '../../api/client';
 import { ErrorBox } from '../../components/Status';
+import PageHeader from '../../components/PageHeader';
+import { BTN_AI, BTN_SUB, MUTED, SUB_CARD } from '../../components/ui';
 import {
   addDays,
   formatDate,
@@ -66,35 +68,45 @@ export default function CalendarPage() {
       : `${formatDate(start)} ~ ${formatDate(addDays(start, 6))}`;
 
   return (
-    <section className="stack">
-      <div className="row">
-        <h1>일정</h1>
-        <span className="spacer" />
-        <div className="segmented">
-          <button className={view === 'month' ? 'active' : ''} onClick={() => setView('month')}>
-            월
-          </button>
-          <button className={view === 'week' ? 'active' : ''} onClick={() => setView('week')}>
-            주
-          </button>
-        </div>
-        <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={notConnected}>
-          + 일정
-        </button>
-      </div>
+    <section className="stack !gap-5">
+      <PageHeader
+        eyebrow="GOOGLE CALENDAR"
+        title="일정"
+        description="팀 캘린더 일정을 보고 등록합니다. 확정된 회의는 따로 표시됩니다."
+        actions={
+          <>
+            <div className={`${SUB_CARD} inline-flex gap-1 p-1`}>
+              {(['month', 'week'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`cursor-pointer rounded-xl border-0 px-4 py-1.5 text-xs font-bold transition ${
+                    view === v ? 'bg-indigo-600 text-white' : `bg-transparent ${MUTED}`
+                  }`}
+                >
+                  {v === 'month' ? '월' : '주'}
+                </button>
+              ))}
+            </div>
+            <button className={BTN_AI} onClick={() => setEditing('new')} disabled={notConnected}>
+              + 일정
+            </button>
+          </>
+        }
+      />
 
-      <div className="row">
-        <button className="btn btn-small" onClick={() => move(-1)}>
+      <div className="flex items-center gap-2">
+        <button className={BTN_SUB} onClick={() => move(-1)} aria-label="이전">
           ◀
         </button>
-        <strong>{title}</strong>
-        <button className="btn btn-small" onClick={() => move(1)}>
+        <strong className="min-w-32 text-center text-lg">{title}</strong>
+        <button className={BTN_SUB} onClick={() => move(1)} aria-label="다음">
           ▶
         </button>
-        <button className="btn btn-small" onClick={() => setAnchor(startOfDay(new Date()))}>
+        <button className={BTN_SUB} onClick={() => setAnchor(startOfDay(new Date()))}>
           오늘
         </button>
-        {events.loading && <span className="muted small">불러오는 중...</span>}
+        {events.loading && <span className={`text-xs ${MUTED}`}>불러오는 중...</span>}
       </div>
 
       {notConnected ? (
