@@ -15,6 +15,7 @@ import {
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
+import ServiceLogo from '../../components/ServiceLogo';
 import { formatDateTime } from '../../utils/date';
 import './notion.css';
 
@@ -119,6 +120,9 @@ export default function NotionPage() {
                     onClick={() => select(p.contentRefId)}
                   >
                     <span className="row">
+                      <span className="inline-flex h-5 w-5 flex-shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+                        <ServiceLogo service="notion" />
+                      </span>
                       <strong>{p.title || '(제목 없음)'}</strong>
                       {p.fromAnalysis && <span className="badge badge-primary">결정사항 정리</span>}
                       {p.syncFailed && <span className="badge badge-warning">동기화 실패</span>}

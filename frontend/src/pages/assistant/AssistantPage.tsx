@@ -21,6 +21,8 @@ import { ApiError } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
+import ServiceLogo from '../../components/ServiceLogo';
+import { BTN_AI, BTN_SUB, CARD, MUTED, SUB_CARD } from '../../components/ui';
 import { formatDate, formatDateTime } from '../../utils/date';
 import './assistant.css';
 
@@ -76,16 +78,24 @@ export default function AssistantPage() {
       />
       {notice && <div className={`alert ${notice.ok ? 'alert-success' : 'alert-error'}`}>{notice.text}</div>}
 
-      <div className="segmented">
-        <button className={tab === 'SCHEDULE' ? 'active' : ''} onClick={() => setTab('SCHEDULE')}>
-          일정 후보 {count('SCHEDULE') > 0 && `(${count('SCHEDULE')})`}
-        </button>
-        <button className={tab === 'TASK' ? 'active' : ''} onClick={() => setTab('TASK')}>
-          할 일 후보 {count('TASK') > 0 && `(${count('TASK')})`}
-        </button>
-        <button className={tab === 'TODO' ? 'active' : ''} onClick={() => setTab('TODO')}>
-          내 할 일
-        </button>
+      <div className={`${SUB_CARD} inline-flex gap-1 self-start p-1`}>
+        {(
+          [
+            ['SCHEDULE', `📅 일정 후보${count('SCHEDULE') > 0 ? ` (${count('SCHEDULE')})` : ''}`],
+            ['TASK', `✅ 할 일 후보${count('TASK') > 0 ? ` (${count('TASK')})` : ''}`],
+            ['TODO', '📝 내 할 일'],
+          ] as const
+        ).map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`cursor-pointer rounded-xl border-0 px-4 py-1.5 text-xs font-bold transition ${
+              tab === t ? 'bg-indigo-600 text-white' : `bg-transparent ${MUTED}`
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {tab !== 'TODO' && (
@@ -98,13 +108,13 @@ export default function AssistantPage() {
             </Empty>
           )}
           {list.length > 0 && (
-            <ul className="list card">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {list.map((s) => (
-                <li key={s.suggestionId}>
+                <div key={s.suggestionId} className={`${CARD} p-5`}>
                   <SuggestionItem workspaceId={workspaceId} suggestion={s} onChanged={reload} />
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </>
       )}
@@ -235,35 +245,33 @@ function SuggestionItem({
           </div>
         </form>
       ) : (
-        <div className="row">
-          <strong>{suggestion.title}</strong>
-          {isSchedule &&
-            (suggestion.detectedDatetime ? (
-              <span className="small">{formatDateTime(suggestion.detectedDatetime)}</span>
-            ) : (
-              <span className="badge badge-warning">시간 미정</span>
-            ))}
-          {!isSchedule && suggestion.dueDate && <span className="small">마감 {formatDate(suggestion.dueDate)}</span>}
-          <span className="spacer" />
-          <button className="btn btn-small" onClick={() => setEditing(true)} disabled={busy}>
-            수정
-          </button>
-          <button className="btn btn-small" onClick={() => run(() => dismissSuggestion(workspaceId, suggestion.suggestionId))} disabled={busy}>
-            무시
-          </button>
-          <button
-            className="btn btn-small btn-primary"
-            onClick={approve}
-            disabled={busy || (isSchedule && !suggestion.detectedDatetime)}
-            title={isSchedule && !suggestion.detectedDatetime ? '일시를 먼저 정해 주세요' : undefined}
-          >
-            {isSchedule ? '캘린더에 등록' : '할 일로 등록'}
-          </button>
+        <div className="stack !gap-2">
+          <div className="flex items-start justify-between gap-2">
+            <strong className="text-sm leading-snug">{suggestion.title}</strong>
+            {isSchedule &&
+              (suggestion.detectedDatetime ? (
+                <span className="whitespace-nowrap rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-bold text-indigo-500">
+                  📅 {formatDateTime(suggestion.detectedDatetime)}
+                </span>
+              ) : (
+                <span className="badge badge-warning">시간 미정</span>
+              ))}
+            {!isSchedule && suggestion.dueDate && (
+              <span className="whitespace-nowrap rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-bold text-indigo-500">
+                마감 {formatDate(suggestion.dueDate)}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
       <div className="small muted row">
-        <span className="badge">{suggestion.sourceProvider === 'GMAIL' ? '메일' : 'Slack'}</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-800 dark:border-white/15 dark:bg-white/10 dark:text-slate-100">
+          <span className="inline-flex h-4 w-4 overflow-hidden rounded">
+            <ServiceLogo service={suggestion.sourceProvider === 'GMAIL' ? 'gmail' : 'slack'} />
+          </span>
+          {suggestion.sourceProvider === 'GMAIL' ? 'Gmail' : 'Slack'}
+        </span>
         {suggestion.sourceTitle && <span>{suggestion.sourceTitle}</span>}
         {suggestion.sourceAuthor && <span>{suggestion.sourceAuthor}</span>}
         {suggestion.sourceCreatedAt && <span>{formatDateTime(suggestion.sourceCreatedAt)}</span>}
@@ -273,8 +281,35 @@ function SuggestionItem({
           </a>
         )}
       </div>
-      {suggestion.sourceExcerpt && <p className="small muted clamp">“{suggestion.sourceExcerpt}”</p>}
+      {suggestion.sourceExcerpt && (
+        <p className="m-0 line-clamp-2 rounded-r-xl border-0 border-l-[3px] border-solid border-violet-400/60 bg-violet-500/5 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+          “{suggestion.sourceExcerpt}”
+        </p>
+      )}
       {error && <div className="alert alert-error small">{error}</div>}
+      {!editing && (
+        <div className="flex items-center gap-2 border-0 border-t border-solid border-slate-200/60 pt-3 dark:border-white/10">
+          <button className={BTN_SUB} onClick={() => setEditing(true)} disabled={busy}>
+            수정
+          </button>
+          <button
+            className={BTN_SUB}
+            onClick={() => run(() => dismissSuggestion(workspaceId, suggestion.suggestionId))}
+            disabled={busy}
+          >
+            무시
+          </button>
+          <span className="flex-1" />
+          <button
+            className={BTN_AI}
+            onClick={approve}
+            disabled={busy || (isSchedule && !suggestion.detectedDatetime)}
+            title={isSchedule && !suggestion.detectedDatetime ? '일시를 먼저 정해 주세요' : undefined}
+          >
+            {isSchedule ? '✨ 캘린더에 등록' : '✨ 할 일로 등록'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

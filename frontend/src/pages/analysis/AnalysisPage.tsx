@@ -19,6 +19,14 @@ import { formatDateTime } from '../../utils/date';
 import ItemCard, { ItemEditor } from './components/ItemCard';
 import OutputPanel from './components/OutputPanel';
 import './analysis.css';
+import PageHeader from '../../components/PageHeader';
+import { BTN_AI, BTN_SUB, CARD, MUTED } from '../../components/ui';
+
+const TYPE_ICON: Record<ItemType, string> = { DECISION: '🎯', FOLLOW_UP: '✅', OPEN_ISSUE: '❓', MEETING_PROPOSAL: '📅' };
+
+/** AI 결과 강조 카드 (시안의 ai-glow-border) */
+const AI_GLOW =
+  'rounded-[28px] border border-violet-500/35 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/5 p-6 shadow-[0_8px_30px_-6px_rgba(99,102,241,0.12)]';
 
 const ITEM_TYPES: ItemType[] = ['DECISION', 'FOLLOW_UP', 'OPEN_ISSUE', 'MEETING_PROPOSAL'];
 const STEPS = ['스레드 메시지 모으는 중', 'AI가 논의를 분석하는 중', '결과 정리하는 중'];
@@ -74,11 +82,11 @@ function NewAnalysis({
 
   return (
     <section className="stack">
-      <h1>논의 정리</h1>
+      <PageHeader eyebrow="AI CONTEXT SYNTHESIS" title="논의 정리" description="Gemini가 Slack 스레드를 읽고 결정사항과 후속 작업을 정리하고 있습니다." />
       {error ? (
         <ErrorBox error={new Error(`분석하지 못했습니다. ${error.message}`)} onRetry={run} />
       ) : (
-        <ol className="card analysis-steps">
+        <ol className={`${AI_GLOW} analysis-steps`}>
           {STEPS.map((s, i) => (
             <li key={s} className={i < step ? 'done' : i === step ? 'active' : ''}>
               {s}
@@ -133,15 +141,22 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
 
   return (
     <section className="stack">
-      <div className="row">
-        <h1>논의 정리</h1>
-        {data && <span className={`badge status-${data.status.toLowerCase()}`}>{STATUS_TEXT[data.status]}</span>}
-        {data?.auto && <span className="badge">자동 수집</span>}
-        <span className="spacer" />
-        <Link to={`/workspaces/${workspaceId}/slack/analyses`} className="small">
-          검토 대기 목록
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="AI CONTEXT SYNTHESIS"
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            논의 정리
+            {data && <span className={`badge status-${data.status.toLowerCase()}`}>{STATUS_TEXT[data.status]}</span>}
+            {data?.auto && <span className="badge">자동 수집</span>}
+          </span>
+        }
+        description="AI가 추출한 초안은 검토 및 확정 전까지 외부 서비스(Notion · Task · Calendar)에 반영되지 않습니다."
+        actions={
+          <Link to={`/workspaces/${workspaceId}/slack/analyses`} className="btn btn-small">
+            검토 대기 목록
+          </Link>
+        }
+      />
 
       {analysis.loading && !data && <Loading />}
       {analysis.error && <ErrorBox error={analysis.error} onRetry={analysis.reload} />}
@@ -163,10 +178,10 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
             const items = data.items.filter((i) => i.itemType === type);
             if (!editable && items.length === 0) return null;
             return (
-              <div key={type} className="card stack">
+              <div key={type} className={`${CARD} stack p-6`}>
                 <div className="row">
-                  <h2>{ITEM_TYPE_TEXT[type]}</h2>
-                  <span className="small muted">{items.length}개</span>
+                  <h2 className="!text-base">{TYPE_ICON[type]} {ITEM_TYPE_TEXT[type]}</h2>
+                  <span className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-bold text-indigo-500">{items.length}개</span>
                   <span className="spacer" />
                   {editable && adding !== type && (
                     <button className="btn btn-small" onClick={() => setAdding(type)}>
@@ -208,13 +223,15 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
           {actionError && <div className="alert alert-error">{actionError}</div>}
 
           {editable && (
-            <div className="row">
-              <button className="btn" onClick={discard} disabled={busy}>
+            <div className={`${CARD} sticky bottom-4 z-10 flex flex-wrap items-center gap-3 px-6 py-4`}>
+              <p className={`m-0 flex-1 text-xs ${MUTED}`}>
+                확정하면 결정 문서(Notion), 후속 작업(Task), 회의 제안(Calendar)을 만들 수 있습니다.
+              </p>
+              <button className={BTN_SUB} onClick={discard} disabled={busy}>
                 취소 (반영 안 함)
               </button>
-              <span className="spacer" />
-              <button className="btn btn-primary" onClick={confirm} disabled={busy || data.items.length === 0}>
-                검토 완료 · 확정
+              <button className={BTN_AI} onClick={confirm} disabled={busy || data.items.length === 0}>
+                ✨ 검토 완료 · 확정
               </button>
             </div>
           )}
@@ -231,9 +248,10 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
 function ThreadSummary({ workspaceId, data }: { workspaceId: string; data: AnalysisResultDTO }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="card stack">
+    <div className={`${AI_GLOW} stack`}>
+      <span className="text-[11px] font-bold tracking-wider text-violet-500 uppercase">✨ 원본 Slack 스레드</span>
       <div className="row small">
-        <strong>{data.threadTitle}</strong>
+        <strong className="text-base">{data.threadTitle}</strong>
         <span className="muted grow clamp">{data.threadPreview}</span>
         <Link to={`/workspaces/${workspaceId}/slack?channel=${data.channelId}`}>스레드 보기</Link>
         {data.threadLink && (

@@ -1,38 +1,76 @@
-/* UI-05 Notion 화면 전용 (담당: B) */
+/* UI-05 Notion 화면 전용 (담당: B) — docs/ui-prototype 시안의 문서 목록 + 문서 뷰어 */
 
 .notion-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 20px;
   align-items: start;
 }
 
 .notion-layout.with-detail {
-  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+}
+
+.notion-layout > .card {
+  border-radius: 26px;
+  padding: 16px;
+}
+
+.notion-layout > .card > .list {
+  gap: 8px;
+}
+
+.notion-layout > .card > .list > li {
+  border-bottom: none;
+  padding: 0;
 }
 
 .notion-item {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 4px;
   width: 100%;
-  border: none;
-  background: none;
-  padding: 4px 6px;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 18px;
   text-align: left;
   cursor: pointer;
   font: inherit;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.notion-item:hover {
+  border-color: var(--primary);
 }
 
 .notion-item.active {
-  background: var(--primary-soft);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.08), rgba(236, 72, 153, 0.06));
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow: 0 8px 30px -6px rgba(99, 102, 241, 0.12);
+}
+
+/* 문서 뷰어: 종이처럼 넓은 여백 */
+.notion-layout > article.card {
+  border-radius: 28px;
+  padding: 32px 36px;
+  gap: 14px;
+}
+
+.notion-layout > article.card h2 {
+  font-size: 26px;
+  letter-spacing: -0.03em;
 }
 
 .notion-body {
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.8;
   word-break: break-word;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
 }
 
 textarea.input.notion-editor {
