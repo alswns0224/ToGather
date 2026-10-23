@@ -757,3 +757,38 @@ textarea.input {
     min-height: 64px;
   }
 }
+
+/* ===== 클래스 없이 쓴 입력칸·버튼 (Tailwind로 옮기기 전 화면용 기본 모양) ===== */
+
+input:not([class]):not([type='checkbox']):not([type='radio']):not([type='file']),
+select:not([class]),
+textarea:not([class]) {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+button:not([class]) {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+button:not([class]):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}

@@ -20,6 +20,7 @@ import {
 import { ApiError } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
+import PageHeader from '../../components/PageHeader';
 import { formatDate, formatDateTime } from '../../utils/date';
 import './assistant.css';
 
@@ -63,17 +64,16 @@ export default function AssistantPage() {
 
   return (
     <section className="stack">
-      <div className="row">
-        <h1>AI 업무 보조</h1>
-        <span className="spacer" />
-        <button className="btn btn-primary" onClick={detect} disabled={detecting}>
-          {detecting ? '메시지 살펴보는 중...' : '새 후보 찾기'}
-        </button>
-      </div>
-      <p className="small muted">
-        최근 14일 동안 내가 쓰거나 멘션된 Slack 메시지와 내 메일에서 일정·할 일을 찾습니다. 승인하기 전에는 아무것도
-        등록되지 않습니다.
-      </p>
+      <PageHeader
+        eyebrow="AI ASSISTANT"
+        title="AI 업무 보조"
+        description="최근 14일 동안 내가 쓰거나 멘션된 Slack 메시지와 내 메일에서 일정·할 일을 찾습니다. 승인하기 전에는 아무것도 등록되지 않습니다."
+        actions={
+          <button className="btn btn-primary" onClick={detect} disabled={detecting}>
+            {detecting ? '메시지 살펴보는 중...' : '✨ 새 후보 찾기'}
+          </button>
+        }
+      />
       {notice && <div className={`alert ${notice.ok ? 'alert-success' : 'alert-error'}`}>{notice.text}</div>}
 
       <div className="segmented">

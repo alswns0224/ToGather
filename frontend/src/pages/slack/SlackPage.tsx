@@ -12,6 +12,7 @@ import {
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
+import PageHeader from '../../components/PageHeader';
 import { formatDateTime } from '../../utils/date';
 import Composer from './components/Composer';
 import MessageItem from './components/MessageItem';
@@ -64,19 +65,25 @@ export default function SlackPage() {
 
   return (
     <section className="stack">
-      <div className="row">
-        <h1>커뮤니케이션 (Slack)</h1>
-        <span className="spacer" />
-        <Link to={`/workspaces/${workspaceId}/slack/analyses`} className="small">
-          논의 정리 검토 대기
-        </Link>
-        {channel?.lastSyncedAt && (
-          <span className="small muted">마지막 동기화 {formatDateTime(channel.lastSyncedAt)}</span>
-        )}
-        <button className="btn btn-small" onClick={sync} disabled={syncing}>
-          {syncing ? '동기화 중...' : '새로고침'}
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="SLACK"
+        title="커뮤니케이션"
+        description={
+          channel?.lastSyncedAt
+            ? `마지막 동기화 ${formatDateTime(channel.lastSyncedAt)}`
+            : '연동한 Slack 채널의 대화와 스레드를 보고 작성합니다.'
+        }
+        actions={
+          <>
+            <Link to={`/workspaces/${workspaceId}/slack/analyses`} className="btn btn-small">
+              ✨ 논의 정리 검토 대기
+            </Link>
+            <button className="btn btn-small" onClick={sync} disabled={syncing}>
+              {syncing ? '동기화 중...' : '새로고침'}
+            </button>
+          </>
+        }
+      />
 
       {syncError && <div className="alert alert-error">동기화하지 못했습니다. 저장된 메시지를 보여줍니다. ({syncError})</div>}
 
