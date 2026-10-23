@@ -1,0 +1,23 @@
+/*
+ * Tailwind CSS 진입점 (docs/ui-prototype 시안 적용용)
+ *
+ * 기존 화면 스타일(index.css)은 legacy 레이어에 넣어 Tailwind 클래스보다 우선순위를 낮춘다.
+ * 화면을 Tailwind로 옮기는 동안 두 방식이 함께 동작하고, 같은 요소에 둘 다 있으면 Tailwind가 이긴다.
+ *
+ * Tailwind 기본 초기화(preflight)는 기존 화면의 제목 굵기·문단 간격·목록 기호를 바꾸므로 아직 넣지 않는다.
+ * 모든 화면을 옮긴 뒤 아래 주석을 풀고 index.css를 지운다.
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+/* @import 'tailwindcss/preflight.css' layer(base); */
+@import './index.css' layer(legacy);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* 다크 모드: <html class="dark">일 때 dark: 클래스가 적용된다. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Pretendard Variable', Pretendard, Inter, 'Noto Sans KR', -apple-system, BlinkMacSystemFont,
+    'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+}
