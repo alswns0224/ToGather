@@ -14,6 +14,7 @@ import {
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
+import PageHeader from '../../components/PageHeader';
 import { formatDateTime } from '../../utils/date';
 import './notion.css';
 
@@ -60,16 +61,21 @@ export default function NotionPage() {
 
   return (
     <section className="stack">
-      <div className="row">
-        <h1>문서 (Notion)</h1>
-        <span className="spacer" />
-        <button className="btn btn-small" onClick={sync} disabled={syncing}>
-          {syncing ? '동기화 중...' : '새로고침'}
-        </button>
-        <button className="btn btn-primary" onClick={() => setCreating(true)} disabled={!!noDatabase}>
-          + 새 문서
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="NOTION"
+        title="문서"
+        description="연동한 Notion 데이터베이스의 문서를 보고 작성합니다. 논의 정리로 만든 결정 문서도 여기에 모입니다."
+        actions={
+          <>
+            <button className="btn btn-small" onClick={sync} disabled={syncing}>
+              {syncing ? '동기화 중...' : '새로고침'}
+            </button>
+            <button className="btn btn-primary" onClick={() => setCreating(true)} disabled={!!noDatabase}>
+              + 새 문서
+            </button>
+          </>
+        }
+      />
 
       {syncError && <div className="alert alert-error">동기화하지 못했습니다. 저장된 문서를 보여줍니다. ({syncError})</div>}
       {noDatabase && (

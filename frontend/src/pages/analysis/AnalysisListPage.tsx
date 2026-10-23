@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router';
 import { getAnalyses, STATUS_TEXT } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
+import PageHeader from '../../components/PageHeader';
 import { formatDateTime } from '../../utils/date';
 
 export default function AnalysisListPage() {
@@ -16,15 +17,16 @@ export default function AnalysisListPage() {
 
   return (
     <section className="stack">
-      <div className="row">
-        <h1>논의 정리</h1>
-        <span className="spacer" />
-        <Link to={`/workspaces/${workspaceId}/slack`}>← Slack</Link>
-      </div>
-      <p className="small muted">
-        Slack 스레드에서 "논의 정리"를 실행하거나, 끝난 논의를 자동으로 분석한 결과입니다. 확정하기 전에는 외부 서비스에
-        반영되지 않습니다.
-      </p>
+      <PageHeader
+        eyebrow="AI CONTEXT SYNTHESIS"
+        title="논의 정리"
+        description='Slack 스레드에서 "논의 정리"를 실행하거나, 끝난 논의를 자동으로 분석한 결과입니다. 확정하기 전에는 외부 서비스에 반영되지 않습니다.'
+        actions={
+          <Link to={`/workspaces/${workspaceId}/slack`} className="btn btn-small">
+            ← Slack
+          </Link>
+        }
+      />
 
       <div className="segmented">
         <button className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>

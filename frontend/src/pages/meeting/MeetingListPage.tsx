@@ -5,8 +5,10 @@ import { createMeeting, getAgendaCandidates, getMeetings, type MeetingSummaryRes
 import { getMembers } from '../workspace/api';
 import { useAsync } from '../../hooks/useAsync';
 import { useLoginUser } from '../../components/RequireAuth';
-import { Empty, ErrorBox, Loading } from '../../components/Status';
+import { ErrorBox, Loading } from '../../components/Status';
 import { addDays, formatDate, formatDateTime, startOfDay, toInputValue } from '../../utils/date';
+import PageHeader from '../../components/PageHeader';
+import { BTN_AI, CARD, MUTED, SUB_CARD } from '../../components/ui';
 
 export const STATUS_TEXT = { SCHEDULING: '일정 조율 중', CONFIRMED: '확정', CANCELED: '취소됨' } as const;
 
@@ -24,48 +26,66 @@ export default function MeetingListPage() {
   const list = (meetings.data ?? []).filter((m) => (tab === 'past' ? isPast(m) : !isPast(m)));
 
   return (
-    <section className="stack">
-      <div className="row">
-        <h1>회의</h1>
-        <span className="spacer" />
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>
-          + 회의 만들기
-        </button>
-      </div>
+    <section className="space-y-6">
+      <PageHeader
+        eyebrow="SMART MEETINGS"
+        title="회의"
+        description="참여자 가용 시간과 캘린더 일정을 모아 회의 시간을 추천하고, 확정하면 Google Calendar에 등록합니다."
+        actions={
+          <button className={BTN_AI} onClick={() => setCreating(true)}>
+            + 회의 만들기
+          </button>
+        }
+      />
 
       {creating && <MeetingCreateForm workspaceId={workspaceId} onClose={() => setCreating(false)} />}
 
-      <div className="segmented">
-        <button className={tab === 'upcoming' ? 'active' : ''} onClick={() => setTab('upcoming')}>
-          예정된 회의
-        </button>
-        <button className={tab === 'past' ? 'active' : ''} onClick={() => setTab('past')}>
-          지난 회의
-        </button>
+      <div className={`${SUB_CARD} inline-flex gap-1 p-1`}>
+        {(['upcoming', 'past'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`cursor-pointer rounded-xl border-0 px-4 py-1.5 text-xs font-bold transition ${
+              tab === t ? 'bg-indigo-600 text-white' : `bg-transparent ${MUTED}`
+            }`}
+          >
+            {t === 'upcoming' ? '예정된 회의' : '지난 회의'}
+          </button>
+        ))}
       </div>
 
       {meetings.loading && <Loading />}
       {meetings.error && <ErrorBox error={meetings.error} onRetry={meetings.reload} />}
       {meetings.data && list.length === 0 && (
-        <Empty>{tab === 'upcoming' ? '예정된 회의가 없습니다.' : '지난 회의가 없습니다.'}</Empty>
+        <div className={`${CARD} p-10 text-center`}>
+          <p className={`m-0 text-sm ${MUTED}`}>{tab === 'upcoming' ? '예정된 회의가 없습니다.' : '지난 회의가 없습니다.'}</p>
+        </div>
       )}
       {list.length > 0 && (
-        <ul className="list card">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {list.map((m) => (
-            <li key={m.meetingId}>
-              <Link to={`/workspaces/${workspaceId}/meetings/${m.meetingId}`} className="row link-row">
+            <Link
+              key={m.meetingId}
+              to={`/workspaces/${workspaceId}/meetings/${m.meetingId}`}
+              className={`${CARD} group block p-6 no-underline transition-all hover:-translate-y-0.5 hover:border-indigo-500/60`}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
                 <span className={`badge status-${m.status.toLowerCase()}`}>{STATUS_TEXT[m.status]}</span>
-                <strong>{m.title}</strong>
-                <span className="spacer" />
-                <span className="small muted">
-                  {m.status === 'CONFIRMED' && m.startAt
-                    ? formatDateTime(m.startAt)
-                    : `${formatDate(m.candidateStartAt)} ~ ${formatDate(m.candidateEndAt)} · 응답 ${m.respondedCount}/${m.participantCount}`}
-                </span>
-              </Link>
-            </li>
+                {m.status !== 'CONFIRMED' && (
+                  <span className={`text-[11px] font-bold ${MUTED}`}>
+                    응답 {m.respondedCount}/{m.participantCount}
+                  </span>
+                )}
+              </div>
+              <h3 className="m-0 text-lg font-bold transition-colors group-hover:text-indigo-500">{m.title}</h3>
+              <p className={`m-0 mt-1 text-xs ${MUTED}`}>
+                {m.status === 'CONFIRMED' && m.startAt
+                  ? `📅 ${formatDateTime(m.startAt)}`
+                  : `후보 기간 ${formatDate(m.candidateStartAt)} ~ ${formatDate(m.candidateEndAt)}`}
+              </p>
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
     </section>
   );

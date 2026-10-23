@@ -21,6 +21,7 @@ import { STATUS_TEXT } from './MeetingListPage';
 import MeetingEditForm from './MeetingEditForm';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorBox, Loading } from '../../components/Status';
+import { BTN_AI, BTN_DANGER, BTN_SUB, CARD, EYEBROW, MUTED, SUB_CARD } from '../../components/ui';
 import { addDays, formatDate, formatDateTime, formatTime, fromLocalIso, startOfDay, toLocalIso } from '../../utils/date';
 
 const RISK_TEXT = { NORMAL: '정상', WARNING: '주의', DANGER: '위험' } as const;
@@ -50,22 +51,31 @@ export default function MeetingDetailPage() {
   const scheduling = m.status === 'SCHEDULING';
 
   return (
-    <section className="stack">
-      <Link to={`/workspaces/${workspaceId}/meetings`} className="small">
+    <section className="space-y-6">
+      <Link to={`/workspaces/${workspaceId}/meetings`} className={`text-xs font-bold no-underline ${MUTED}`}>
         ← 회의 목록
       </Link>
-      <div className="row">
-        <h1>{m.title}</h1>
-        <span className={`badge status-${m.status.toLowerCase()}`}>{STATUS_TEXT[m.status]}</span>
-        <span className="spacer" />
+      <div className={`${CARD} flex flex-wrap items-start justify-between gap-4 p-7`}>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={EYEBROW}>SMART MEETING</span>
+            <span className={`badge status-${m.status.toLowerCase()}`}>{STATUS_TEXT[m.status]}</span>
+          </div>
+          <h1 className="mt-2 !text-2xl">{m.title}</h1>
+          <p className={`m-0 mt-1 text-xs ${MUTED}`}>
+            {m.durationMinutes}분 · {m.meetingMode ?? '진행 방식 미정'} · 후보 기간 {formatDateTime(m.candidateStartAt)} ~{' '}
+            {formatDateTime(m.candidateEndAt)}
+          </p>
+        </div>
+        <div className="flex gap-2">
         {m.canManage && scheduling && !editing && (
-          <button className="btn" onClick={() => setEditing(true)}>
+          <button className={BTN_SUB} onClick={() => setEditing(true)}>
             수정
           </button>
         )}
         {m.canManage && m.status !== 'CANCELED' && (
           <button
-            className="btn btn-danger"
+            className={BTN_DANGER}
             onClick={() =>
               window.confirm('회의를 취소할까요? 확정된 회의면 캘린더 일정도 삭제됩니다.') &&
               run(() => cancelMeeting(workspaceId, m.meetingId))
@@ -74,11 +84,8 @@ export default function MeetingDetailPage() {
             회의 취소
           </button>
         )}
+        </div>
       </div>
-      <p className="muted">
-        {m.durationMinutes}분 · {m.meetingMode ?? '진행 방식 미정'} · 후보 기간 {formatDateTime(m.candidateStartAt)} ~{' '}
-        {formatDateTime(m.candidateEndAt)}
-      </p>
       {actionError && <ErrorBox error={actionError} />}
       {editing && (
         <MeetingEditForm
@@ -93,9 +100,10 @@ export default function MeetingDetailPage() {
       )}
 
       {m.status === 'CONFIRMED' && m.startAt && (
-        <div className="card stack confirmed">
-          <strong>
-            확정: {formatDateTime(m.startAt)} ~ {m.endAt && formatTime(m.endAt)}
+        <div className="space-y-3 rounded-[28px] border border-violet-500/35 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/5 p-6 shadow-[0_8px_30px_-6px_rgba(99,102,241,0.12)]">
+          <p className="m-0 text-[11px] font-bold tracking-wider text-indigo-500 uppercase">✅ 확정된 회의</p>
+          <strong className="block text-xl">
+            {formatDateTime(m.startAt)} ~ {m.endAt && formatTime(m.endAt)}
           </strong>
           <div className="row">
             {m.meetLink && (
@@ -118,29 +126,33 @@ export default function MeetingDetailPage() {
         </div>
       )}
 
-      <Agendas workspaceId={workspaceId} meeting={m} onChange={run} />
-
-      {scheduling && (
-        <>
-          <Responses meeting={m} />
-          {m.participating ? (
-            <AvailabilityGrid
-              key={`grid-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
+      <div className={`grid grid-cols-1 gap-6 ${scheduling ? 'lg:grid-cols-12' : ''}`}>
+        <div className={`min-w-0 space-y-6 ${scheduling ? 'lg:col-span-7' : ''}`}>
+          <Agendas workspaceId={workspaceId} meeting={m} onChange={run} />
+          {scheduling &&
+            (m.participating ? (
+              <AvailabilityGrid
+                key={`grid-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
+                workspaceId={workspaceId}
+                meetingId={m.meetingId}
+                onSaved={meeting.reload}
+              />
+            ) : (
+              <p className={`text-sm ${MUTED}`}>회의 참여자만 가용 시간을 입력할 수 있습니다.</p>
+            ))}
+        </div>
+        {scheduling && (
+          <div className="min-w-0 space-y-6 lg:col-span-5">
+            <Responses meeting={m} />
+            <Recommendations
+              key={`rec-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
               workspaceId={workspaceId}
-              meetingId={m.meetingId}
-              onSaved={meeting.reload}
+              meeting={m}
+              onConfirm={(startAt) => run(() => confirmMeeting(workspaceId, m.meetingId, startAt))}
             />
-          ) : (
-            <p className="muted">회의 참여자만 가용 시간을 입력할 수 있습니다.</p>
-          )}
-          <Recommendations
-            key={`rec-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
-            workspaceId={workspaceId}
-            meeting={m}
-            onConfirm={(startAt) => run(() => confirmMeeting(workspaceId, m.meetingId, startAt))}
-          />
-        </>
-      )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -163,7 +175,7 @@ function Agendas({
   const used = new Set(meeting.agendas.map((a) => a.taskId));
 
   return (
-    <div className="card stack">
+    <div className={`${CARD} space-y-3 p-6`}>
       <div className="row">
         <strong>안건</strong>
         <span className="spacer" />
@@ -231,7 +243,7 @@ function Agendas({
 function Responses({ meeting }: { meeting: MeetingDetailResponse }) {
   const responded = meeting.participants.filter((p) => p.hasResponded).length;
   return (
-    <div className="card stack">
+    <div className={`${CARD} space-y-3 p-6`}>
       <strong>
         가용 시간 응답 ({responded}/{meeting.participants.length})
       </strong>
@@ -321,7 +333,7 @@ function AvailabilityGrid({
   };
 
   return (
-    <div className="card stack">
+    <div className={`${CARD} space-y-3 p-6`}>
       <div className="row">
         <strong>내 가용 시간</strong>
         {data.data.hasResponded && !dirty && <span className="badge badge-success">응답 완료</span>}
@@ -443,11 +455,13 @@ function Recommendations({
   };
 
   return (
-    <div className="card stack">
-      <div className="row">
-        <strong>회의 시간 추천</strong>
-        <span className="spacer" />
-        <button className="btn btn-small" onClick={recommend} disabled={loading || responded === 0}>
+    <div className={`${CARD} space-y-3 p-6`}>
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <strong className="text-base">✨ 회의 시간 추천</strong>
+          <p className={`m-0 text-[11px] ${MUTED}`}>가능 인원 많은 순 → 비선호 적은 순 → 이른 시각</p>
+        </div>
+        <button className={BTN_AI} onClick={recommend} disabled={loading || responded === 0}>
           {loading ? '계산 중...' : candidates ? '다시 추천' : '추천 받기'}
         </button>
       </div>
@@ -457,36 +471,51 @@ function Recommendations({
         <span className="muted small">모두가 가능한 시간이 없습니다. 후보 기간을 늘리거나 응답을 더 받아 보세요.</span>
       )}
       {candidates && candidates.length > 0 && (
-        <ul className="list">
-          {candidates.slice(0, visible).map((c) => (
-            <li key={c.candidateId} className="row">
-              <span className={`badge ${c.rank === 1 ? 'badge-primary' : ''}`}>
-                {c.tied ? '공동 ' : ''}
-                {c.rank}위
-              </span>
-              <strong>
-                {formatDateTime(c.startAt)} ~ {formatTime(c.endAt)}
-              </strong>
-              <span className="small">
-                가능 {c.availableCount}/{c.respondedCount}
-                {c.nonPreferredCount > 0 && ` · 비선호 ${c.nonPreferredCount}`}
-                {c.respondedCount < c.participantCount && ` · 미응답 ${c.participantCount - c.respondedCount}`}
-              </span>
-              {c.unavailableNames.length > 0 && (
-                <span className="small muted">불가: {c.unavailableNames.join(', ')}</span>
-              )}
-              <span className="spacer" />
-              {meeting.canManage && (
-                <button className="btn btn-primary btn-small" onClick={() => confirm(c)}>
-                  확정
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-3">
+          {candidates.slice(0, visible).map((c) => {
+            const top = c.rank === 1;
+            return (
+              <div
+                key={c.candidateId}
+                className={
+                  top
+                    ? 'space-y-2 rounded-2xl border border-violet-500/35 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/5 p-4'
+                    : `${SUB_CARD} space-y-2 p-4`
+                }
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                      top ? 'bg-[linear-gradient(135deg,#4F46E5,#7C3AED)] text-white' : 'bg-indigo-500/15 text-indigo-500'
+                    }`}
+                  >
+                    {c.tied ? '공동 ' : ''}#{c.rank}
+                    {top && ' 최적 추천'}
+                  </span>
+                  <span className="text-xs font-bold text-indigo-500">
+                    가능 {c.availableCount}/{c.respondedCount}
+                  </span>
+                </div>
+                <strong className="block text-sm">
+                  {formatDateTime(c.startAt)} ~ {formatTime(c.endAt)}
+                </strong>
+                <p className={`m-0 text-[11px] ${MUTED}`}>
+                  {c.nonPreferredCount > 0 ? `비선호 ${c.nonPreferredCount}명` : '비선호 없음'}
+                  {c.respondedCount < c.participantCount && ` · 미응답 ${c.participantCount - c.respondedCount}명`}
+                  {c.unavailableNames.length > 0 && ` · 불가: ${c.unavailableNames.join(', ')}`}
+                </p>
+                {meeting.canManage && (
+                  <button className={`${top ? BTN_AI : BTN_SUB} w-full`} onClick={() => confirm(c)}>
+                    이 시간으로 회의 확정
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
       {candidates && candidates.length > visible && (
-        <button className="btn btn-small" onClick={() => setVisible(visible + PAGE_SIZE)}>
+        <button className={`${BTN_SUB} w-full`} onClick={() => setVisible(visible + PAGE_SIZE)}>
           더 보기 ({candidates.length - visible}개 남음)
         </button>
       )}

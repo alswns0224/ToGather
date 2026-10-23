@@ -15,6 +15,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { useLoginUser } from '../../components/RequireAuth';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import { formatDateTime } from '../../utils/date';
+import { BTN_AI, BTN_DANGER, BTN_PRIMARY, BTN_SUB, CARD, EYEBROW, INPUT, MUTED, SUB_CARD } from '../../components/ui';
 
 export default function MembersPage() {
   const { workspaceId = '' } = useParams();
@@ -36,35 +37,42 @@ export default function MembersPage() {
   };
 
   return (
-    <section className="stack">
-      <h1>팀원</h1>
-      {isOwner && <InviteLinkBox workspaceId={workspaceId} />}
+    <section className="mx-auto max-w-5xl space-y-6">
+      <div className={`${CARD} p-7`}>
+        <span className={EYEBROW}>TEAM</span>
+        <h1 className="mt-2 !text-2xl">{workspace.data?.name ?? '팀원'}</h1>
+        {workspace.data?.description && <p className={`m-0 mt-1 text-xs ${MUTED}`}>{workspace.data.description}</p>}
+        {isOwner && <InviteLinkBox workspaceId={workspaceId} />}
+      </div>
 
       {actionError && <ErrorBox error={actionError} />}
       {members.loading && <Loading />}
       {members.error && <ErrorBox error={members.error} onRetry={members.reload} />}
       {members.data && members.data.length === 0 && <Empty>팀원이 없습니다.</Empty>}
       {members.data && members.data.length > 0 && (
-        <ul className="list card">
+        <div className={`${CARD} grid grid-cols-1 gap-3 p-6 md:grid-cols-2`}>
           {members.data.map((m) => (
-            <li key={m.userId} className="row">
-              <Avatar name={m.name} src={m.profileImage} />
-              <div>
-                <strong>{m.name}</strong> {m.userId === user.userId && <span className="muted small">(나)</span>}
-                <div className="muted small">{m.email}</div>
+            <div key={m.userId} className={`${SUB_CARD} flex items-center justify-between gap-3 p-4`}>
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar name={m.name} src={m.profileImage} />
+                <div className="min-w-0">
+                  <p className="m-0 text-sm font-bold">
+                    {m.name}{' '}
+                    <span className="text-[10px] text-indigo-500">
+                      ({m.role === 'OWNER' ? '팀장' : '팀원'}){m.userId === user.userId && ' · 나'}
+                    </span>
+                  </p>
+                  <p className={`m-0 truncate text-xs ${MUTED}`}>{m.email}</p>
+                </div>
               </div>
-              <span className="spacer" />
-              <span className={`badge ${m.role === 'OWNER' ? 'badge-primary' : ''}`}>
-                {m.role === 'OWNER' ? '팀장' : '팀원'}
-              </span>
               {isOwner && m.role !== 'OWNER' && (
-                <button className="btn btn-small btn-danger" onClick={() => remove(m.userId, m.name)}>
+                <button className={BTN_DANGER} onClick={() => remove(m.userId, m.name)}>
                   내보내기
                 </button>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
       {isOwner && workspace.data && (
@@ -103,32 +111,37 @@ function InviteLinkBox({ workspaceId }: { workspaceId: string }) {
   };
 
   return (
-    <div className="card stack">
-      <strong>초대 링크</strong>
+    <div className={`${SUB_CARD} mt-5 flex flex-wrap items-center justify-between gap-3 p-4`}>
       {active.loading && <Loading />}
       {error && <ErrorBox error={error} />}
       {current ? (
         <>
-          <div className="row">
-            <input className="input" readOnly value={current.url} onFocus={(e) => e.target.select()} />
-            <button className="btn" onClick={copy}>
-              {copied ? '복사됨' : '복사'}
-            </button>
+          <div className="min-w-0 flex-1">
+            <p className="m-0 text-xs font-bold">🔗 팀원 초대 링크 (만료: {formatDateTime(current.expiresAt)})</p>
+            <input
+              className="mt-1 w-full border-0 bg-transparent p-0 text-xs font-bold text-indigo-500 outline-none"
+              readOnly
+              value={current.url}
+              onFocus={(e) => e.target.select()}
+            />
           </div>
-          <span className="muted small">{formatDateTime(current.expiresAt)}까지 유효합니다.</span>
-          <div>
-            <button className="btn btn-small" onClick={create}>
-              새 링크 만들기
+          <div className="flex gap-2">
+            <button className={BTN_SUB} onClick={create}>
+              새 링크
+            </button>
+            <button className={BTN_PRIMARY} onClick={copy}>
+              {copied ? '복사됨 ✓' : '링크 복사'}
             </button>
           </div>
         </>
       ) : (
         !active.loading && (
-          <div>
-            <button className="btn btn-primary" onClick={create}>
+          <>
+            <p className={`m-0 text-xs ${MUTED}`}>🔗 초대 링크를 만들어 팀원에게 보내세요. (7일간 유효)</p>
+            <button className={BTN_PRIMARY} onClick={create}>
               초대 링크 만들기
             </button>
-          </div>
+          </>
         )
       )}
     </div>
@@ -176,12 +189,12 @@ function WorkspaceSettings({
   };
 
   return (
-    <form className="card form" onSubmit={save}>
-      <strong>워크스페이스 설정 (팀장)</strong>
-      <label>
-        이름
+    <form className={`${CARD} space-y-4 p-7`} onSubmit={save}>
+      <h2 className="!text-xl">워크스페이스 설정 (팀장)</h2>
+      <label className="block">
+        <span className={`mb-1 block text-xs font-bold ${MUTED}`}>이름</span>
         <input
-          className="input"
+          className={INPUT}
           required
           maxLength={100}
           value={form.name}
@@ -191,10 +204,10 @@ function WorkspaceSettings({
           }}
         />
       </label>
-      <label>
-        설명
+      <label className="block">
+        <span className={`mb-1 block text-xs font-bold ${MUTED}`}>설명</span>
         <textarea
-          className="input"
+          className={`${INPUT} min-h-20 resize-y`}
           maxLength={1000}
           value={form.description}
           onChange={(e) => {
@@ -204,10 +217,10 @@ function WorkspaceSettings({
         />
       </label>
       {error && <ErrorBox error={error} />}
-      <div className="row">
-        <button className="btn btn-primary">{saved ? '저장됨' : '저장'}</button>
-        <span className="spacer" />
-        <button type="button" className="btn btn-danger" onClick={remove}>
+      <div className="flex items-center">
+        <button className={BTN_AI}>{saved ? '저장됨 ✓' : '저장하기'}</button>
+        <span className="flex-1" />
+        <button type="button" className={BTN_DANGER} onClick={remove}>
           워크스페이스 삭제
         </button>
       </div>
@@ -217,8 +230,10 @@ function WorkspaceSettings({
 
 function Avatar({ name, src }: { name: string; src: string | null }) {
   return src ? (
-    <img className="avatar" src={src} alt="" referrerPolicy="no-referrer" />
+    <img className="h-10 w-10 flex-shrink-0 rounded-full object-cover ring-2 ring-white dark:ring-slate-900" src={src} alt="" referrerPolicy="no-referrer" />
   ) : (
-    <span className="avatar avatar-text">{name.slice(0, 1)}</span>
+    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white ring-2 ring-white dark:ring-slate-900">
+      {name.slice(0, 2)}
+    </span>
   );
 }

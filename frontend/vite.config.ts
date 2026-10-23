@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     // Slack OAuth는 https만 허용하므로 ngrok 주소로 접속할 수 있게 한다. (README "외부 서비스 앱 등록")

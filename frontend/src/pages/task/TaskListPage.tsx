@@ -14,6 +14,7 @@ import {
   getMembers,
   type MemberResponse,
 } from '../workspace/api';
+import PageHeader from '../../components/PageHeader';
 
 export default function TaskListPage() {
   const { workspaceId } = useParams();
@@ -289,8 +290,12 @@ export default function TaskListPage() {
   );
 
   return (
-    <section>
-      <h1>Task</h1>
+    <section className="stack">
+      <PageHeader
+        eyebrow="TASK BOARD"
+        title="작업 (Task)"
+        description="담당자 · 마감일 · 필요 산출물을 정하고 진행 상황과 마감 위험도를 확인합니다."
+      />
 
       {/* 전체 / 내 Task */}
       <div>
