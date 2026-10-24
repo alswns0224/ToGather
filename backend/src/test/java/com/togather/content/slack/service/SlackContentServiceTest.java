@@ -190,6 +190,9 @@ class SlackContentServiceTest extends IntegrationTestSupport {
                 slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS).replies();
         // 지운 답글은 스레드 화면에서 빠진다. (분석 근거 등에서는 보관된 사본을 쓴다)
         assertThat(replies).extracting(SlackMessageResponse::text).containsExactly("좋아요");
+        // 원본에서 삭제된 답글은 답글 수에서 뺀다
+        var page = slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20));
+        assertThat(page.items().getFirst().replyCount()).isEqualTo(1);
     }
 
     @Test

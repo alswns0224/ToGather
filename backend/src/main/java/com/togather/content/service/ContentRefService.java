@@ -152,7 +152,7 @@ public class ContentRefService {
 
     private int countReplies(ContentRef ref) {
         return ref.getContentType() == ContentType.MESSAGE
-                ? (int) contentRefRepository.countByParentRefId(ref.getContentRefId())
+                ? (int) contentRefRepository.countByParentRefIdAndIsOriginDeletedFalse(ref.getContentRefId())
                 : 0;
     }
 
