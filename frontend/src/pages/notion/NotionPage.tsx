@@ -71,7 +71,12 @@ export default function NotionPage() {
             <button className="btn btn-small" onClick={sync} disabled={syncing}>
               {syncing ? '동기화 중...' : '새로고침'}
             </button>
-            <button className="btn btn-primary" onClick={() => setCreating(true)} disabled={!!noDatabase}>
+            <button
+              className="btn btn-primary"
+              onClick={() => setCreating(true)}
+              disabled={!!noDatabase}
+              title={noDatabase ? '새 문서는 연동한 Notion 데이터베이스에 만들어집니다.' : undefined}
+            >
               + 새 문서
             </button>
           </>
@@ -79,11 +84,11 @@ export default function NotionPage() {
       />
 
       {syncError && <div className="alert alert-error">동기화하지 못했습니다. 저장된 문서를 보여줍니다. ({syncError})</div>}
-      {noDatabase && (
+      {noDatabase && pages.data && pages.data.length === 0 && (
         <Empty>
-          연동된 Notion 데이터베이스가 없습니다.{' '}
-          <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리</Link>에서 Notion을 연결하고 데이터베이스를
-          선택해 주세요.
+          연동된 Notion 페이지·데이터베이스가 없습니다.{' '}
+          <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리</Link>에서 Notion을 연결하고 가져올 페이지나
+          데이터베이스를 선택해 주세요.
         </Empty>
       )}
 

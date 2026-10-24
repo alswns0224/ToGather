@@ -18,6 +18,7 @@ import com.togather.content.notion.dto.NotionPageResponse;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.TeamTokenResolver;
+import com.togather.integration.client.NotionOAuthClient;
 import com.togather.integration.service.IntegrationService;
 import java.time.Duration;
 import java.time.Instant;
@@ -56,10 +57,10 @@ public class NotionContentService {
 
     // ===================== 화면 (UI-05) =====================
 
-    /** 연동한 데이터베이스 목록 */
+    /** 연동한 데이터베이스 목록 (새 문서를 만들 곳). 페이지 대상은 문서를 만들 수 없어 뺀다. */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<NotionDatabaseResponse> getDatabases(Long workspaceId, Long userId) {
-        List<String> ids = integrationService.getConnectionTargets(workspaceId, Provider.NOTION);
+        List<String> ids = linkedDatabases(workspaceId);
         return ids.stream().map(id -> {
             try {
                 String token = token(workspaceId, id, userId);
@@ -95,7 +96,7 @@ public class NotionContentService {
                     contentRefService.markOriginDeleted(contentRefId);
                 } else {
                     NotionApiClient.PageContent content = notionApiClient.getPageContent(token, page.id());
-                    notionSyncAdapter.save(workspaceId, token, page, content.text());
+                    notionSyncAdapter.save(workspaceId, token, page, content.text(), ref.getChannelId());
                     bodyEditable = content.editable();
                 }
             } catch (BusinessException e) {
@@ -121,7 +122,7 @@ public class NotionContentService {
         String token = token(workspaceId, resolved, userId);
         NotionDatabase database = database(token, resolved);
         NotionPage page = notionApiClient.createPage(token, database, title, body);
-        return saveOrFail(workspaceId, token, page, body);
+        return saveOrFail(workspaceId, token, page, body, resolved);
     }
 
     /** 확정된 분석 결과로 문서를 만든다 (B-08, 명세서 createContent(NotionPageRequest)) [결정 4] */
@@ -138,9 +139,8 @@ public class NotionContentService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
         String token = token(workspaceId, ref.getChannelId(), userId);
-        NotionDatabase database = database(token, ref.getChannelId());
-        NotionPage page = notionApiClient.updatePage(token, ref.getOriginId(), database.titleProperty(), title, body);
-        return saveOrFail(workspaceId, token, page, body != null ? body : ref.getContent());
+        NotionPage page = notionApiClient.updatePage(token, ref.getOriginId(), titleProperty(token, ref), title, body);
+        return saveOrFail(workspaceId, token, page, body != null ? body : ref.getContent(), ref.getChannelId());
     }
 
     /** 휴지통으로 옮기고 원본 삭제로 표시한다. 연결된 Task·분석에서는 보관된 사본을 볼 수 있다. (UC-05-04) */
@@ -182,8 +182,8 @@ public class NotionContentService {
         return teamTokenResolver.tokenFor(workspaceId, Provider.NOTION, databaseId, userId);
     }
 
-    private ContentRefDTO saveOrFail(Long workspaceId, String token, NotionPage page, String body) {
-        ContentRefDTO saved = notionSyncAdapter.save(workspaceId, token, page, body == null ? "" : body);
+    private ContentRefDTO saveOrFail(Long workspaceId, String token, NotionPage page, String body, String targetId) {
+        ContentRefDTO saved = notionSyncAdapter.save(workspaceId, token, page, body == null ? "" : body, targetId);
         if (saved == null) {
             // Notion에는 반영됐으므로 다음 동기화에서 저장된다.
             throw new BusinessException(ErrorCode.INTERNAL_ERROR);
@@ -197,8 +197,27 @@ public class NotionContentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
+    /** 연동 대상 중 데이터베이스만 (페이지 대상 "page:..." 제외) */
+    private List<String> linkedDatabases(Long workspaceId) {
+        return integrationService.getConnectionTargets(workspaceId, Provider.NOTION).stream()
+                .filter(id -> !NotionOAuthClient.isPageTarget(id))
+                .toList();
+    }
+
+    /**
+     * 페이지 제목 속성 이름. 데이터베이스 행이면 그 데이터베이스의 제목 속성, 일반 페이지면 "title".
+     * 페이지 대상 아래의 데이터베이스 행도 있으므로 연동 대상이 아니라 페이지의 실제 부모로 판단한다.
+     */
+    private String titleProperty(String token, ContentRef ref) {
+        if (!NotionOAuthClient.isPageTarget(ref.getChannelId())) {
+            return database(token, ref.getChannelId()).titleProperty();
+        }
+        String parentDatabase = notionApiClient.getPage(token, ref.getOriginId()).databaseId();
+        return parentDatabase == null ? "title" : database(token, parentDatabase).titleProperty();
+    }
+
     private String resolveDatabase(Long workspaceId, String databaseId) {
-        List<String> linked = integrationService.getConnectionTargets(workspaceId, Provider.NOTION);
+        List<String> linked = linkedDatabases(workspaceId);
         if (linked.isEmpty()) {
             throw new BusinessException(ErrorCode.NOTION_DATABASE_NOT_LINKED);
         }

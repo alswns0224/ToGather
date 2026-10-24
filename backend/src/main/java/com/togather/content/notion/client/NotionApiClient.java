@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,9 @@ public class NotionApiClient {
     private static final String BASE = "https://api.notion.com/v1";
     /** 블록 추가 API 한 번에 넣을 수 있는 최대 개수 */
     private static final int MAX_CHILDREN = 100;
+    /** 하위 페이지가 들어 있을 수 있는 블록 (페이지를 훑을 때 안까지 본다) */
+    private static final Set<String> CONTAINER_BLOCKS = Set.of("toggle", "column_list", "column", "synced_block",
+            "callout", "heading_1", "heading_2", "heading_3");
     private static final ParameterizedTypeReference<Map<String, Object>> JSON = new ParameterizedTypeReference<>() {
     };
 
@@ -85,6 +89,65 @@ public class NotionApiClient {
             count++;
         } while (cursor != null && count < maxPages);
         return pages;
+    }
+
+    /**
+     * 페이지와 그 아래 하위 페이지, 페이지 안 데이터베이스의 행을 모은다. (페이지를 연동 대상으로 고른 경우)
+     * 토글·열처럼 블록 안에 들어 있는 하위 페이지도 찾는다. 너무 깊거나 많으면 maxDepth·maxPages에서 멈춘다.
+     *
+     * @return 찾은 페이지와, 한도 때문에 중간에 멈췄는지
+     */
+    public PageTree crawlPage(String token, String rootPageId, int maxDepth, int maxPages) {
+        List<NotionPage> pages = new ArrayList<>();
+        NotionPage root = getPage(token, rootPageId);
+        pages.add(root);
+        boolean truncated = !root.archived() && collectChildren(token, root.id(), 1, maxDepth, maxPages, pages);
+        return new PageTree(pages, truncated);
+    }
+
+    /** @param truncated 한도에 걸려 일부만 가져왔는지 (그러면 사라진 페이지를 삭제로 표시하지 않는다) */
+    public record PageTree(List<NotionPage> pages, boolean truncated) {
+    }
+
+    /** 블록 아래를 훑어 하위 페이지를 pages에 넣는다. 한도에 걸리면 true */
+    private boolean collectChildren(String token, String blockId, int depth, int maxDepth, int maxPages,
+                                    List<NotionPage> pages) {
+        if (depth > maxDepth) {
+            return true;
+        }
+        boolean truncated = false;
+        for (Map<String, Object> block : getChildren(token, blockId)) {
+            if (pages.size() >= maxPages) {
+                return true;
+            }
+            String type = str(block, "type");
+            String id = str(block, "id");
+            if (bool(block, "archived") || bool(block, "in_trash")) {
+                continue;
+            }
+            if ("child_page".equals(type)) {
+                pages.add(new NotionPage(id, null, str(obj(block, "child_page"), "title"), pageUrl(id),
+                        toLocal(str(block, "created_time")), toLocal(str(block, "last_edited_time")), false));
+                truncated |= collectChildren(token, id, depth + 1, maxDepth, maxPages, pages);
+            } else if ("child_database".equals(type)) {
+                try {
+                    List<NotionPage> rows = queryDatabase(token, id, 1);
+                    rows.stream().limit(Math.max(0, maxPages - pages.size())).forEach(pages::add);
+                    truncated |= rows.size() >= 100 || pages.size() >= maxPages;
+                } catch (BusinessException e) {
+                    // 링크된 데이터베이스처럼 통합이 볼 수 없는 데이터베이스는 건너뛴다.
+                    log.info("Notion 하위 데이터베이스 조회 건너뜀: {}", e.getErrorCode());
+                }
+            } else if (bool(block, "has_children") && CONTAINER_BLOCKS.contains(type)) {
+                // 토글·열·동기화 블록 안의 하위 페이지 (같은 깊이로 본다)
+                truncated |= collectChildren(token, id, depth, maxDepth, maxPages, pages);
+            }
+        }
+        return truncated;
+    }
+
+    private static String pageUrl(String pageId) {
+        return "https://www.notion.so/" + pageId.replace("-", "");
     }
 
     public NotionPage getPage(String token, String pageId) {
