@@ -38,7 +38,18 @@ public interface ContentRefRepository extends JpaRepository<ContentRef, Long> {
     Page<ContentRef> findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullOrderByCreatedAtDesc(
             Long workspaceId, Provider provider, String channelId, Pageable pageable);
 
+    /** 채널의 최상위 메시지 중 원본에서 삭제되지 않은 것 (Slack 채널 화면) */
+    Page<ContentRef> findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseOrderByCreatedAtDesc(
+            Long workspaceId, Provider provider, String channelId, Pageable pageable);
+
     List<ContentRef> findAllByParentRefIdOrderByCreatedAtAsc(Long parentRefId);
+
+    /**
+     * 원본에서 삭제된 답글 ID. 엔티티가 아니라 값으로 읽으므로, 같은 호출 안에서 먼저 읽어 둔 엔티티(1차 캐시)와 상관없이
+     * DB의 최신 상태를 본다. (스레드 상세: 동기화 중 삭제 표시한 답글을 바로 빼야 함)
+     */
+    @Query("select c.contentRefId from ContentRef c where c.parentRefId = :parentRefId and c.isOriginDeleted = true")
+    List<Long> findDeletedReplyIds(Long parentRefId);
 
     List<ContentRef> findAllByWorkspaceIdAndProviderAndParentRefIdIsNullOrderByLastModifiedAtDesc(
             Long workspaceId, Provider provider);

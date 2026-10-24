@@ -159,6 +159,10 @@ class SlackContentServiceTest extends IntegrationTestSupport {
 
         SlackMessageResponse reply = slackContentService.createReply(workspaceId, userId, "C1", ROOT_TS, "확인했습니다");
         assertThat(reply.mine()).isTrue();
+        // Slack에도 새 답글이 생겼으므로 스레드를 다시 받으면 함께 온다.
+        SlackMessage root = message(ROOT_TS, ROOT_TS, "U1", "회의는 <@U2> 목요일로 할까요?", 2, newTs);
+        when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), any())).thenReturn(List.of(root,
+                message(REPLY_TS, ROOT_TS, "U2", "좋아요", 0, null), message(newTs, ROOT_TS, "U1", "확인했습니다", 0, null)));
         assertThat(slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS).replies()).hasSize(2);
 
         SlackMessageResponse edited = slackContentService.updateMessage(workspaceId, userId, "C1", ROOT_TS, "수정");
@@ -167,9 +171,78 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         assertThat(edited.attachments()).hasSize(1); // 첨부 파일은 유지
 
         slackContentService.deleteMessage(workspaceId, userId, "C1", newTs);
+        when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), any()))
+                .thenReturn(List.of(root, message(REPLY_TS, ROOT_TS, "U2", "좋아요", 0, null)));
         List<SlackMessageResponse> replies =
                 slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS).replies();
-        assertThat(replies).filteredOn(SlackMessageResponse::isOriginDeleted).hasSize(1);
+        // 지운 답글은 스레드 화면에서 빠진다. (분석 근거 등에서는 보관된 사본을 쓴다)
+        assertThat(replies).extracting(SlackMessageResponse::text).containsExactly("좋아요");
+    }
+
+    @Test
+    void Slack에서_지운_메시지는_다음_동기화에서_채널_화면에서_빠진다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        assertThat(slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items())
+                .hasSize(1);
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(), false));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, ROOT_AT.plusHours(1), userId));
+
+        assertThat(slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items())
+                .isEmpty();
+        // 지운 메시지는 AI 업무 보조가 찾는 내 메시지에서도 빠진다.
+        assertThat(slackContentService.findMessagesByUser(workspaceId, userId)).isEmpty();
+    }
+
+    @Test
+    void 일부만_받았으면_사라진_메시지로_보지_않는다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(), true));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, ROOT_AT.plusHours(1), userId));
+
+        assertThat(slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items())
+                .hasSize(1);
+    }
+
+    @Test
+    void 다시_훑은_구간보다_오래된_메시지는_그대로_둔다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(), false));
+
+        // 마지막 동기화가 10일 뒤라면 3일 전부터만 다시 보므로, 하루 전 메시지는 판단 대상이 아니다.
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, ROOT_AT.plusDays(10), userId));
+
+        assertThat(slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items())
+                .hasSize(1);
+    }
+
+    @Test
+    void 답글이_있는_root를_지우면_root는_빠지고_답글_기록은_남는다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        SlackMessage tombstone = message(ROOT_TS, ROOT_TS, "U1", "This message was deleted.", 1, REPLY_TS, "tombstone");
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(tombstone), false));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, ROOT_AT.plusHours(1), userId));
+
+        assertThat(slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items())
+                .isEmpty();
+    }
+
+    @Test
+    void 스레드를_열면_Slack에서_지운_답글이_빠진다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        SlackMessage root = message(ROOT_TS, ROOT_TS, "U1", "회의는 <@U2> 목요일로 할까요?", 0, null);
+        when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), isNull())).thenReturn(List.of(root));
+
+        ThreadDetailResponse thread = slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS);
+
+        assertThat(thread.refreshFailed()).isFalse();
+        assertThat(thread.replies()).isEmpty();
     }
 
     @Test
