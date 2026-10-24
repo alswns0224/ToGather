@@ -357,7 +357,14 @@ public class SlackContentService {
         }
     }
 
+    /** 내가 연결한 Slack 계정. 연결하지 않았으면 로그인 이메일과 같은 Slack 사용자로 찾는다. */
     Optional<String> findMySlackId(Long workspaceId, Long userId) {
+        Optional<String> own = integrationService.findOwnExternalAccountId(workspaceId, userId, Provider.SLACK)
+                .filter(id -> id.contains(":"))
+                .map(id -> id.substring(id.indexOf(':') + 1));
+        if (own.isPresent()) {
+            return own;
+        }
         return findToken(workspaceId, userId).flatMap(t -> slackDirectory.findSlackUserId(workspaceId, t, userId));
     }
 
