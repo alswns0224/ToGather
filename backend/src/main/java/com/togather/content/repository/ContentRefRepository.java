@@ -46,6 +46,10 @@ public interface ContentRefRepository extends JpaRepository<ContentRef, Long> {
     List<ContentRef> findAllByWorkspaceIdAndProviderAndChannelIdAndIsOriginDeletedFalse(
             Long workspaceId, Provider provider, String channelId);
 
+    /** 채널에서 after 이후 작성된 최상위 메시지 중 원본이 남아 있는 것 (Slack 삭제 감지) */
+    List<ContentRef> findAllByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseAndCreatedAtAfter(
+            Long workspaceId, Provider provider, String channelId, LocalDateTime after);
+
     /** 작성자 기준 (AI 업무 보조: 본인이 쓴 메시지) */
     List<ContentRef> findAllByWorkspaceIdInAndProviderAndAuthorExternalIdInAndCreatedAtAfterOrderByCreatedAtDesc(
             Collection<Long> workspaceIds, Provider provider, Collection<String> authorExternalIds,

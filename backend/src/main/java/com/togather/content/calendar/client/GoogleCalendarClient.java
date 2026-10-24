@@ -49,13 +49,22 @@ public class GoogleCalendarClient {
                                 String htmlLink, String meetLink, LocalDateTime createdAt) {
     }
 
+    /**
+     * 기간 안의 일정.
+     *
+     * @param cancelledIds 기간 안에서 삭제(취소)된 일정 ID. 저장된 사본을 원본 삭제로 표시하는 데 쓴다.
+     */
+    public record EventList(List<CalendarEvent> events, List<String> cancelledIds) {
+    }
+
     /** 생성·수정 요청. null인 값은 수정 시 바꾸지 않는다. */
     public record EventWrite(String title, String description, LocalDateTime startAt, LocalDateTime endAt,
                              List<String> attendeeEmails) {
     }
 
-    public List<CalendarEvent> listEvents(String token, String calendarId, LocalDateTime from, LocalDateTime to) {
+    public EventList listEvents(String token, String calendarId, LocalDateTime from, LocalDateTime to) {
         List<CalendarEvent> events = new ArrayList<>();
+        List<String> cancelledIds = new ArrayList<>();
         String pageToken = null;
         do {
             UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(BASE + "/calendars/{calendarId}/events")
@@ -63,6 +72,8 @@ public class GoogleCalendarClient {
                     .queryParam("timeMax", rfc3339(to))
                     .queryParam("singleEvents", "true")
                     .queryParam("orderBy", "startTime")
+                    // 지운 일정도 status=cancelled로 받아서, 저장된 사본을 원본 삭제로 표시한다.
+                    .queryParam("showDeleted", "true")
                     .queryParam("maxResults", 250)
                     .queryParam("timeZone", ZONE.getId());
             if (pageToken != null) {
@@ -72,13 +83,16 @@ public class GoogleCalendarClient {
                     .uri(builder.encode().buildAndExpand(calendarId).toUri())
                     .headers(h -> h.setBearerAuth(token))
                     .retrieve().body(JSON));
-            list(json, "items").stream()
-                    .filter(e -> !"cancelled".equals(str(e, "status")))
-                    .map(GoogleCalendarClient::toEvent)
-                    .forEach(events::add);
+            for (Map<String, Object> item : list(json, "items")) {
+                if ("cancelled".equals(str(item, "status"))) {
+                    cancelledIds.add(str(item, "id"));
+                } else {
+                    events.add(toEvent(item));
+                }
+            }
             pageToken = str(json, "nextPageToken");
         } while (pageToken != null && events.size() < 2000);
-        return events;
+        return new EventList(events, cancelledIds);
     }
 
     /** @throws BusinessException CALENDAR_EVENT_NOT_FOUND 원본이 삭제된 경우 */

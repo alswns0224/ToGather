@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.togather.common.enums.Provider;
@@ -74,6 +73,8 @@ class SlackContentServiceTest extends IntegrationTestSupport {
                         message(SlackApiClient.toTs(ROOT_AT.minusMinutes(1)), null, "U2", "입장", 0, null, "channel_join")), false));
         when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), any()))
                 .thenReturn(List.of(root, message(REPLY_TS, ROOT_TS, "U2", "좋아요", 0, null)));
+        when(slackApiClient.getThread(TOKEN, "C1", ROOT_TS))
+                .thenReturn(new HistoryPage(List.of(root, message(REPLY_TS, ROOT_TS, "U2", "좋아요", 0, null)), false));
     }
 
     @Test
@@ -95,7 +96,7 @@ class SlackContentServiceTest extends IntegrationTestSupport {
     @Test
     void 스레드_상세는_Slack이_실패해도_저장된_답글을_보여준다() {
         slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
-        when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), isNull()))
+        when(slackApiClient.getThread(TOKEN, "C1", ROOT_TS))
                 .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
 
         ThreadDetailResponse thread = slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS);
@@ -156,6 +157,11 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         String newTs = SlackApiClient.toTs(ROOT_AT.plusMinutes(5));
         when(slackApiClient.postMessage(TOKEN, "C1", ROOT_TS, "확인했습니다"))
                 .thenReturn(message(newTs, ROOT_TS, "U1", "확인했습니다", 0, null));
+        // 스레드를 다시 열면 Slack은 새 답글까지 돌려준다.
+        when(slackApiClient.getThread(TOKEN, "C1", ROOT_TS)).thenReturn(new HistoryPage(List.of(
+                message(ROOT_TS, ROOT_TS, "U1", "회의는 <@U2> 목요일로 할까요?", 2, newTs),
+                message(REPLY_TS, ROOT_TS, "U2", "좋아요", 0, null),
+                message(newTs, ROOT_TS, "U1", "확인했습니다", 0, null)), false));
 
         SlackMessageResponse reply = slackContentService.createReply(workspaceId, userId, "C1", ROOT_TS, "확인했습니다");
         assertThat(reply.mine()).isTrue();
@@ -180,12 +186,88 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
                 .thenReturn(new HistoryPage(List.of(broadcast, root), false));
         when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), any())).thenReturn(List.of(root, broadcast));
+        when(slackApiClient.getThread(TOKEN, "C1", ROOT_TS)).thenReturn(new HistoryPage(List.of(root, broadcast), false));
 
         slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
 
         var page = slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20));
         assertThat(page.items()).extracting(SlackMessageResponse::ts).containsExactly(ROOT_TS);
         assertThat(page.items().getFirst().replyCount()).isEqualTo(1);
+    }
+
+    @Test
+    void Slack에서_지운_메시지는_다음_동기화에서_원본_삭제로_표시한다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(), false));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, LocalDateTime.now(SlackApiClient.ZONE),
+                userId));
+
+        SlackMessageResponse root = slackContentService
+                .getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items().getFirst();
+        assertThat(root.isOriginDeleted()).isTrue();
+        assertThat(root.text()).isEqualTo("회의는 @민준 목요일로 할까요?"); // 사본은 남긴다.
+    }
+
+    @Test
+    void 일부만_받은_동기화에서는_삭제로_보지_않는다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(), true));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, LocalDateTime.now(SlackApiClient.ZONE),
+                userId));
+
+        assertThat(slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20))
+                .items().getFirst().isOriginDeleted()).isFalse();
+    }
+
+    @Test
+    void 스레드를_열었을_때_사라진_답글은_원본_삭제로_표시한다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        SlackMessage root = message(ROOT_TS, ROOT_TS, "U1", "회의는 <@U2> 목요일로 할까요?", 0, null);
+        when(slackApiClient.getThread(TOKEN, "C1", ROOT_TS)).thenReturn(new HistoryPage(List.of(root), false));
+
+        ThreadDetailResponse thread = slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS);
+
+        assertThat(thread.refreshFailed()).isFalse();
+        assertThat(thread.replies()).singleElement().satisfies(reply -> {
+            assertThat(reply.isOriginDeleted()).isTrue();
+            assertThat(reply.text()).isEqualTo("좋아요");
+        });
+    }
+
+    @Test
+    void 스레드_root가_지워지면_root와_답글을_원본_삭제로_표시한다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(slackApiClient.getThread(TOKEN, "C1", ROOT_TS))
+                .thenThrow(new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        ThreadDetailResponse thread = slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS);
+
+        assertThat(thread.refreshFailed()).isFalse();
+        assertThat(thread.root().isOriginDeleted()).isTrue();
+        assertThat(thread.replies()).extracting(SlackMessageResponse::text).containsExactly("좋아요");
+        assertThat(thread.replies()).allMatch(SlackMessageResponse::isOriginDeleted);
+    }
+
+    @Test
+    void 답글이_있는_root를_지우면_자리표시_문구로_덮어쓰지_않는다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        SlackMessage tombstone = new SlackMessage(ROOT_TS, ROOT_TS, null, "This message was deleted.", 1, REPLY_TS,
+                SlackApiClient.toLocal(ROOT_TS), null, List.of(), "tombstone");
+        when(slackApiClient.getHistory(eq(TOKEN), eq("C1"), any(), anyInt()))
+                .thenReturn(new HistoryPage(List.of(tombstone), false));
+
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, LocalDateTime.now(SlackApiClient.ZONE),
+                userId));
+
+        SlackMessageResponse root = slackContentService
+                .getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20)).items().getFirst();
+        assertThat(root.isOriginDeleted()).isTrue();
+        assertThat(root.text()).isEqualTo("회의는 @민준 목요일로 할까요?");
+        assertThat(root.replyCount()).isEqualTo(1);
     }
 
     private static SlackMessage message(String ts, String threadTs, String user, String text, int replies,

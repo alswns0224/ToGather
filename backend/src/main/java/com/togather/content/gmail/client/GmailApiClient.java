@@ -66,7 +66,7 @@ public class GmailApiClient {
      * Gmail history.list 결과.
      *
      * changedMessageIds: 추가되거나 변경된 메일
-     * deletedMessageIds: 삭제된 메일
+     * deletedMessageIds: 삭제되었거나 휴지통으로 옮긴 메일
      * latestHistoryId: 다음 증분 동기화 기준
      */
     public record HistoryResult(
@@ -266,6 +266,20 @@ public class GmailApiClient {
                         deleted.add(id);
                     }
                 }
+
+                // 휴지통으로 옮긴 메일은 messagesDeleted가 아니라
+                // TRASH 라벨 추가로 온다. 사용자에게는 지운 것과 같으므로 삭제로 본다.
+                for (Map<String, Object> item :
+                    list(history, "labelsAdded")) {
+
+                    String id =
+                        str(obj(item, "message"), "id");
+
+                    if (id != null
+                        && hasTrashLabel(item)) {
+                        deleted.add(id);
+                    }
+                }
             }
 
             String returnedHistoryId =
@@ -290,12 +304,24 @@ public class GmailApiClient {
 
         // 삭제된 메일은 다시 상세 조회하면 안 된다.
         changed.removeAll(deleted);
+        // (휴지통에서 되살린 메일은 이번 범위에서 다시 살리지 않는다.)
 
         return new HistoryResult(
             List.copyOf(changed),
             List.copyOf(deleted),
             latestHistoryId
         );
+    }
+
+    /** labelsAdded 항목에 휴지통(TRASH) 라벨이 붙었는지 */
+    private static boolean hasTrashLabel(
+        Map<String, Object> labelChange
+    ) {
+        Object labelIds =
+            labelChange.get("labelIds");
+
+        return labelIds instanceof List<?> ids
+            && ids.contains("TRASH");
     }
 
     // ===================== 변환 =====================

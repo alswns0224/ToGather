@@ -102,21 +102,23 @@ public class SlackContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ThreadDetailResponse getThreadDetail(Long workspaceId, Long userId, String channelId, String messageTs) {
         checkLinkedChannel(workspaceId, channelId);
-        ContentRef root = contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+        Long rootRefId = contentRefService.findByOrigin(workspaceId, Provider.SLACK,
                         SlackMessageFormat.originId(channelId, messageTs))
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)).contentRefId();
         boolean refreshFailed = false;
-        if (!root.isOriginDeleted()) {
+        if (!contentRefService.getOwner(rootRefId).isOriginDeleted()) {
             try {
                 String token = teamTokenResolver.tokenFor(workspaceId, Provider.SLACK, channelId, userId);
                 slackSyncAdapter.syncReplies(workspaceId, token, channelId,
-                        slackDirectory.getChannelName(workspaceId, token, channelId), messageTs,
-                        root.getContentRefId(), null);
+                        slackDirectory.getChannelName(workspaceId, token, channelId), messageTs, rootRefId, null);
             } catch (BusinessException e) {
                 log.info("스레드 새로고침 실패, 저장된 내용 표시: workspaceId={}, error={}", workspaceId, e.getErrorCode());
                 refreshFailed = true;
             }
         }
+        // 새로고침에서 원본 삭제로 바뀌었을 수 있으므로 새로고침이 끝난 뒤에 읽는다.
+        ContentRef root = contentRefRepository.findById(rootRefId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         List<ContentRef> replies = contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(root.getContentRefId());
         String mySlackId = findMySlackId(workspaceId, userId).orElse(null);
         return new ThreadDetailResponse(toResponse(root, replies.size(), mySlackId),

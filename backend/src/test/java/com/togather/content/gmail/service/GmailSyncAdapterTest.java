@@ -793,4 +793,72 @@ class GmailSyncAdapterTest {
                 )
         );
     }
+
+    @Test
+    void sync_marksDeletedMailsAsOriginDeleted() {
+        Long workspaceId = 1L;
+        Long userId = 10L;
+        String token = "test-token";
+
+        when(integrationService.getAccessToken(
+            workspaceId,
+            userId,
+            Provider.GMAIL
+        )).thenReturn(token);
+
+        when(gmailApiClient.listHistory(
+            token,
+            "1000",
+            5
+        )).thenReturn(
+            new HistoryResult(
+                List.of(),
+                List.of("mine", "others", "unknown"),
+                "1100"
+            )
+        );
+
+        when(contentRefService.findByOrigin(workspaceId, Provider.GMAIL, "mine"))
+            .thenReturn(java.util.Optional.of(mailRef(100L)));
+        when(contentRefService.findByOrigin(workspaceId, Provider.GMAIL, "others"))
+            .thenReturn(java.util.Optional.of(mailRef(200L)));
+        when(contentRefService.findByOrigin(workspaceId, Provider.GMAIL, "unknown"))
+            .thenReturn(java.util.Optional.empty());
+        when(contentRefService.getOwner(100L))
+            .thenReturn(new ContentRefService.ContentOwner(workspaceId, userId, false));
+        when(contentRefService.getOwner(200L))
+            .thenReturn(new ContentRefService.ContentOwner(workspaceId, 99L, false));
+
+        gmailSyncAdapter.sync(
+            new SyncContext(
+                workspaceId,
+                "",
+                userId,
+                null,
+                "1000",
+                userId
+            )
+        );
+
+        // 내 메일만 원본 삭제로 표시하고, 다른 사람 메일이나 저장 안 된 메일은 건드리지 않는다.
+        verify(contentRefService).markOriginDeleted(100L);
+        verify(contentRefService, never()).markOriginDeleted(200L);
+        verify(gmailApiClient, never()).getMessage(any(), eq("mine"));
+    }
+
+    private static ContentRefDTO mailRef(Long contentRefId) {
+        return new ContentRefDTO(
+            contentRefId,
+            Provider.GMAIL,
+            ContentType.MAIL,
+            "id-" + contentRefId,
+            "제목",
+            "본문",
+            null,
+            null,
+            LocalDateTime.now(),
+            0,
+            false
+        );
+    }
 }

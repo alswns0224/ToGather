@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -121,6 +122,37 @@ public class ContentRefService {
         if (!ref.isOriginDeleted()) {
             ref.markOriginDeleted();
         }
+    }
+
+    /**
+     * 채널에서 after 이후 ~ before 이전에 작성된 최상위 메시지 중 이번 동기화 응답(receivedOriginIds)에 없는 것을
+     * 원본 삭제로 표시한다. (외부에서 지운 원본. 행은 남긴다)
+     */
+    @Transactional
+    public void markMissingRootsDeleted(Long workspaceId, Provider provider, String channelId, LocalDateTime after,
+                                        LocalDateTime before, Set<String> receivedOriginIds) {
+        contentRefRepository
+                .findAllByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseAndCreatedAtAfter(
+                        workspaceId, provider, channelId, after).stream()
+                .filter(ref -> ref.getCreatedAt().isBefore(before) && !receivedOriginIds.contains(ref.getOriginId()))
+                .forEach(ContentRef::markOriginDeleted);
+    }
+
+    /** 답글 중 이번에 받은 스레드 전체(receivedOriginIds)에 없는 것을 원본 삭제로 표시한다. */
+    @Transactional
+    public void markMissingRepliesDeleted(Long parentRefId, Set<String> receivedOriginIds) {
+        contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(parentRefId).stream()
+                .filter(ref -> !ref.isOriginDeleted() && !receivedOriginIds.contains(ref.getOriginId()))
+                .forEach(ContentRef::markOriginDeleted);
+    }
+
+    /** 스레드 root와 답글을 모두 원본 삭제로 표시한다. */
+    @Transactional
+    public void markThreadDeleted(Long rootRefId) {
+        markOriginDeleted(rootRefId);
+        contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(rootRefId).stream()
+                .filter(ref -> !ref.isOriginDeleted())
+                .forEach(ContentRef::markOriginDeleted);
     }
 
     /** 동기화 중 이 콘텐츠의 저장·갱신에 실패했음을 표시한다. 저장된 적 없는 콘텐츠면 아무것도 하지 않는다. */

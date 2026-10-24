@@ -97,11 +97,24 @@ public class SlackApiClient {
 
     /** 스레드의 root와 답글. 시간순 */
     public List<SlackMessage> getReplies(String token, String channelId, String threadTs, LocalDateTime oldest) {
+        return getThreadPage(token, channelId, threadTs, oldest).messages();
+    }
+
+    /**
+     * 스레드 전체(root와 모든 답글). 시간순. 지워진 답글을 찾으려면 일부만 받았는지(truncated) 알아야 해서 따로 둔다.
+     *
+     * @throws BusinessException RESOURCE_NOT_FOUND 스레드 root가 삭제된 경우
+     */
+    public HistoryPage getThread(String token, String channelId, String threadTs) {
+        return getThreadPage(token, channelId, threadTs, null);
+    }
+
+    private HistoryPage getThreadPage(String token, String channelId, String threadTs, LocalDateTime oldest) {
         Map<String, String> params = Map.of("channel", channelId, "ts", threadTs);
-        List<SlackMessage> messages = new ArrayList<>(paginate(token, "conversations.replies", params, oldest, 10)
-                .messages());
+        HistoryPage page = paginate(token, "conversations.replies", params, oldest, 10);
+        List<SlackMessage> messages = new ArrayList<>(page.messages());
         messages.sort((a, b) -> new BigDecimal(a.ts()).compareTo(new BigDecimal(b.ts())));
-        return messages;
+        return new HistoryPage(messages, page.truncated());
     }
 
     public String getChannelName(String token, String channelId) {

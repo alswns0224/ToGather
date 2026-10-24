@@ -9,6 +9,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.calendar.client.GoogleCalendarClient;
 import com.togather.content.calendar.client.GoogleCalendarClient.CalendarEvent;
+import com.togather.content.calendar.client.GoogleCalendarClient.EventList;
 import com.togather.content.calendar.client.GoogleCalendarClient.EventWrite;
 import com.togather.content.calendar.dto.CalendarEventCreateRequest;
 import com.togather.content.calendar.dto.CalendarEventRequest;
@@ -26,6 +27,7 @@ import com.togather.meeting.repository.MeetingRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
@@ -70,7 +72,9 @@ public class CalendarContentService {
             throw new BusinessException(ErrorCode.INVALID_TIME_RANGE);
         }
         Access access = workspaceAccess(workspaceId, userId);
-        List<CalendarEvent> events = calendarClient.listEvents(access.token(), access.calendarId(), from, to);
+        EventList list = calendarClient.listEvents(access.token(), access.calendarId(), from, to);
+        markCancelledDeleted(workspaceId, access, list.cancelledIds());
+        List<CalendarEvent> events = list.events();
         List<ContentRefDTO> refs = events.stream().map(e -> save(workspaceId, access, e)).toList();
         Map<Long, Long> meetings = meetingIdsByCalendarRef(refs.stream().map(ContentRefDTO::contentRefId).toList());
         return IntStream.range(0, events.size())
@@ -246,6 +250,19 @@ public class CalendarContentService {
                 contentRefService.markOriginDeleted(contentRefId);
             }
             throw e;
+        }
+    }
+
+    /**
+     * Google에서 지운 일정의 사본을 원본 삭제로 표시한다. (행은 남김: 회의·근거 연결 보존)
+     * 같은 캘린더(팀/개인)의 사본만 표시한다.
+     */
+    private void markCancelledDeleted(Long workspaceId, Access access, List<String> cancelledIds) {
+        for (String eventId : cancelledIds) {
+            contentRefService.findByOrigin(workspaceId, Provider.GOOGLE_CALENDAR, eventId)
+                    .filter(ref -> Objects.equals(contentRefService.getOwner(ref.contentRefId()).ownerUserId(),
+                            access.ownerUserId()))
+                    .ifPresent(ref -> contentRefService.markOriginDeleted(ref.contentRefId()));
         }
     }
 
