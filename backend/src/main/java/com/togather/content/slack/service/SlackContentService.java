@@ -190,7 +190,7 @@ public class SlackContentService {
     private SlackMessageResponse reload(Long contentRefId, Long workspaceId, Long userId) {
         ContentRef ref = contentRefRepository.findById(contentRefId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        return toResponse(ref, (int) contentRefRepository.countByParentRefId(contentRefId),
+        return toResponse(ref, (int) contentRefRepository.countByParentRefIdAndIsOriginDeletedFalse(contentRefId),
                 findMySlackId(workspaceId, userId).orElse(null));
     }
 

@@ -170,6 +170,9 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         List<SlackMessageResponse> replies =
                 slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS).replies();
         assertThat(replies).filteredOn(SlackMessageResponse::isOriginDeleted).hasSize(1);
+        // 원본에서 삭제된 답글은 답글 수에서 뺀다
+        var page = slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20));
+        assertThat(page.items().getFirst().replyCount()).isEqualTo(1);
     }
 
     @Test

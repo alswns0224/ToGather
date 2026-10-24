@@ -71,11 +71,12 @@ public interface ContentRefRepository extends JpaRepository<ContentRef, Long> {
             """)
     List<ContentRef> findUpdatedThreads(Long workspaceId, Provider provider, LocalDateTime since);
 
-    long countByParentRefId(Long parentRefId);
+    /** 답글 수. 원본에서 삭제된 답글은 세지 않는다. */
+    long countByParentRefIdAndIsOriginDeletedFalse(Long parentRefId);
 
     @Query("""
             select c.parentRefId as parentRefId, count(c) as count from ContentRef c
-            where c.parentRefId in :parentRefIds group by c.parentRefId
+            where c.parentRefId in :parentRefIds and c.isOriginDeleted = false group by c.parentRefId
             """)
     List<ReplyCount> countByParentRefIds(Collection<Long> parentRefIds);
 
