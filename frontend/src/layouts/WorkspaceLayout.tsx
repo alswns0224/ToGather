@@ -1,5 +1,5 @@
 // 워크스페이스 공통 레이아웃: 왼쪽 메뉴 + 상단바 (docs/ui-prototype 시안)
-import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router';
 import { getWorkspace } from '../pages/workspace/api';
 import { logout } from '../pages/auth/api';
 import { useAsync } from '../hooks/useAsync';
@@ -8,10 +8,11 @@ import { ErrorBox, Loading } from '../components/Status';
 import ThemeToggle from '../components/ThemeToggle';
 import NavIcon, { type IconName } from './NavIcon';
 
-const MENU: { to: string; label: string; icon: IconName }[] = [
+/** also: 이 경로로 시작하는 하위 화면에서도 메뉴를 켠다 (예: 논의 정리 상세 slack/analysis/7) */
+const MENU: { to: string; label: string; icon: IconName; also?: string }[] = [
   { to: 'search', label: '통합 검색', icon: 'search' },
   { to: 'slack', label: 'Slack', icon: 'chat' },
-  { to: 'slack/analyses', label: '논의 정리', icon: 'sparkle' },
+  { to: 'slack/analyses', label: '논의 정리', icon: 'sparkle', also: 'slack/analysis/' },
   { to: 'calendar', label: '일정', icon: 'calendar' },
   { to: 'meetings', label: '회의', icon: 'meeting' },
   { to: 'tasks', label: '작업 (Task)', icon: 'tasks' },
@@ -32,13 +33,31 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
       : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white'
   }`;
 
-function MenuLink({ workspaceId, to, label, icon }: { workspaceId: string; to: string; label: string; icon: IconName }) {
+function MenuLink({
+  workspaceId,
+  to,
+  label,
+  icon,
+  also,
+}: {
+  workspaceId: string;
+  to: string;
+  label: string;
+  icon: IconName;
+  also?: string;
+}) {
+  const { pathname } = useLocation();
+  const alsoActive = !!also && pathname.startsWith(`/workspaces/${workspaceId}/${also}`);
   return (
     // 논의 정리(slack/analyses)가 Slack 메뉴까지 켜지지 않도록 end로 정확히 맞춘다.
-    <NavLink to={`/workspaces/${workspaceId}/${to}`} end={to === 'slack'} className={navClass}>
+    <NavLink
+      to={`/workspaces/${workspaceId}/${to}`}
+      end={to === 'slack'}
+      className={({ isActive }) => navClass({ isActive: isActive || alsoActive })}
+    >
       {({ isActive }) => (
         <>
-          <span className={isActive ? 'text-white' : 'text-slate-400'}>
+          <span className={isActive || alsoActive ? 'text-white' : 'text-slate-400'}>
             <NavIcon name={icon} />
           </span>
           <span className="flex-1 truncate text-left">{label}</span>

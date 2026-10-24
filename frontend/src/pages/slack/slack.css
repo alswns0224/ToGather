@@ -86,6 +86,13 @@
   align-self: center;
 }
 
+/* 불러오는 중 · 오류 · 메시지 없음 안내도 제목·입력창과 같은 여백을 둔다 */
+.slack-messages > p,
+.slack-messages > .alert,
+.slack-messages > .empty {
+  margin: 16px 20px;
+}
+
 .slack-message-list {
   flex: 1;
   overflow-y: auto;
