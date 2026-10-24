@@ -11,6 +11,7 @@ import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.dto.ContentRefDTO;
+import com.togather.content.service.ContentRefService;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.content.slack.client.SlackApiClient.AuthInfo;
 import com.togather.content.slack.client.SlackApiClient.HistoryPage;
@@ -50,6 +51,8 @@ class SlackContentServiceTest extends IntegrationTestSupport {
     private SlackSyncAdapter slackSyncAdapter;
     @Autowired
     private SlackContentService slackContentService;
+    @Autowired
+    private ContentRefService contentRefService;
 
     private Long userId;
     private Long workspaceId;
@@ -186,6 +189,18 @@ class SlackContentServiceTest extends IntegrationTestSupport {
         var page = slackContentService.getChannelMessages(workspaceId, userId, "C1", PageRequest.of(0, 20));
         assertThat(page.items()).extracting(SlackMessageResponse::ts).containsExactly(ROOT_TS);
         assertThat(page.items().getFirst().replyCount()).isEqualTo(1);
+    }
+
+    @Test
+    void Slack에서_지운_답글은_분석용_스레드_메시지에서_빠진다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        ThreadDetailResponse thread = slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS);
+        contentRefService.markOriginDeleted(thread.replies().getFirst().contentRefId());
+
+        var messages = slackContentService.getThreadMessages(thread.root().contentRefId(), null);
+
+        assertThat(messages).extracting(SlackContentService.ThreadMessage::contentRefId)
+                .containsExactly(thread.root().contentRefId());
     }
 
     private static SlackMessage message(String ts, String threadTs, String user, String text, int replies,

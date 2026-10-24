@@ -280,13 +280,18 @@ public class SlackContentService {
         return contentRefService.toDtos(contentRefRepository.findUpdatedThreads(workspaceId, Provider.SLACK, since));
     }
 
-    /** 스레드의 root와 답글 중 after 이후 메시지 (after가 null이면 전체). 시간순 */
+    /**
+     * 스레드의 root와 답글 중 after 이후 메시지 (after가 null이면 전체). 시간순
+     * Slack에서 지운 답글은 뺀다. (AI 분석 입력과 논의 정리 화면의 대화 목록에 쓰인다)
+     */
     public List<ThreadMessage> getThreadMessages(Long threadId, LocalDateTime after) {
         ContentRef root = contentRefRepository.findById(threadId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         List<ContentRef> messages = new ArrayList<>();
         messages.add(root);
-        messages.addAll(contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(threadId));
+        contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(threadId).stream()
+                .filter(reply -> !reply.isOriginDeleted())
+                .forEach(messages::add);
         return messages.stream()
                 .filter(m -> after == null || m.getCreatedAt().isAfter(after)
                         || (m.getLastModifiedAt() != null && m.getLastModifiedAt().isAfter(after)))
