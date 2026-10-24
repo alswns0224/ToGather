@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -57,14 +58,18 @@ public class NotionContentService {
 
     // ===================== 화면 (UI-05) =====================
 
-    /** 연동한 데이터베이스 목록 (새 문서를 만들 곳). 페이지 대상은 문서를 만들 수 없어 뺀다. */
+    /**
+     * 새 문서를 만들 수 있는 곳: 연동한 데이터베이스(그 안에 행으로)와 페이지(그 아래 하위 페이지로).
+     * 데이터베이스를 먼저 보여준다. 첫 번째가 기본 위치다.
+     */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<NotionDatabaseResponse> getDatabases(Long workspaceId, Long userId) {
-        List<String> ids = linkedDatabases(workspaceId);
-        return ids.stream().map(id -> {
+        return createTargets(workspaceId).stream().map(id -> {
             try {
                 String token = token(workspaceId, id, userId);
-                return new NotionDatabaseResponse(id, database(token, id).title());
+                return NotionOAuthClient.isPageTarget(id)
+                        ? new NotionDatabaseResponse(id, "📄 " + notionApiClient.getPage(token, NotionOAuthClient.pageId(id)).title())
+                        : new NotionDatabaseResponse(id, "🗂 " + database(token, id).title());
             } catch (BusinessException e) {
                 return new NotionDatabaseResponse(id, id);
             }
@@ -117,11 +122,12 @@ public class NotionContentService {
 
     /** 새 문서 (UC-05-02) */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public ContentRefDTO createContent(Long workspaceId, Long userId, String title, String body, String databaseId) {
-        String resolved = resolveDatabase(workspaceId, databaseId);
+    public ContentRefDTO createContent(Long workspaceId, Long userId, String title, String body, String targetId) {
+        String resolved = resolveCreateTarget(workspaceId, targetId);
         String token = token(workspaceId, resolved, userId);
-        NotionDatabase database = database(token, resolved);
-        NotionPage page = notionApiClient.createPage(token, database, title, body);
+        NotionPage page = NotionOAuthClient.isPageTarget(resolved)
+                ? notionApiClient.createChildPage(token, NotionOAuthClient.pageId(resolved), title, body)
+                : notionApiClient.createPage(token, database(token, resolved), title, body);
         return saveOrFail(workspaceId, token, page, body, resolved);
     }
 
@@ -197,11 +203,12 @@ public class NotionContentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
-    /** 연동 대상 중 데이터베이스만 (페이지 대상 "page:..." 제외) */
-    private List<String> linkedDatabases(Long workspaceId) {
-        return integrationService.getConnectionTargets(workspaceId, Provider.NOTION).stream()
-                .filter(id -> !NotionOAuthClient.isPageTarget(id))
-                .toList();
+    /** 새 문서를 만들 수 있는 연동 대상: 데이터베이스 먼저, 그다음 페이지 */
+    private List<String> createTargets(Long workspaceId) {
+        List<String> linked = integrationService.getConnectionTargets(workspaceId, Provider.NOTION);
+        return Stream.concat(
+                linked.stream().filter(id -> !NotionOAuthClient.isPageTarget(id)),
+                linked.stream().filter(NotionOAuthClient::isPageTarget)).toList();
     }
 
     /**
@@ -216,18 +223,19 @@ public class NotionContentService {
         return parentDatabase == null ? "title" : database(token, parentDatabase).titleProperty();
     }
 
-    private String resolveDatabase(Long workspaceId, String databaseId) {
-        List<String> linked = linkedDatabases(workspaceId);
+    /** 문서를 만들 대상. 지정하지 않으면 데이터베이스를, 없으면 페이지를 쓴다. (논의 정리 결정 문서는 지정하지 않음) */
+    private String resolveCreateTarget(Long workspaceId, String targetId) {
+        List<String> linked = createTargets(workspaceId);
         if (linked.isEmpty()) {
             throw new BusinessException(ErrorCode.NOTION_DATABASE_NOT_LINKED);
         }
-        if (databaseId == null || databaseId.isBlank()) {
+        if (targetId == null || targetId.isBlank()) {
             return linked.getFirst();
         }
-        if (!linked.contains(databaseId)) {
+        if (!linked.contains(targetId)) {
             throw new BusinessException(ErrorCode.NOTION_DATABASE_NOT_LINKED);
         }
-        return databaseId;
+        return targetId;
     }
 
     private Set<Long> analysisPageIds(List<Long> contentRefIds) {

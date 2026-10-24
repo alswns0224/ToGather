@@ -75,7 +75,7 @@ export default function NotionPage() {
               className="btn btn-primary"
               onClick={() => setCreating(true)}
               disabled={!!noDatabase}
-              title={noDatabase ? '새 문서는 연동한 Notion 데이터베이스에 만들어집니다.' : undefined}
+              title={noDatabase ? '문서를 만들 Notion 페이지나 데이터베이스를 연동 관리에서 선택해 주세요.' : undefined}
             >
               + 새 문서
             </button>
@@ -280,7 +280,7 @@ function PageEditor({
       <h2>{title}</h2>
       {databases && databases.length > 1 && (
         <label>
-          데이터베이스
+          만들 위치
           <select
             className="input"
             value={form.databaseId}

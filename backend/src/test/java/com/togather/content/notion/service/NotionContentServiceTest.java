@@ -199,11 +199,49 @@ class NotionContentServiceTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 새_문서를_만들_곳에는_페이지_대상이_나오지_않는다() {
+    void 새_문서를_만들_곳은_데이터베이스_다음에_페이지가_나온다() {
         usePageTarget();
+        when(notionApiClient.getPage(TOKEN, "root")).thenReturn(plainPage("root", "카페를 만들어보자"));
 
         assertThat(notionContentService.getDatabases(workspaceId, userId))
-                .extracting(r -> r.databaseId()).containsExactly("db1");
+                .extracting(r -> r.databaseId()).containsExactly("db1", PAGE_TARGET);
+    }
+
+    @Test
+    void 페이지만_연동했으면_그_페이지_아래에_문서를_만든다() {
+        when(integrationService.getConnectionTargets(workspaceId, Provider.NOTION)).thenReturn(List.of(PAGE_TARGET));
+        when(integrationService.findTargetAccess(workspaceId, Provider.NOTION))
+                .thenReturn(Optional.of(new TargetAccess(1L, userId, TOKEN, List.of(PAGE_TARGET))));
+        when(notionApiClient.createChildPage(TOKEN, "root", "결정사항", "본문"))
+                .thenReturn(plainPage("new", "결정사항"));
+
+        // 논의 정리 결정 문서처럼 위치를 정하지 않고 만든다.
+        ContentRefDTO created = notionContentService.createContent(workspaceId, userId, "결정사항", "본문", null);
+
+        verify(notionApiClient).createChildPage(TOKEN, "root", "결정사항", "본문");
+        assertThat(created.title()).isEqualTo("결정사항");
+        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::databaseId)
+                .containsExactly(PAGE_TARGET);
+    }
+
+    @Test
+    void 데이터베이스와_페이지가_둘_다_있으면_데이터베이스에_만든다() {
+        usePageTarget();
+        when(notionApiClient.createPage(TOKEN, DB, "결정사항", "본문")).thenReturn(page("p9", "결정사항", T0));
+
+        notionContentService.createContent(workspaceId, userId, "결정사항", "본문", null);
+
+        verify(notionApiClient).createPage(TOKEN, DB, "결정사항", "본문");
+    }
+
+    @Test
+    void 연동한_곳이_하나도_없으면_만들_수_없다() {
+        when(integrationService.getConnectionTargets(workspaceId, Provider.NOTION)).thenReturn(List.of());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        notionContentService.createContent(workspaceId, userId, "제목", "본문", null))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOTION_DATABASE_NOT_LINKED));
     }
 
     @Test
