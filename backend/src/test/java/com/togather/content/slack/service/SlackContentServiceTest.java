@@ -93,6 +93,19 @@ class SlackContentServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 연결한_Slack_계정이_쓴_메시지는_이메일이_달라도_내_메시지다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+        when(slackApiClient.findUserByEmail(TOKEN, "cj@test.com")).thenReturn(null);
+        when(integrationService.findOwnExternalAccountId(workspaceId, userId, Provider.SLACK))
+                .thenReturn(Optional.of("T1:U2"));
+
+        ThreadDetailResponse thread = slackContentService.getThreadDetail(workspaceId, userId, "C1", ROOT_TS);
+
+        assertThat(thread.root().mine()).isFalse();
+        assertThat(thread.replies().getFirst().mine()).isTrue();
+    }
+
+    @Test
     void 스레드_상세는_Slack이_실패해도_저장된_답글을_보여준다() {
         slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
         when(slackApiClient.getReplies(eq(TOKEN), eq("C1"), eq(ROOT_TS), isNull()))
