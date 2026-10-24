@@ -83,6 +83,29 @@ public class SyncService {
         }
     }
 
+    /**
+     * 외부 서비스 이벤트(예: Slack 새 메시지)를 받았을 때 그 대상만 바로 동기화한다. 1분 간격 제한을 두지 않는다.
+     * 이미 동기화 중이면 그 동기화가 새 변경을 놓쳤을 수 있으므로, 끝날 때까지 잠깐 기다렸다가 다시 동기화한다.
+     * (이벤트 처리 스레드에서 부른다. 요청 스레드에서 부르지 않는다)
+     */
+    public void syncTargetNow(Long workspaceId, Provider provider, String targetId) {
+        SyncAdapter adapter = adapter(provider);
+        SyncTarget target = SyncTarget.team(targetId);
+        for (int attempt = 0; attempt < 20; attempt++) {
+            if (syncTarget(adapter, workspaceId, target, null, false, true)) {
+                return;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        log.info("즉시 동기화 건너뜀(다른 동기화가 오래 걸림): workspaceId={}, provider={}, target={}",
+                workspaceId, provider, targetId);
+    }
+
     public List<SyncStatusResponse> getStatuses(Long workspaceId, Provider provider) {
         return syncStateService.getStates(workspaceId, provider).stream().map(SyncStatusResponse::from).toList();
     }
@@ -110,7 +133,7 @@ public class SyncService {
     private void syncWorkspace(Long workspaceId, Provider provider, Long requestedBy, boolean scheduled) {
         SyncAdapter adapter = adapter(provider);
         for (SyncTarget target : targets(adapter, workspaceId, requestedBy)) {
-            syncTarget(adapter, workspaceId, target, requestedBy, scheduled);
+            syncTarget(adapter, workspaceId, target, requestedBy, scheduled, false);
         }
     }
 
@@ -132,18 +155,22 @@ public class SyncService {
         return new ArrayList<>(targets);
     }
 
-    private void syncTarget(SyncAdapter adapter, Long workspaceId, SyncTarget target, Long requestedBy,
-                            boolean scheduled) {
+    /**
+     * @param force 간격 제한 없이 바로 동기화 (외부 이벤트)
+     * @return 이번 호출이 동기화를 직접 실행했으면 true, 다른 동기화가 돌고 있어 건너뛰었으면 false
+     */
+    private boolean syncTarget(SyncAdapter adapter, Long workspaceId, SyncTarget target, Long requestedBy,
+                               boolean scheduled, boolean force) {
         String lockKey = workspaceId + ":" + adapter.provider() + ":" + key(target);
         if (!running.add(lockKey)) {
-            return; // 이미 동기화 중
+            return false; // 이미 동기화 중
         }
         try {
             SyncState state = syncStateService.getOrCreate(workspaceId, adapter.provider(), target.targetId(),
                     target.ownerUserId());
             LocalDateTime now = LocalDateTime.now();
-            if (scheduled ? isBackingOff(state, now) : isRecentlyAttempted(state, now)) {
-                return;
+            if (!force && (scheduled ? isBackingOff(state, now) : isRecentlyAttempted(state, now))) {
+                return true;
             }
             try {
                 SyncResult result = adapter.sync(new SyncContext(workspaceId, target.targetId(), target.ownerUserId(),
@@ -160,6 +187,7 @@ public class SyncService {
         } finally {
             running.remove(lockKey);
         }
+        return true;
     }
 
     static boolean isRecentlyAttempted(SyncState state, LocalDateTime now) {

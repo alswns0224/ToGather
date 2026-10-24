@@ -11,6 +11,7 @@ import {
   type SlackMessageResponse,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import { formatDateTime } from '../../utils/date';
@@ -20,6 +21,8 @@ import ThreadPanel from './components/ThreadPanel';
 import './slack.css';
 
 const PAGE_SIZE = 30;
+/** 실시간 알림이 빠졌을 때를 대비한 보조 동기화 간격 (화면을 보고 있을 때만) */
+const FALLBACK_SYNC_MS = 60_000;
 
 export default function SlackPage() {
   const { workspaceId = '' } = useParams();
@@ -53,6 +56,25 @@ export default function SlackPage() {
       setSyncTick((t) => t + 1);
     }
   };
+
+  // Slack에서 메시지를 쓰거나 고치거나 지우면 서버가 바로 알려준다. 보고 있는 채널·스레드만 그 자리에서 다시 불러온다.
+  const [liveTick, setLiveTick] = useState(0);
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider !== 'SLACK') return;
+    channels.reload();
+    if (event.targetId === channelId) setLiveTick((t) => t + 1);
+  });
+
+  // 실시간 알림을 받지 못하는 경우(Slack 이벤트 설정 전 등)에도 화면을 보고 있으면 주기적으로 가져온다.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      syncSlack(workspaceId)
+        .then(() => setLiveTick((t) => t + 1))
+        .catch(() => undefined);
+    }, FALLBACK_SYNC_MS);
+    return () => window.clearInterval(timer);
+  }, [workspaceId]);
 
   // 화면에 들어오면 저장된 메시지를 먼저 보여주고, 뒤에서 최신 내용을 동기화한다.
   const synced = useRef(false);
@@ -117,6 +139,7 @@ export default function SlackPage() {
 
           <ChannelMessages
             key={`${channelId}-${syncTick}`}
+            refreshKey={liveTick}
             workspaceId={workspaceId}
             channelId={channelId}
             channelName={channel?.name ?? channelId}
@@ -127,6 +150,7 @@ export default function SlackPage() {
           {threadTs && (
             <ThreadPanel
               key={threadTs}
+              refreshKey={liveTick}
               workspaceId={workspaceId}
               channelId={channelId}
               ts={threadTs}
@@ -145,12 +169,15 @@ export default function SlackPage() {
 }
 
 function ChannelMessages({
+  refreshKey,
   workspaceId,
   channelId,
   channelName,
   selectedTs,
   onOpenThread,
 }: {
+  /** 바뀌면 화면을 그대로 둔 채 메시지를 다시 불러온다 (실시간 알림) */
+  refreshKey: number;
   workspaceId: string;
   channelId: string;
   channelName: string;
@@ -162,6 +189,10 @@ function ChannelMessages({
     () => getChannelMessages(workspaceId, channelId, 0, PAGE_SIZE * pages),
     [workspaceId, channelId, pages],
   );
+  const { reload } = messages;
+  useEffect(() => {
+    if (refreshKey > 0) reload();
+  }, [refreshKey, reload]);
   // 서버는 최신순으로 주므로 화면에서는 시간순으로 뒤집는다.
   const items: SlackMessageResponse[] = [...(messages.data?.items ?? [])].reverse();
   const hasMore = messages.data ? messages.data.total > messages.data.items.length : false;

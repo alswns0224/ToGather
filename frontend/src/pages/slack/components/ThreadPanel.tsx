@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { createReply, deleteMessage, getThread, updateMessage, type SlackMessageResponse } from '../api';
 import { useAsync } from '../../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../../components/Status';
@@ -6,6 +7,7 @@ import MessageItem from './MessageItem';
 
 /** 스레드: root와 답글, 답글 작성, 논의 정리 진입 (UI-04) */
 export default function ThreadPanel({
+  refreshKey = 0,
   workspaceId,
   channelId,
   ts,
@@ -13,6 +15,8 @@ export default function ThreadPanel({
   onChanged,
   onAnalyze,
 }: {
+  /** 바뀌면 스레드를 다시 불러온다 (실시간 알림) */
+  refreshKey?: number;
   workspaceId: string;
   channelId: string;
   ts: string;
@@ -22,6 +26,10 @@ export default function ThreadPanel({
   onAnalyze?: (root: SlackMessageResponse) => void;
 }) {
   const thread = useAsync(() => getThread(workspaceId, channelId, ts), [workspaceId, channelId, ts]);
+  const { reload } = thread;
+  useEffect(() => {
+    if (refreshKey > 0) reload();
+  }, [refreshKey, reload]);
 
   const changed = () => {
     thread.reload();
