@@ -257,6 +257,12 @@ public class IntegrationService {
                 .toList();
     }
 
+    /** 외부 대상(예: Slack 채널 ID)을 연동 대상으로 고른 워크스페이스들. 외부 서비스의 실시간 이벤트를 나눠 줄 때 쓴다. */
+    @Transactional(readOnly = true)
+    public List<Long> findWorkspacesByTarget(Provider provider, String externalTargetId) {
+        return targetRepository.findWorkspaceIdsByTarget(provider, externalTargetId, ConnectionStatus.DISCONNECTED);
+    }
+
     /**
      * 연동 대상을 선택한 연결의 토큰과 대상 ID. 팀 캘린더처럼 "대상을 고른 사람의 토큰"으로 접근해야 할 때 쓴다.
      * 대상을 선택한 연결이 없으면 빈 값.

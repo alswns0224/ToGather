@@ -164,6 +164,39 @@ public class SlackContentService {
         return reload(ref.getContentRefId(), workspaceId, userId);
     }
 
+    // ===================== Slack 실시간 이벤트 (SlackEventService) =====================
+
+    /**
+     * Slack에서 수정된 메시지를 반영한다. 첨부 파일은 저장된 것을 유지한다.
+     *
+     * @return 저장된 메시지가 있어 반영했으면 true (없으면 동기화로 가져와야 함)
+     */
+    @Transactional
+    public boolean applyRemoteEdit(Long workspaceId, String channelId, String ts, String text, LocalDateTime editedAt) {
+        return contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                        SlackMessageFormat.originId(channelId, ts))
+                .map(ref -> {
+                    List<SlackFile> files = SlackMessageFormat.parse(ref.getContent()).attachments().stream()
+                            .map(att -> new SlackFile(att.name(), att.url(), null))
+                            .toList();
+                    contentRefService.upsert(new ContentRefUpsert(workspaceId, null, Provider.SLACK,
+                            ref.getContentType(), ref.getOriginId(), channelId, ref.getParentRefId(), ref.getTitle(),
+                            SlackMessageFormat.toContent(text, files), ref.getDeepLink(), ref.getCreatedAt(),
+                            editedAt != null ? editedAt : LocalDateTime.now(SlackApiClient.ZONE), null, null));
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    /** Slack에서 삭제된 메시지를 원본 삭제로 표시한다. 저장된 적 없으면 아무것도 하지 않는다. */
+    @Transactional
+    public void applyRemoteDelete(Long workspaceId, String channelId, String ts) {
+        contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                        SlackMessageFormat.originId(channelId, ts))
+                .filter(ref -> !ref.isOriginDeleted())
+                .ifPresent(ref -> contentRefService.markOriginDeleted(ref.getContentRefId()));
+    }
+
     /** 본인 메시지만 삭제할 수 있다. content_ref는 지우지 않고 원본 삭제로 표시한다. (근거 발언·Task 연결 보존) */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public boolean deleteMessage(Long workspaceId, Long userId, String channelId, String messageTs) {
