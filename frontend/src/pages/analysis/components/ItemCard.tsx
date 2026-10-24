@@ -73,12 +73,22 @@ export default function ItemCard({
   }
 
   const memberName = (id: number) => members.find((m) => m.userId === id)?.name ?? `#${id}`;
+  // 처리 결과에서 Task·일정을 만들었으면 담당자·마감·일시는 거기서 정해졌으므로 "미정" 대신 확정으로 보여준다.
+  const outputDone =
+    item.outputStatus === 'SUCCESS' && (item.itemType === 'FOLLOW_UP' || item.itemType === 'MEETING_PROPOSAL');
+  const decidedElsewhere = outputDone ? (item.itemType === 'FOLLOW_UP' ? 'Task에서 지정' : '일정에서 지정') : '미정';
 
   return (
     <li className="analysis-item stack">
       <div className="row">
         <span className="pre grow">{item.content}</span>
-        {item.undetermined && <span className="badge badge-warning">미정</span>}
+        {outputDone ? (
+          <span className="badge badge-success">
+            확정 · {item.itemType === 'FOLLOW_UP' ? 'Task 생성됨' : '일정 등록됨'}
+          </span>
+        ) : (
+          item.undetermined && <span className="badge badge-warning">미정</span>
+        )}
         {editable && (
           <>
             <button className="link-button small" onClick={() => setEditing(true)}>
@@ -93,13 +103,13 @@ export default function ItemCard({
 
       {item.itemType === 'FOLLOW_UP' && (
         <div className="row small muted">
-          <span>담당자: {item.suggestedAssigneeName ?? '미정'}</span>
-          <span>마감일: {item.suggestedDueDate ? formatDate(item.suggestedDueDate) : '미정'}</span>
+          <span>담당자: {item.suggestedAssigneeName ?? decidedElsewhere}</span>
+          <span>마감일: {item.suggestedDueDate ? formatDate(item.suggestedDueDate) : decidedElsewhere}</span>
         </div>
       )}
       {item.itemType === 'MEETING_PROPOSAL' && (
         <div className="row small muted">
-          <span>일시: {item.suggestedDatetime ? formatDateTime(item.suggestedDatetime) : '미정'}</span>
+          <span>일시: {item.suggestedDatetime ? formatDateTime(item.suggestedDatetime) : decidedElsewhere}</span>
           <span>
             참여자:{' '}
             {item.suggestedParticipantIds?.length
