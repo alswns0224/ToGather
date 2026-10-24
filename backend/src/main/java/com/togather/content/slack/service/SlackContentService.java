@@ -24,11 +24,13 @@ import com.togather.sync.service.SyncService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -85,8 +87,9 @@ public class SlackContentService {
     public PageResponse<SlackMessageResponse> getChannelMessages(Long workspaceId, Long userId, String channelId,
                                                                  Pageable pageable) {
         checkLinkedChannel(workspaceId, channelId);
+        // Slack에서 지운 메시지는 채널 화면에서 빼고, 분석 근거·Task 연결에서만 보관된 사본을 보여준다.
         Page<ContentRef> page = contentRefRepository
-                .findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullOrderByCreatedAtDesc(
+                .findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseOrderByCreatedAtDesc(
                         workspaceId, Provider.SLACK, channelId, pageable);
         Map<Long, Long> replyCounts = contentRefService.countReplies(
                 page.getContent().stream().map(ContentRef::getContentRefId).toList());
@@ -117,7 +120,9 @@ public class SlackContentService {
                 refreshFailed = true;
             }
         }
-        List<ContentRef> replies = contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(root.getContentRefId());
+        Set<Long> deleted = new HashSet<>(contentRefRepository.findDeletedReplyIds(root.getContentRefId()));
+        List<ContentRef> replies = contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(root.getContentRefId())
+                .stream().filter(r -> !deleted.contains(r.getContentRefId())).toList();
         String mySlackId = findMySlackId(workspaceId, userId).orElse(null);
         return new ThreadDetailResponse(toResponse(root, replies.size(), mySlackId),
                 replies.stream().map(r -> toResponse(r, 0, mySlackId)).toList(), root.getDeepLink(), refreshFailed);
