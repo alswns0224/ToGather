@@ -13,4 +13,11 @@ class GoogleCalendarClientTest {
         assertThat(GoogleCalendarClient.rfc3339(LocalDateTime.of(2026, 9, 27, 0, 0)))
                 .isEqualTo("2026-09-26T15:00:00Z");
     }
+
+    @Test
+    void 팀_캘린더_ID의_골뱅이는_한_번만_인코딩한다() {
+        // 두 번 인코딩하면 %2540이 되어 Google이 캘린더를 찾지 못한다 (404)
+        assertThat(GoogleCalendarClient.insertUri("team@gmail.com", true).getRawPath())
+                .isEqualTo("/calendar/v3/calendars/team%40gmail.com/events");
+    }
 }
