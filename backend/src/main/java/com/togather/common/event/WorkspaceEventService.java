@@ -8,6 +8,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -44,8 +46,24 @@ public class WorkspaceEventService {
         return emitter;
     }
 
-    /** 이 워크스페이스를 보고 있는 모든 화면에 변경을 알린다. */
+    /**
+     * 이 워크스페이스를 보고 있는 모든 화면에 변경을 알린다.
+     * 트랜잭션 안에서 부르면 커밋된 뒤에 보낸다. (화면이 다시 불러올 때 바뀐 내용이 보이도록)
+     */
     public void publish(Long workspaceId, String provider, String targetId) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send(workspaceId, provider, targetId);
+                }
+            });
+            return;
+        }
+        send(workspaceId, provider, targetId);
+    }
+
+    private void send(Long workspaceId, String provider, String targetId) {
         List<SseEmitter> list = emitters.get(workspaceId);
         if (list == null || list.isEmpty()) {
             return;

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -109,6 +111,26 @@ class SlackEventServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void ToGather에서_고친_메시지의_수정_이벤트는_이미_같은_내용이라_알리지_않는다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+
+        slackEventService.handleMessage(Map.of("type", "message", "subtype", "message_changed", "channel", "C1",
+                "message", Map.of("ts", TS, "text", "안녕하세요")));
+
+        verify(workspaceEventService, never()).publish(any(), any(), any());
+    }
+
+    @Test
+    void ToGather에서_쓴_메시지의_새_메시지_이벤트는_다시_동기화하지_않는다() {
+        slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
+
+        slackEventService.handleMessage(Map.of("type", "message", "channel", "C1", "ts", TS, "user", "U1", "text", "안녕하세요"));
+
+        verify(slackApiClient, times(1)).getHistory(eq(TOKEN), eq("C1"), any(), anyInt()); // 처음 동기화 한 번뿐
+        verify(workspaceEventService, never()).publish(any(), any(), any());
+    }
+
+    @Test
     void 삭제_이벤트가_오면_채널_화면에서_뺀다() {
         slackSyncAdapter.sync(new SyncContext(workspaceId, "C1", null, null, userId));
 
@@ -116,6 +138,7 @@ class SlackEventServiceTest extends IntegrationTestSupport {
                 "deleted_ts", TS));
 
         assertThat(texts()).isEmpty();
+        verify(workspaceEventService).publish(workspaceId, "SLACK", "C1");
     }
 
     @Test
