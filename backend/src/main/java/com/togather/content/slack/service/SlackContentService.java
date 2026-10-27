@@ -1,6 +1,7 @@
 package com.togather.content.slack.service;
 
 import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.PageResponse;
@@ -63,6 +64,7 @@ public class SlackContentService {
     private final SlackDirectory slackDirectory;
     private final SlackSyncAdapter slackSyncAdapter;
     private final SyncService syncService;
+    private final WorkspaceEventService workspaceEventService;
 
     // ===================== 화면 (UI-04) =====================
 
@@ -161,7 +163,19 @@ public class SlackContentService {
                 ref.getOriginId(), channelId, ref.getParentRefId(), ref.getTitle(),
                 SlackMessageFormat.toContent(body, files), ref.getDeepLink(), ref.getCreatedAt(),
                 LocalDateTime.now(SlackApiClient.ZONE), null, null));
+        notifyChanged(workspaceId, channelId);
         return reload(ref.getContentRefId(), workspaceId, userId);
+    }
+
+    /** 이 메시지를 이미 저장했는지 (Slack 이벤트로 받은 새 메시지가 ToGather에서 쓴 것인지 확인) */
+    public boolean isStored(Long workspaceId, String channelId, String ts) {
+        return contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                SlackMessageFormat.originId(channelId, ts)).isPresent();
+    }
+
+    /** ToGather에서 작성·수정·삭제한 직후, 같은 채널을 보고 있는 다른 팀원 화면에 바로 알린다. */
+    private void notifyChanged(Long workspaceId, String channelId) {
+        workspaceEventService.publish(workspaceId, Provider.SLACK.name(), channelId);
     }
 
     // ===================== Slack 실시간 이벤트 (SlackEventService) =====================
@@ -203,6 +217,7 @@ public class SlackContentService {
         ContentRef ref = getMessage(workspaceId, channelId, messageTs);
         slackApiClient.deleteMessage(ownToken(workspaceId, userId), channelId, messageTs);
         contentRefService.markOriginDeleted(ref.getContentRefId());
+        notifyChanged(workspaceId, channelId);
         return true;
     }
 
@@ -222,6 +237,7 @@ public class SlackContentService {
             return new SlackMessageResponse(null, channelId, posted.ts(), posted.userId(), null, body, List.of(),
                     posted.createdAt(), false, 0, null, false, true, true);
         }
+        notifyChanged(workspaceId, channelId);
         return reload(saved.contentRefId(), workspaceId, userId);
     }
 

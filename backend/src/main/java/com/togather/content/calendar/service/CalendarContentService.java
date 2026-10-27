@@ -5,6 +5,7 @@ import com.togather.auth.service.UserService;
 import com.togather.common.domain.DateRange;
 import com.togather.common.enums.ContentType;
 import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.calendar.client.GoogleCalendarClient;
@@ -56,6 +57,7 @@ public class CalendarContentService {
     private final ContentRefService contentRefService;
     private final UserService userService;
     private final MeetingRepository meetingRepository;
+    private final WorkspaceEventService workspaceEventService;
 
     /** 캘린더 접근 정보. ownerUserId가 있으면 개인 캘린더 */
     private record Access(String token, String calendarId, Long ownerUserId) {
@@ -107,6 +109,7 @@ public class CalendarContentService {
                 new EventWrite(request.title(), request.description(), request.startAt(), request.endAt(),
                         request.participantIds() == null ? null : emails(request.participantIds())));
         contentRefService.updateContent(contentRefId, updated.title(), updated.description());
+        notifyChanged(workspaceId, access);
         return toResponse(contentRefId, updated, meetingIdsByCalendarRef(List.of(contentRefId)).get(contentRefId),
                 access.ownerUserId() != null);
     }
@@ -117,6 +120,7 @@ public class CalendarContentService {
         String eventId = contentRefService.getContentRef(contentRefId).externalId();
         calendarClient.deleteEvent(access.token(), access.calendarId(), eventId);
         contentRefService.markOriginDeleted(contentRefId);
+        notifyChanged(workspaceId, access);
     }
 
     // ===================== 다른 파트·회의 제공 (docs/shared-interfaces.md) =====================
@@ -198,7 +202,15 @@ public class CalendarContentService {
         CalendarEvent event = calendarClient.insertEvent(access.token(), access.calendarId(),
                 new EventWrite(title, description, startAt, endAt, emails(participantIds)), withMeet);
         ContentRefDTO ref = save(workspaceId, access, event);
+        notifyChanged(workspaceId, access);
         return toResponse(ref.contentRefId(), event, null, access.ownerUserId() != null);
+    }
+
+    /** 팀 캘린더를 바꾼 직후, 일정 화면을 보고 있는 다른 팀원에게 알린다. (커밋된 뒤 전송) 개인 캘린더는 알리지 않는다. */
+    private void notifyChanged(Long workspaceId, Access access) {
+        if (access.ownerUserId() == null) {
+            workspaceEventService.publish(workspaceId, Provider.GOOGLE_CALENDAR.name(), access.calendarId());
+        }
     }
 
     /** 팀 캘린더가 있으면 팀 캘린더, 없으면 요청자의 기본 캘린더 */

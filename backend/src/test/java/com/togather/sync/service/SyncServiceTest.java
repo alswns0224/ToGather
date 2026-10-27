@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.sync.domain.SyncState;
@@ -28,6 +29,7 @@ class SyncServiceTest {
     private static final LocalDateTime SYNCED = LocalDateTime.of(2026, 10, 7, 9, 0);
 
     private final SyncStateService stateService = mock(SyncStateService.class);
+    private final WorkspaceEventService events = mock(WorkspaceEventService.class);
     private final FakeAdapter adapter = new FakeAdapter();
     private SyncService syncService;
     private SyncState state;
@@ -36,7 +38,7 @@ class SyncServiceTest {
     void setUp() {
         DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
         factory.registerSingleton("fakeAdapter", adapter);
-        syncService = new SyncService(factory.getBeanProvider(SyncAdapter.class), stateService);
+        syncService = new SyncService(factory.getBeanProvider(SyncAdapter.class), stateService, events);
         state = new SyncState(1L, Provider.SLACK, "C1", null);
         when(stateService.getOrCreate(eq(1L), eq(Provider.SLACK), eq("C1"), any())).thenReturn(state);
     }
@@ -51,6 +53,8 @@ class SyncServiceTest {
         assertThat(adapter.contexts.getFirst().since()).isNull();
         assertThat(adapter.contexts.getFirst().requestedBy()).isEqualTo(7L);
         verify(stateService).recordSuccess(any(), eq(SYNCED), any(), any());
+        // 저장 개수가 있어도 실제로 바뀐 콘텐츠가 없으면 화면에 알리지 않는다.
+        verify(events, never()).publish(any(), any(), any());
     }
 
     @Test

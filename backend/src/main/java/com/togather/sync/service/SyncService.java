@@ -1,6 +1,8 @@
 package com.togather.sync.service;
 
 import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
+import com.togather.content.service.ContentRefService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.integration.service.IntegrationService;
@@ -45,12 +47,15 @@ public class SyncService {
 
     private final Map<Provider, SyncAdapter> adapters;
     private final SyncStateService syncStateService;
+    private final WorkspaceEventService workspaceEventService;
     private final Set<String> running = ConcurrentHashMap.newKeySet();
 
-    public SyncService(ObjectProvider<SyncAdapter> adapters, SyncStateService syncStateService) {
+    public SyncService(ObjectProvider<SyncAdapter> adapters, SyncStateService syncStateService,
+                       WorkspaceEventService workspaceEventService) {
         this.adapters = adapters.orderedStream()
                 .collect(Collectors.toMap(SyncAdapter::provider, Function.identity()));
         this.syncStateService = syncStateService;
+        this.workspaceEventService = workspaceEventService;
     }
 
     public boolean supports(Provider provider) {
@@ -173,12 +178,19 @@ public class SyncService {
                 return true;
             }
             try {
-                SyncResult result = adapter.sync(new SyncContext(workspaceId, target.targetId(), target.ownerUserId(),
-                        state.getLastSyncedAt(), state.getSyncCursor(), requestedBy));
+                SyncResult[] holder = new SyncResult[1];
+                int changed = ContentRefService.countChanges(() -> holder[0] = adapter.sync(new SyncContext(
+                        workspaceId, target.targetId(), target.ownerUserId(), state.getLastSyncedAt(),
+                        state.getSyncCursor(), requestedBy)));
+                SyncResult result = holder[0];
                 LocalDateTime syncedUntil = result.syncedUntil() != null ? result.syncedUntil() : now;
                 syncStateService.recordSuccess(state.getSyncStateId(), syncedUntil, result.syncCursor(), now);
-                log.info("동기화 완료: workspaceId={}, provider={}, target={}, saved={}",
-                        workspaceId, adapter.provider(), target.targetId(), result.savedCount());
+                log.info("동기화 완료: workspaceId={}, provider={}, target={}, saved={}, changed={}",
+                        workspaceId, adapter.provider(), target.targetId(), result.savedCount(), changed);
+                if (changed > 0) {
+                    // 실제로 바뀐 게 있을 때만 화면에 알린다. (같은 내용을 다시 받은 경우는 알리지 않음)
+                    workspaceEventService.publish(workspaceId, adapter.provider().name(), target.targetId());
+                }
             } catch (RuntimeException e) {
                 syncStateService.recordFailure(state.getSyncStateId(), describe(e), now);
                 log.warn("동기화 실패: workspaceId={}, provider={}, target={}, error={}",

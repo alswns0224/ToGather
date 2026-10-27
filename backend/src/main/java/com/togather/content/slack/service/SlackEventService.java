@@ -5,6 +5,7 @@ import static com.togather.common.util.JsonValues.str;
 
 import com.togather.common.enums.Provider;
 import com.togather.common.event.WorkspaceEventService;
+import com.togather.content.service.ContentRefService;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.integration.service.IntegrationService;
 import com.togather.sync.service.SyncService;
@@ -113,19 +114,37 @@ public class SlackEventService {
         String subtype = str(event, "subtype");
         for (Long workspaceId : workspaceIds) {
             if ("message_deleted".equals(subtype)) {
-                slackContentService.applyRemoteDelete(workspaceId, channelId, str(event, "deleted_ts"));
+                int changed = ContentRefService.countChanges(() ->
+                        slackContentService.applyRemoteDelete(workspaceId, channelId, str(event, "deleted_ts")));
+                publishIfChanged(workspaceId, channelId, changed);
             } else if ("message_changed".equals(subtype)) {
                 Map<String, Object> message = obj(event, "message");
                 String ts = str(message, "ts");
-                boolean applied = ts != null && slackContentService.applyRemoteEdit(workspaceId, channelId, ts,
-                        str(message, "text"), SlackApiClient.toLocal(str(obj(message, "edited"), "ts")));
-                if (!applied) {
+                boolean[] applied = {false};
+                int changed = ContentRefService.countChanges(() -> applied[0] = ts != null
+                        && slackContentService.applyRemoteEdit(workspaceId, channelId, ts, str(message, "text"),
+                                SlackApiClient.toLocal(str(obj(message, "edited"), "ts"))));
+                if (applied[0]) {
+                    // ToGather에서 고친 메시지면 이미 같은 내용이라 알리지 않는다.
+                    publishIfChanged(workspaceId, channelId, changed);
+                } else {
+                    // 저장된 적 없는 메시지: 동기화로 가져온다. (바뀐 게 있으면 동기화가 화면에 알린다)
                     syncService.syncTargetNow(workspaceId, Provider.SLACK, channelId);
                 }
             } else {
-                // 새 메시지 · 답글 · 파일 공유 · 채널에도 보낸 답글
+                // 새 메시지 · 답글 · 파일 공유 · 채널에도 보낸 답글.
+                // ToGather에서 쓴 메시지는 이미 저장돼 있으므로 다시 동기화하지 않는다.
+                String ts = str(event, "ts");
+                if (ts != null && slackContentService.isStored(workspaceId, channelId, ts)) {
+                    continue;
+                }
                 syncService.syncTargetNow(workspaceId, Provider.SLACK, channelId);
             }
+        }
+    }
+
+    private void publishIfChanged(Long workspaceId, String channelId, int changed) {
+        if (changed > 0) {
             workspaceEventService.publish(workspaceId, Provider.SLACK.name(), channelId);
         }
     }

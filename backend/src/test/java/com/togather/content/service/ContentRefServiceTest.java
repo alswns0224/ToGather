@@ -43,6 +43,26 @@ class ContentRefServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 실제로_바뀐_콘텐츠만_변경으로_센다() {
+        // 새로 저장 → 1
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.upsert(message("1.0", null, "처음", T0, null)))).isEqualTo(1);
+        // 같은 내용을 다시 저장(동기화로 다시 받음) → 0
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.upsert(message("1.0", null, "처음", T0, T0.plusMinutes(5))))).isZero();
+        // 본문이 바뀜 → 1
+        ContentRefDTO[] saved = new ContentRefDTO[1];
+        assertThat(ContentRefService.countChanges(() ->
+                saved[0] = contentRefService.upsert(message("1.0", null, "수정됨", T0, T0.plusHours(1)))))
+                .isEqualTo(1);
+        // 원본 삭제 표시 → 1, 이미 삭제된 것을 다시 표시 → 0
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.markOriginDeleted(saved[0].contentRefId()))).isEqualTo(1);
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.markOriginDeleted(saved[0].contentRefId()))).isZero();
+    }
+
+    @Test
     void 답글_수를_messageCount로_돌려준다() {
         ContentRefDTO root = contentRefService.upsert(message("1.0", null, "스레드", T0, null));
         contentRefService.upsert(message("1.1", root.contentRefId(), "답글1", T0.plusMinutes(1), null));

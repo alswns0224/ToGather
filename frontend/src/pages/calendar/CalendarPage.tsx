@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router';
 import { createEvent, deleteEvent, getEvents, updateEvent, type CalendarEvent, type CalendarEventForm } from './api';
 import { getMembers, type MemberResponse } from '../workspace/api';
 import { useAsync } from '../../hooks/useAsync';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { ApiError } from '../../api/client';
 import { ErrorBox } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
@@ -43,6 +44,11 @@ export default function CalendarPage() {
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null);
+
+  // 다른 팀원이 팀 캘린더 일정을 바꾸면 새로고침 없이 다시 불러온다.
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'GOOGLE_CALENDAR') events.reload();
+  });
 
   const move = (dir: number) =>
     setAnchor(view === 'week' ? addDays(anchor, dir * 7) : new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));

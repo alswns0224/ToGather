@@ -3,6 +3,7 @@ package com.togather.content.notion.service;
 import com.togather.analysis.domain.DiscussionAnalysis;
 import com.togather.analysis.repository.DiscussionAnalysisRepository;
 import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.domain.ContentRef;
@@ -53,6 +54,7 @@ public class NotionContentService {
     private final TeamTokenResolver teamTokenResolver;
     private final NotionApiClient notionApiClient;
     private final NotionSyncAdapter notionSyncAdapter;
+    private final WorkspaceEventService workspaceEventService;
 
     private final Map<String, CachedDatabase> databases = new ConcurrentHashMap<>();
 
@@ -156,6 +158,7 @@ public class NotionContentService {
         String token = token(workspaceId, ref.getChannelId(), userId);
         notionApiClient.archivePage(token, ref.getOriginId());
         contentRefService.markOriginDeleted(contentRefId);
+        notifyChanged(workspaceId, ref.getChannelId());
         return true;
     }
 
@@ -194,7 +197,13 @@ public class NotionContentService {
             // Notion에는 반영됐으므로 다음 동기화에서 저장된다.
             throw new BusinessException(ErrorCode.INTERNAL_ERROR);
         }
+        notifyChanged(workspaceId, targetId);
         return saved;
+    }
+
+    /** ToGather에서 작성·수정·삭제한 직후, 문서 화면을 보고 있는 다른 팀원에게 바로 알린다. */
+    private void notifyChanged(Long workspaceId, String targetId) {
+        workspaceEventService.publish(workspaceId, Provider.NOTION.name(), targetId);
     }
 
     private ContentRef getPageRef(Long workspaceId, Long contentRefId) {
