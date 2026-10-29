@@ -49,6 +49,8 @@ togather:
   slack:
     client-id: ${SLACK_CLIENT_ID:}
     client-secret: ${SLACK_CLIENT_SECRET:}
+    # Slack 앱 Basic Information → Signing Secret. 실시간 이벤트(/api/slack/events) 서명 확인에 쓴다. 없으면 5분 동기화만 동작
+    signing-secret: ${SLACK_SIGNING_SECRET:}
   notion:
     client-id: ${NOTION_CLIENT_ID:}
     client-secret: ${NOTION_CLIENT_SECRET:}

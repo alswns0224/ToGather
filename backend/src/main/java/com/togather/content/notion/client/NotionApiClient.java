@@ -187,6 +187,22 @@ public class NotionApiClient {
         return page;
     }
 
+    /** 일반 페이지 아래에 하위 페이지로 만든다. (데이터베이스 없이 페이지만 연동한 경우) */
+    public NotionPage createChildPage(String token, String parentPageId, String title, String text) {
+        List<Map<String, Object>> blocks = NotionBlocks.fromText(text);
+        Map<String, Object> body = new HashMap<>();
+        body.put("parent", Map.of("page_id", parentPageId));
+        body.put("properties", Map.of("title", Map.of("title", NotionBlocks.richText(title))));
+        body.put("children", blocks.subList(0, Math.min(blocks.size(), MAX_CHILDREN)));
+        Map<String, Object> json = call("pages.create", () -> request(token)
+                .post().uri(BASE + "/pages").contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JSON));
+        NotionPage page = toPage(json, null);
+        if (blocks.size() > MAX_CHILDREN) {
+            appendChildren(token, page.id(), blocks.subList(MAX_CHILDREN, blocks.size()));
+        }
+        return page;
+    }
+
     /** 제목과 본문을 바꾼다. 본문은 기존 블록을 지우고 새로 넣는다. */
     public NotionPage updatePage(String token, String pageId, String titleProperty, String title, String text) {
         List<Map<String, Object>> current = List.of();

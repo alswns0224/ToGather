@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,38 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ContentRefService {
 
+    /** countChanges 안에서 실제로 바뀐 콘텐츠 수 (같은 스레드에서만 센다) */
+    private static final ThreadLocal<int[]> CHANGES = new ThreadLocal<>();
+
     private final ContentRefRepository contentRefRepository;
+
+    /**
+     * work를 실행하는 동안 실제로 바뀐 콘텐츠 수를 센다. (새로 저장, 제목·본문·상위 변경, 원본 삭제 표시)
+     * 같은 내용을 다시 저장한 것은 세지 않는다. 화면에 변경을 알릴지 정할 때 쓴다.
+     */
+    public static int countChanges(Runnable work) {
+        int[] outer = CHANGES.get();
+        int[] counter = {0};
+        CHANGES.set(counter);
+        try {
+            work.run();
+        } finally {
+            if (outer != null) {
+                outer[0] += counter[0];
+                CHANGES.set(outer);
+            } else {
+                CHANGES.remove();
+            }
+        }
+        return counter[0];
+    }
+
+    private static void changed() {
+        int[] counter = CHANGES.get();
+        if (counter != null) {
+            counter[0]++;
+        }
+    }
 
     /** workspaceId + provider + originId 기준으로 있으면 최신 원본으로 갱신하고, 없으면 새로 저장한다. */
     @Transactional
@@ -35,12 +67,20 @@ public class ContentRefService {
         ContentRef ref = contentRefRepository
                 .findByWorkspaceIdAndProviderAndOriginId(command.workspaceId(), command.provider(), command.originId())
                 .map(existing -> {
+                    if (!Objects.equals(existing.getTitle(), command.title())
+                            || !Objects.equals(existing.getContent(), command.content())
+                            || (command.parentRefId() != null
+                                && !Objects.equals(existing.getParentRefId(), command.parentRefId()))) {
+                        changed();
+                    }
                     existing.applySync(command.title(), command.content(), command.deepLink(),
                             command.lastModifiedAt(), command.authorExternalId(), command.authorName());
                     existing.attachToParent(command.parentRefId());
                     return existing;
                 })
-                .orElseGet(() -> contentRefRepository.save(ContentRef.builder()
+                .orElseGet(() -> {
+                    changed();
+                    return contentRefRepository.save(ContentRef.builder()
                         .workspaceId(command.workspaceId())
                         .ownerUserId(command.ownerUserId())
                         .provider(command.provider())
@@ -55,7 +95,8 @@ public class ContentRefService {
                         .lastModifiedAt(command.lastModifiedAt())
                         .authorExternalId(command.authorExternalId())
                         .authorName(command.authorName())
-                        .build()));
+                        .build());
+                });
         return ContentRefDTO.from(ref, countReplies(ref));
     }
 
@@ -120,6 +161,7 @@ public class ContentRefService {
         ContentRef ref = find(contentRefId);
         if (!ref.isOriginDeleted()) {
             ref.markOriginDeleted();
+            changed();
         }
     }
 
@@ -152,7 +194,7 @@ public class ContentRefService {
 
     private int countReplies(ContentRef ref) {
         return ref.getContentType() == ContentType.MESSAGE
-                ? (int) contentRefRepository.countByParentRefId(ref.getContentRefId())
+                ? (int) contentRefRepository.countByParentRefIdAndIsOriginDeletedFalse(ref.getContentRefId())
                 : 0;
     }
 

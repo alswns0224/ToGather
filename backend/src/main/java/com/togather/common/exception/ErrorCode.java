@@ -62,7 +62,7 @@ public enum ErrorCode {
     PERSONAL_TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "할 일을 찾을 수 없습니다."),
     EVIDENCE_NOT_IN_THREAD(HttpStatus.BAD_REQUEST, "같은 스레드의 메시지만 근거로 연결할 수 있습니다."),
     NOTION_BODY_NOT_EDITABLE(HttpStatus.CONFLICT, "이미지·표·하위 블록이 있는 문서는 본문이 지워질 수 있어 Notion에서 직접 수정해 주세요."),
-    NOTION_DATABASE_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동된 Notion 데이터베이스가 없습니다. 연동 관리에서 데이터베이스를 선택해 주세요."),
+    NOTION_DATABASE_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동된 Notion 페이지·데이터베이스가 없습니다. 연동 관리에서 문서를 만들 페이지나 데이터베이스를 선택해 주세요."),
 
     // ===== C. Drive·Gmail·Task·검색 =====
     TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Task를 찾을 수 없습니다."),

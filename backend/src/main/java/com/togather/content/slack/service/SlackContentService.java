@@ -1,6 +1,7 @@
 package com.togather.content.slack.service;
 
 import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.PageResponse;
@@ -24,11 +25,13 @@ import com.togather.sync.service.SyncService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +64,7 @@ public class SlackContentService {
     private final SlackDirectory slackDirectory;
     private final SlackSyncAdapter slackSyncAdapter;
     private final SyncService syncService;
+    private final WorkspaceEventService workspaceEventService;
 
     // ===================== 화면 (UI-04) =====================
 
@@ -85,8 +89,9 @@ public class SlackContentService {
     public PageResponse<SlackMessageResponse> getChannelMessages(Long workspaceId, Long userId, String channelId,
                                                                  Pageable pageable) {
         checkLinkedChannel(workspaceId, channelId);
+        // Slack에서 지운 메시지는 채널 화면에서 빼고, 분석 근거·Task 연결에서만 보관된 사본을 보여준다.
         Page<ContentRef> page = contentRefRepository
-                .findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullOrderByCreatedAtDesc(
+                .findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseOrderByCreatedAtDesc(
                         workspaceId, Provider.SLACK, channelId, pageable);
         Map<Long, Long> replyCounts = contentRefService.countReplies(
                 page.getContent().stream().map(ContentRef::getContentRefId).toList());
@@ -117,7 +122,9 @@ public class SlackContentService {
                 refreshFailed = true;
             }
         }
-        List<ContentRef> replies = contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(root.getContentRefId());
+        Set<Long> deleted = new HashSet<>(contentRefRepository.findDeletedReplyIds(root.getContentRefId()));
+        List<ContentRef> replies = contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(root.getContentRefId())
+                .stream().filter(r -> !deleted.contains(r.getContentRefId())).toList();
         String mySlackId = findMySlackId(workspaceId, userId).orElse(null);
         return new ThreadDetailResponse(toResponse(root, replies.size(), mySlackId),
                 replies.stream().map(r -> toResponse(r, 0, mySlackId)).toList(), root.getDeepLink(), refreshFailed);
@@ -156,7 +163,52 @@ public class SlackContentService {
                 ref.getOriginId(), channelId, ref.getParentRefId(), ref.getTitle(),
                 SlackMessageFormat.toContent(body, files), ref.getDeepLink(), ref.getCreatedAt(),
                 LocalDateTime.now(SlackApiClient.ZONE), null, null));
+        notifyChanged(workspaceId, channelId);
         return reload(ref.getContentRefId(), workspaceId, userId);
+    }
+
+    /** 이 메시지를 이미 저장했는지 (Slack 이벤트로 받은 새 메시지가 ToGather에서 쓴 것인지 확인) */
+    public boolean isStored(Long workspaceId, String channelId, String ts) {
+        return contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                SlackMessageFormat.originId(channelId, ts)).isPresent();
+    }
+
+    /** ToGather에서 작성·수정·삭제한 직후, 같은 채널을 보고 있는 다른 팀원 화면에 바로 알린다. */
+    private void notifyChanged(Long workspaceId, String channelId) {
+        workspaceEventService.publish(workspaceId, Provider.SLACK.name(), channelId);
+    }
+
+    // ===================== Slack 실시간 이벤트 (SlackEventService) =====================
+
+    /**
+     * Slack에서 수정된 메시지를 반영한다. 첨부 파일은 저장된 것을 유지한다.
+     *
+     * @return 저장된 메시지가 있어 반영했으면 true (없으면 동기화로 가져와야 함)
+     */
+    @Transactional
+    public boolean applyRemoteEdit(Long workspaceId, String channelId, String ts, String text, LocalDateTime editedAt) {
+        return contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                        SlackMessageFormat.originId(channelId, ts))
+                .map(ref -> {
+                    List<SlackFile> files = SlackMessageFormat.parse(ref.getContent()).attachments().stream()
+                            .map(att -> new SlackFile(att.name(), att.url(), null))
+                            .toList();
+                    contentRefService.upsert(new ContentRefUpsert(workspaceId, null, Provider.SLACK,
+                            ref.getContentType(), ref.getOriginId(), channelId, ref.getParentRefId(), ref.getTitle(),
+                            SlackMessageFormat.toContent(text, files), ref.getDeepLink(), ref.getCreatedAt(),
+                            editedAt != null ? editedAt : LocalDateTime.now(SlackApiClient.ZONE), null, null));
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    /** Slack에서 삭제된 메시지를 원본 삭제로 표시한다. 저장된 적 없으면 아무것도 하지 않는다. */
+    @Transactional
+    public void applyRemoteDelete(Long workspaceId, String channelId, String ts) {
+        contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
+                        SlackMessageFormat.originId(channelId, ts))
+                .filter(ref -> !ref.isOriginDeleted())
+                .ifPresent(ref -> contentRefService.markOriginDeleted(ref.getContentRefId()));
     }
 
     /** 본인 메시지만 삭제할 수 있다. content_ref는 지우지 않고 원본 삭제로 표시한다. (근거 발언·Task 연결 보존) */
@@ -165,6 +217,7 @@ public class SlackContentService {
         ContentRef ref = getMessage(workspaceId, channelId, messageTs);
         slackApiClient.deleteMessage(ownToken(workspaceId, userId), channelId, messageTs);
         contentRefService.markOriginDeleted(ref.getContentRefId());
+        notifyChanged(workspaceId, channelId);
         return true;
     }
 
@@ -184,13 +237,14 @@ public class SlackContentService {
             return new SlackMessageResponse(null, channelId, posted.ts(), posted.userId(), null, body, List.of(),
                     posted.createdAt(), false, 0, null, false, true, true);
         }
+        notifyChanged(workspaceId, channelId);
         return reload(saved.contentRefId(), workspaceId, userId);
     }
 
     private SlackMessageResponse reload(Long contentRefId, Long workspaceId, Long userId) {
         ContentRef ref = contentRefRepository.findById(contentRefId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        return toResponse(ref, (int) contentRefRepository.countByParentRefId(contentRefId),
+        return toResponse(ref, (int) contentRefRepository.countByParentRefIdAndIsOriginDeletedFalse(contentRefId),
                 findMySlackId(workspaceId, userId).orElse(null));
     }
 
@@ -280,13 +334,18 @@ public class SlackContentService {
         return contentRefService.toDtos(contentRefRepository.findUpdatedThreads(workspaceId, Provider.SLACK, since));
     }
 
-    /** 스레드의 root와 답글 중 after 이후 메시지 (after가 null이면 전체). 시간순 */
+    /**
+     * 스레드의 root와 답글 중 after 이후 메시지 (after가 null이면 전체). 시간순
+     * Slack에서 지운 답글은 뺀다. (AI 분석 입력과 논의 정리 화면의 대화 목록에 쓰인다)
+     */
     public List<ThreadMessage> getThreadMessages(Long threadId, LocalDateTime after) {
         ContentRef root = contentRefRepository.findById(threadId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         List<ContentRef> messages = new ArrayList<>();
         messages.add(root);
-        messages.addAll(contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(threadId));
+        contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(threadId).stream()
+                .filter(reply -> !reply.isOriginDeleted())
+                .forEach(messages::add);
         return messages.stream()
                 .filter(m -> after == null || m.getCreatedAt().isAfter(after)
                         || (m.getLastModifiedAt() != null && m.getLastModifiedAt().isAfter(after)))
@@ -319,7 +378,14 @@ public class SlackContentService {
         }
     }
 
+    /** 내가 연결한 Slack 계정. 연결하지 않았으면 로그인 이메일과 같은 Slack 사용자로 찾는다. */
     Optional<String> findMySlackId(Long workspaceId, Long userId) {
+        Optional<String> own = integrationService.findOwnExternalAccountId(workspaceId, userId, Provider.SLACK)
+                .filter(id -> id.contains(":"))
+                .map(id -> id.substring(id.indexOf(':') + 1));
+        if (own.isPresent()) {
+            return own;
+        }
         return findToken(workspaceId, userId).flatMap(t -> slackDirectory.findSlackUserId(workspaceId, t, userId));
     }
 

@@ -13,6 +13,7 @@ import {
   type NotionPageDetailResponse,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import ServiceLogo from '../../components/ServiceLogo';
@@ -49,6 +50,11 @@ export default function NotionPage() {
     }
   };
 
+  // 다른 팀원이 문서를 바꾸거나 동기화로 바뀐 게 생기면 새로고침 없이 다시 불러온다.
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'NOTION') pages.reload();
+  });
+
   // 저장된 목록을 먼저 보여주고 뒤에서 동기화한다.
   const synced = useRef(false);
   useEffect(() => {
@@ -75,7 +81,7 @@ export default function NotionPage() {
               className="btn btn-primary"
               onClick={() => setCreating(true)}
               disabled={!!noDatabase}
-              title={noDatabase ? '새 문서는 연동한 Notion 데이터베이스에 만들어집니다.' : undefined}
+              title={noDatabase ? '문서를 만들 Notion 페이지나 데이터베이스를 연동 관리에서 선택해 주세요.' : undefined}
             >
               + 새 문서
             </button>
@@ -165,6 +171,11 @@ function PageDetail({
   const page = useAsync(() => getPage(workspaceId, id), [workspaceId, id]);
   const [editing, setEditing] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // 수정 중이 아니면, 다른 팀원이 바꾼 내용을 바로 다시 불러온다.
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'NOTION' && !editing) page.reload();
+  });
 
   const remove = async () => {
     if (!window.confirm('이 문서를 삭제할까요? Notion에서 휴지통으로 이동합니다.')) return;
@@ -280,7 +291,7 @@ function PageEditor({
       <h2>{title}</h2>
       {databases && databases.length > 1 && (
         <label>
-          데이터베이스
+          만들 위치
           <select
             className="input"
             value={form.databaseId}

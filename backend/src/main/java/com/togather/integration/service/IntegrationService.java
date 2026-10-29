@@ -246,6 +246,12 @@ public class IntegrationService {
                 workspaceId, userId, provider, ConnectionStatus.DISCONNECTED).isPresent();
     }
 
+    /** 본인 연결의 외부 계정 ID (Slack은 "팀ID:사용자ID"). 연결하지 않았으면 빈 값 */
+    public Optional<String> findOwnExternalAccountId(Long workspaceId, Long userId, Provider provider) {
+        return connectionRepository.findFirstByWorkspaceIdAndUserIdAndProviderAndStatusNot(
+                workspaceId, userId, provider, ConnectionStatus.DISCONNECTED).map(ServiceConnection::getExternalAccountId);
+    }
+
     /** 워크스페이스에서 선택한 연동 대상 ID 목록 (Slack 채널, Notion DB, Drive 폴더, 팀 캘린더) */
     public List<String> getConnectionTargets(Long workspaceId, Provider provider) {
         List<Long> connectionIds = connectionRepository
@@ -255,6 +261,12 @@ public class IntegrationService {
                 .map(IntegrationTarget::getExternalTargetId)
                 .distinct()
                 .toList();
+    }
+
+    /** 외부 대상(예: Slack 채널 ID)을 연동 대상으로 고른 워크스페이스들. 외부 서비스의 실시간 이벤트를 나눠 줄 때 쓴다. */
+    @Transactional(readOnly = true)
+    public List<Long> findWorkspacesByTarget(Provider provider, String externalTargetId) {
+        return targetRepository.findWorkspaceIdsByTarget(provider, externalTargetId, ConnectionStatus.DISCONNECTED);
     }
 
     /**

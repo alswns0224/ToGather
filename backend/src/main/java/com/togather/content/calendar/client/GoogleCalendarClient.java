@@ -101,12 +101,8 @@ public class GoogleCalendarClient {
                     "requestId", UUID.randomUUID().toString(),
                     "conferenceSolutionKey", Map.of("type", "hangoutsMeet"))));
         }
-        String uri = UriComponentsBuilder.fromUriString(BASE + "/calendars/{calendarId}/events")
-                .queryParam("sendUpdates", "none")
-                .queryParam("conferenceDataVersion", withMeet ? 1 : 0)
-                .encode().buildAndExpand(calendarId).toUriString();
         return toEvent(call(() -> externalRestClient.post()
-                .uri(uri)
+                .uri(insertUri(calendarId, withMeet))
                 .headers(h -> h.setBearerAuth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
@@ -204,6 +200,17 @@ public class GoogleCalendarClient {
         return DateTimeFormatter.ISO_INSTANT.format(time.atZone(ZONE).toInstant());
     }
 
+    /**
+     * 일정 등록 주소. 문자열이 아니라 URI로 넘긴다. (문자열로 넘기면 RestClient가 한 번 더 인코딩해
+     * 팀 캘린더 ID의 '@'가 %2540이 되고, Google이 캘린더를 찾지 못해 404를 준다)
+     */
+    static java.net.URI insertUri(String calendarId, boolean withMeet) {
+        return UriComponentsBuilder.fromUriString(BASE + "/calendars/{calendarId}/events")
+                .queryParam("sendUpdates", "none")
+                .queryParam("conferenceDataVersion", withMeet ? 1 : 0)
+                .encode().buildAndExpand(calendarId).toUri();
+    }
+
     private static java.net.URI eventUri(String calendarId, String eventId, String sendUpdates) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(BASE + "/calendars/{calendarId}/events/{eventId}");
         if (sendUpdates != null) {
@@ -218,6 +225,8 @@ public class GoogleCalendarClient {
             return request.get();
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND || e.getStatusCode() == HttpStatus.GONE) {
+                log.info("Google Calendar API {}: body={}", e.getStatusCode().value(),
+                        e.getResponseBodyAsString().replaceAll("\\s+", " "));
                 throw new BusinessException(ErrorCode.CALENDAR_EVENT_NOT_FOUND);
             }
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
