@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -93,6 +94,8 @@ public class ContentRef {
      * 정상적으로 존재하는 상태.
      */
     private boolean isOriginDeleted;
+
+    private boolean driveTrashed;
 
     /**
      * 원본이 삭제되었을 때 보관한
@@ -323,5 +326,29 @@ public class ContentRef {
 
         this.isOriginDeleted = false;
         this.snapshot = null;
+        this.driveTrashed = false;
+    }
+
+    public boolean applyDriveLocation(String folderId, DriveFileState state) {
+        boolean originDeleted = state != DriveFileState.AVAILABLE;
+        boolean trashed = state == DriveFileState.TRASHED;
+        boolean changed = !Objects.equals(channelId, folderId)
+            || isOriginDeleted != originDeleted
+            || driveTrashed != trashed;
+
+        channelId = folderId;
+        if (originDeleted) {
+            markOriginDeleted();
+        } else {
+            restoreOriginDeleted();
+        }
+        driveTrashed = trashed;
+        return changed;
+    }
+
+    public enum DriveFileState {
+        AVAILABLE,
+        TRASHED,
+        UNAVAILABLE
     }
 }

@@ -6,6 +6,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 
 import com.togather.content.domain.ContentRef;
+import com.togather.content.domain.ContentRef.DriveFileState;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.repository.ContentRefRepository.ReplyCount;
@@ -123,12 +124,21 @@ public class ContentRefService {
         ContentRefUpsert command
     ) {
 
-        ContentRef ref = contentRefRepository
-            .findByWorkspaceIdAndProviderAndOriginId(
+        boolean driveFile = command.provider() == Provider.GOOGLE_DRIVE
+            && command.contentType() == ContentType.FILE;
+        Optional<ContentRef> stored = driveFile
+            ? contentRefRepository.findLockedByWorkspaceIdAndProviderAndOriginId(
                 command.workspaceId(),
                 command.provider(),
                 command.originId()
             )
+            : contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(
+                command.workspaceId(),
+                command.provider(),
+                command.originId()
+            );
+
+        ContentRef ref = stored
             .map(existing -> {
 
                 // 1. 기존 콘텐츠의 변경 사항 확인
@@ -152,9 +162,13 @@ public class ContentRefService {
                 // 2. 기존 삭제 상태 확인
                 boolean wasDeleted =
                     existing.isOriginDeleted();
+                boolean locationChanged = driveFile && existing.applyDriveLocation(
+                    command.channelId(),
+                    DriveFileState.AVAILABLE
+                );
 
                 // 3. 내용 변경 또는 복원 시 변경 횟수 증가
-                if (contentChanged || wasDeleted) {
+                if (contentChanged || wasDeleted || locationChanged) {
                     changed();
                 }
 
@@ -174,7 +188,7 @@ public class ContentRefService {
                 );
 
                 // 6. 삭제된 원본이 재등장한 경우 복원
-                if (wasDeleted) {
+                if (wasDeleted && !driveFile) {
                     existing.restoreOriginDeleted();
                 }
 
@@ -237,6 +251,26 @@ public class ContentRefService {
             ref,
             countReplies(ref)
         );
+    }
+
+    @Transactional
+    public void updateDriveLocation(
+        Long workspaceId,
+        String originId,
+        String expectedFolderId,
+        String folderId,
+        DriveFileState state
+    ) {
+        contentRefRepository.findLockedByWorkspaceIdAndProviderAndOriginId(
+                workspaceId, Provider.GOOGLE_DRIVE, originId
+            )
+            .filter(ref -> ref.getContentType() == ContentType.FILE)
+            .filter(ref -> expectedFolderId == null || expectedFolderId.equals(ref.getChannelId()))
+            .ifPresent(ref -> {
+                if (ref.applyDriveLocation(folderId, state)) {
+                    changed();
+                }
+            });
     }
 
     /**

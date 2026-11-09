@@ -1,7 +1,9 @@
 package com.togather.content.repository;
 
+import com.togather.common.enums.ContentType;
 import com.togather.common.enums.Provider;
 import com.togather.content.domain.ContentRef;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -11,6 +13,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 public interface ContentRefRepository
@@ -21,6 +24,20 @@ public interface ContentRefRepository
         Long workspaceId,
         Provider provider,
         String originId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<ContentRef> findLockedByWorkspaceIdAndProviderAndOriginId(
+        Long workspaceId,
+        Provider provider,
+        String originId
+    );
+
+    List<ContentRef> findAllByWorkspaceIdAndProviderAndChannelIdAndContentType(
+        Long workspaceId,
+        Provider provider,
+        String channelId,
+        ContentType contentType
     );
 
     // =================================================
@@ -118,7 +135,7 @@ public interface ContentRefRepository
      *
      * Google Drive:
      * 휴지통 파일 조회 시 사용한다.
-     * Service에서 isOriginDeleted를 확인한다.
+     * Service에서 driveTrashed를 확인한다.
      */
     List<ContentRef>
     findAllByWorkspaceIdAndProviderAndParentRefIdIsNullOrderByLastModifiedAtDesc(

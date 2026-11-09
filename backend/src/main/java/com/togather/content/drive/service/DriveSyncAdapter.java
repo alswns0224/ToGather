@@ -6,6 +6,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 
 import com.togather.content.domain.ContentRef;
+import com.togather.content.domain.ContentRef.DriveFileState;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveChange;
 import com.togather.content.drive.client.DriveApiClient.DriveFile;
@@ -200,7 +201,7 @@ public class DriveSyncAdapter implements SyncAdapter {
      * 1. 변경 이력 시작 토큰 확보
      * 2. 선택된 폴더의 전체 파일 목록 조회
      * 3. ContentRef 저장 및 갱신
-     * 4. 기존 목록과 비교하여 사라진 파일 삭제 표시
+     * 4. 휴지통 및 폴더 밖으로 이동한 파일의 상태 확인
      * 5. 변경 토큰 반환
      *
      * 파일 목록을 조회하기 전에 토큰을 확보하여
@@ -252,33 +253,32 @@ public class DriveSyncAdapter implements SyncAdapter {
             saved++;
         }
 
-        // 4. 현재 Drive 폴더에 존재하지 않는
-        // 기존 파일은 원본 삭제 상태로 표시
-        int deleted = 0;
-
-        for (ContentRef ref :
-            getActiveFiles(workspaceId, folderId)) {
-
-            if (!currentIds.contains(
-                ref.getOriginId()
-            )) {
-
-                contentRefService.markOriginDeleted(
-                    ref.getContentRefId()
+        for (DriveFile file : driveApiClient.listTrashedFolderFiles(token, folderId)) {
+            if (currentIds.add(file.id())) {
+                contentRefService.updateDriveLocation(
+                    workspaceId, file.id(), null, folderId, DriveFileState.TRASHED
                 );
+            }
+        }
 
-                deleted++;
+        int reconciled = 0;
+        for (ContentRef ref : getTrackedFiles(workspaceId, folderId)) {
+            if (!currentIds.contains(ref.getOriginId())) {
+                reconcileLocation(
+                    workspaceId, folderId, ref.getOriginId(), lookupFile(token, ref.getOriginId())
+                );
+                reconciled++;
             }
         }
 
         log.info(
             "Drive full sync completed: "
                 + "workspaceId={}, folderId={}, "
-                + "processed={}, removed={}",
+                + "processed={}, reconciled={}",
             workspaceId,
             folderId,
             saved,
-            deleted
+            reconciled
         );
 
         // 5. 다음 증분 동기화에서 사용할 토큰 반환
@@ -299,7 +299,7 @@ public class DriveSyncAdapter implements SyncAdapter {
      * 실행 순서:
      *
      * 1. 기존 cursor로 변경 내역 조회
-     * 2. 현재 활성 파일 ID 확인
+     * 2. 현재 추적하는 파일 ID 확인
      * 3. 동일 파일의 중복 변경 내역 정리
      * 4. 추가·수정·삭제·이동 처리
      * 5. 새 cursor 반환
@@ -323,9 +323,8 @@ public class DriveSyncAdapter implements SyncAdapter {
                 cursor
             );
 
-        // 2. 선택 폴더의 현재 활성 파일 ID
-        Set<String> activeIds =
-            getActiveFiles(
+        Set<String> trackedIds =
+            getTrackedFiles(
                 workspaceId,
                 folderId
             )
@@ -356,7 +355,7 @@ public class DriveSyncAdapter implements SyncAdapter {
         }
 
         int saved = 0;
-        int deleted = 0;
+        int reconciled = 0;
 
         // 4. 변경 파일 처리
         for (DriveChange change :
@@ -372,15 +371,11 @@ public class DriveSyncAdapter implements SyncAdapter {
 
             if (change.removed()) {
 
-                if (activeIds.contains(fileId)) {
-
-                    markDeleted(
-                        workspaceId,
-                        fileId
+                if (trackedIds.contains(fileId)) {
+                    reconcileLocation(
+                        workspaceId, folderId, fileId, lookupFile(token, fileId)
                     );
-
-                    activeIds.remove(fileId);
-                    deleted++;
+                    reconciled++;
                 }
 
                 continue;
@@ -416,38 +411,29 @@ public class DriveSyncAdapter implements SyncAdapter {
                     startedAt
                 );
 
-                activeIds.add(file.id());
-
                 saved++;
                 continue;
             }
 
-            // -----------------------------------------
-            // 4-4. 휴지통으로 이동하거나
-            //      선택 폴더 밖으로 이동한 파일
-            // -----------------------------------------
-
-            if (activeIds.contains(fileId)) {
-
-                markDeleted(
-                    workspaceId,
-                    fileId
+            if (file.trashed() && file.isInFolder(folderId)) {
+                contentRefService.updateDriveLocation(
+                    workspaceId, fileId, null, folderId, DriveFileState.TRASHED
                 );
-
-                activeIds.remove(fileId);
-
-                deleted++;
+                reconciled++;
+            } else if (trackedIds.contains(fileId)) {
+                reconcileLocation(workspaceId, folderId, fileId, file);
+                reconciled++;
             }
         }
 
         log.info(
             "Drive incremental sync completed: "
                 + "workspaceId={}, folderId={}, "
-                + "updated={}, removed={}",
+                + "updated={}, reconciled={}",
             workspaceId,
             folderId,
             saved,
-            deleted
+            reconciled
         );
 
         // 5. 새로운 변경 토큰 반환
@@ -578,61 +564,50 @@ public class DriveSyncAdapter implements SyncAdapter {
     }
 
     // =====================================================
-    // 7. 선택된 폴더의 활성 파일 조회
+    // 7. 선택된 폴더의 추적 파일 조회
     // =====================================================
 
-    /**
-     * 선택된 폴더에 속한 활성 Google Drive 파일.
-     *
-     * 삭제 표시된 콘텐츠는 제외한다.
-     */
-    private List<ContentRef> getActiveFiles(
+    private List<ContentRef> getTrackedFiles(
         Long workspaceId,
         String folderId
     ) {
 
         return contentRefRepository
-            .findAllByWorkspaceIdAndProviderAndChannelIdAndIsOriginDeletedFalse(
+            .findAllByWorkspaceIdAndProviderAndChannelIdAndContentType(
                 workspaceId,
                 PROVIDER,
-                folderId
-            )
-            .stream()
-            .filter(
-                ref -> ref.getContentType()
-                    == ContentType.FILE
-            )
-            .toList();
+                folderId,
+                ContentType.FILE
+            );
     }
 
     // =====================================================
-    // 8. 삭제 상태 반영
+    // 8. 위치 및 원본 상태 반영
     // =====================================================
 
-    /**
-     * Google Drive에서 파일이 사라진 경우
-     * ContentRef에 삭제 상태를 반영한다.
-     *
-     * 실제 Google Drive 파일을 삭제하는 것은 아니다.
-     *
-     * Google Drive 원본 파일의 이동 또는 삭제를
-     * ToGather DB에 반영하는 작업이다.
-     */
-    private void markDeleted(
-        Long workspaceId,
-        String fileId
-    ) {
+    private DriveFile lookupFile(String token, String fileId) {
+        try {
+            return driveApiClient.getFileMetadata(token, fileId);
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
+                return null;
+            }
+            throw exception;
+        }
+    }
 
-        contentRefService.findByOrigin(
-                workspaceId,
-                PROVIDER,
-                fileId
-            )
-            .ifPresent(
-                ref ->
-                    contentRefService.markOriginDeleted(
-                        ref.contentRefId()
-                    )
+    private void reconcileLocation(Long workspaceId, String folderId, String fileId, DriveFile file) {
+        if (file == null) {
+            contentRefService.updateDriveLocation(
+                workspaceId, fileId, folderId, folderId, DriveFileState.UNAVAILABLE
             );
+            return;
+        }
+
+        String parentId = file.parents().contains(folderId)
+            ? folderId
+            : file.parents().stream().findFirst().orElse(null);
+        DriveFileState state = file.trashed() ? DriveFileState.TRASHED : DriveFileState.AVAILABLE;
+        contentRefService.updateDriveLocation(workspaceId, fileId, folderId, parentId, state);
     }
 }

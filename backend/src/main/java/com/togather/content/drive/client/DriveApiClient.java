@@ -26,12 +26,13 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -58,7 +59,6 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class DriveApiClient {
 
     private static final String BASE =
@@ -113,6 +113,17 @@ public class DriveApiClient {
         new ParameterizedTypeReference<>() {};
 
     private final RestClient externalRestClient;
+    private final RestClient transferRestClient;
+
+    public DriveApiClient(
+        RestClient externalRestClient,
+        @Value("${togather.drive.transfer-timeout}") Duration transferTimeout
+    ) {
+        this.externalRestClient = externalRestClient;
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(UPLOAD_HTTP);
+        factory.setReadTimeout(transferTimeout);
+        this.transferRestClient = externalRestClient.mutate().requestFactory(factory).build();
+    }
 
     /**
      * Google Drive 파일 메타데이터.
@@ -129,8 +140,11 @@ public class DriveApiClient {
         boolean trashed
     ) {
         public boolean isDirectChildOf(String folderId) {
-            return !trashed
-                && !"application/vnd.google-apps.folder"
+            return !trashed && isInFolder(folderId);
+        }
+
+        public boolean isInFolder(String folderId) {
+            return !"application/vnd.google-apps.folder"
                 .equals(mimeType)
                 && parents.contains(folderId);
         }
@@ -1050,13 +1064,13 @@ public class DriveApiClient {
                 );
 
         DriveFile file = toFile(
-            request(accessToken, uri)
+            request(accessToken, uri, true)
         );
 
         if (file == null) {
 
             throw new BusinessException(
-                ErrorCode.RESOURCE_NOT_FOUND
+                ErrorCode.EXTERNAL_API_ERROR
             );
         }
 
@@ -1258,7 +1272,7 @@ public class DriveApiClient {
 
         try {
 
-            externalRestClient.get()
+            transferRestClient.get()
                 .uri(uri)
                 .headers(
                     h -> h.setBearerAuth(
@@ -1288,7 +1302,7 @@ public class DriveApiClient {
                         return null;
 
                     } catch (IOException e) {
-
+                        log.warn("Drive download/export stream interrupted: {}", e.getClass().getSimpleName());
                         throw new BusinessException(
                             ErrorCode.EXTERNAL_API_ERROR
                         );
@@ -1333,6 +1347,14 @@ public class DriveApiClient {
         String token,
         UriComponentsBuilder builder
     ) {
+        return request(token, builder, false);
+    }
+
+    private Map<String, Object> request(
+        String token,
+        UriComponentsBuilder builder,
+        boolean fileLookup
+    ) {
 
         try {
 
@@ -1359,6 +1381,10 @@ public class DriveApiClient {
             return body;
 
         } catch (HttpClientErrorException e) {
+
+            if (fileLookup && e.getStatusCode().value() == 404) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
 
             if (e.getStatusCode().value() == 410) {
                 throw new CursorExpiredException();

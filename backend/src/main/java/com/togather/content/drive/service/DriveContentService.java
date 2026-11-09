@@ -8,6 +8,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 
 import com.togather.content.domain.ContentRef;
+import com.togather.content.domain.ContentRef.DriveFileState;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveFile;
 import com.togather.content.dto.ContentRefDTO;
@@ -190,7 +191,7 @@ public class DriveContentService {
      * 4. 휴지통 파일 목록 조회.
      *
      * ContentRef에 저장된 파일 중
-     * 원본 삭제 표시가 된 항목을 조회한다.
+     * Drive 휴지통에 있는 것으로 확인된 항목을 조회한다.
      *
      * 이 목록은 실제 Google Drive 휴지통 전체가 아니라
      * ToGather에서 이전에 수집한 파일을 기준으로 한다.
@@ -219,7 +220,7 @@ public class DriveContentService {
                     PROVIDER
                 )
                 .stream()
-                .filter(ContentRef::isOriginDeleted)
+                .filter(ContentRef::isDriveTrashed)
                 .filter(
                     ref -> ref.getContentType()
                         == ContentType.FILE
@@ -437,8 +438,12 @@ public class DriveContentService {
         );
 
         // PostgreSQL에 원본 삭제 상태 반영
-        contentRefService.markOriginDeleted(
-            contentRefId
+        contentRefService.updateDriveLocation(
+            workspaceId,
+            file.getOriginId(),
+            folderId,
+            folderId,
+            DriveFileState.TRASHED
         );
 
         // 화면 자동 갱신 이벤트
