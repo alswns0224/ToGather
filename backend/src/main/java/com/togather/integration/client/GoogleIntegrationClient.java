@@ -12,6 +12,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import java.util.List;
 import java.util.Map;
+import java.net.URI;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Google Drive · Calendar · Gmail 연동. 서비스마다 별도 연결(ServiceConnection)과 권한 범위를 가진다.
@@ -115,12 +117,24 @@ public class GoogleIntegrationClient implements OAuthProviderClient {
     private Map<String, Object> get(String uri, String accessToken) {
         try {
             return externalRestClient.get()
-                    .uri(uri)
-                    .headers(h -> h.setBearerAuth(accessToken))
-                    .retrieve()
-                    .body(JSON);
+                .uri(URI.create(uri))
+                .headers(h -> h.setBearerAuth(accessToken))
+                .retrieve()
+                .body(JSON);
+
+        } catch (RestClientResponseException e) {
+            log.warn(
+                "Google API 호출 실패: HTTP {}, 응답={}",
+                e.getStatusCode().value(),
+                e.getResponseBodyAsString()
+            );
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+
         } catch (RestClientException e) {
-            log.warn("Google 연동 대상 조회 실패: {}", e.getClass().getSimpleName());
+            log.warn(
+                "Google 연동 대상 조회 실패: {}",
+                e.getClass().getSimpleName()
+            );
             throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         }
     }
