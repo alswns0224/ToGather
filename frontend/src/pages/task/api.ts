@@ -1,4 +1,4 @@
-import { http, ws } from '../../api/client';
+import { api, http, ws } from '../../api/client';
 
 export type TaskStatus = 'IN_PROGRESS' | 'DONE';
 export type RiskLevel = 'NORMAL' | 'WARNING' | 'DANGER';
@@ -29,6 +29,38 @@ export interface TaskDetail {
   status: TaskStatus;
   progress: number;
   riskLevel: RiskLevel;
+}
+
+export type TaskReferenceProvider = 'SLACK' | 'NOTION' | 'GOOGLE_DRIVE';
+
+export interface TaskReference {
+  contentRefId: number;
+  provider: string;
+  title: string | null;
+  content: string | null;
+  deepLink: string | null;
+}
+
+export interface TaskReferenceCandidate {
+  contentRefId: number;
+  title: string | null;
+  deepLink: string | null;
+  lastModifiedAt: string | null;
+}
+
+export interface TaskDeliverable {
+  deliverableId: number;
+  name: string;
+  ext: string | null;
+  fileName: string | null;
+  link: string | null;
+  submitted: boolean;
+}
+
+export interface TaskContext {
+  task: TaskDetail;
+  contentsByProvider: Record<string, TaskReference[]>;
+  deliverables: TaskDeliverable[];
 }
 
 export interface TaskCreateRequest {
@@ -97,3 +129,31 @@ export const deleteTask = (
   taskId: string | number,
 ) =>
   http.delete<void>(ws(workspaceId, `/tasks/${taskId}`));
+
+const taskPath = (workspaceId: string, taskId: string) => ws(workspaceId, `/tasks/${taskId}`);
+
+export const getTaskContext = (workspaceId: string, taskId: string) =>
+  http.get<TaskContext>(`${taskPath(workspaceId, taskId)}/context`);
+
+export const getReferenceCandidates = (
+  workspaceId: string, taskId: string, provider: TaskReferenceProvider, query: string,
+) => {
+  const params = new URLSearchParams({ provider, query });
+  return http.get<TaskReferenceCandidate[]>(`${taskPath(workspaceId, taskId)}/references/candidates?${params}`);
+};
+
+export const linkTaskReference = (workspaceId: string, taskId: string, contentRefId: number) =>
+  api<void>(`${taskPath(workspaceId, taskId)}/references/${contentRefId}`, { method: 'PUT' });
+
+export const unlinkTaskReference = (workspaceId: string, taskId: string, contentRefId: number) =>
+  http.delete<void>(`${taskPath(workspaceId, taskId)}/references/${contentRefId}`);
+
+export const submitTaskDeliverable = (
+  workspaceId: string, taskId: string, deliverableId: number, contentRefId: number,
+) => api<void>(`${taskPath(workspaceId, taskId)}/deliverables/${deliverableId}/submission`, {
+  method: 'PUT',
+  body: JSON.stringify({ contentRefId }),
+});
+
+export const unsubmitTaskDeliverable = (workspaceId: string, taskId: string, deliverableId: number) =>
+  http.delete<void>(`${taskPath(workspaceId, taskId)}/deliverables/${deliverableId}/submission`);

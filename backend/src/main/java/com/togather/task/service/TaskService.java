@@ -125,8 +125,7 @@ public class TaskService {
         LocalDate dueDate,
         TaskStatus status
     ) {
-        Task task = taskRepository.findById(taskId)
-            .filter(t -> t.getWorkspaceId().equals(workspaceId))
+        Task task = taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
         if (assigneeId != null
@@ -154,8 +153,7 @@ public class TaskService {
     /** Task 삭제 */
     @Transactional
     public void deleteTask(Long workspaceId, Long taskId) {
-        Task task = taskRepository.findById(taskId)
-            .filter(t -> t.getWorkspaceId().equals(workspaceId))
+        Task task = taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
         taskRepository.delete(task);

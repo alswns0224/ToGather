@@ -195,7 +195,7 @@ public class TaskContextService {
         List<ContentRefDTO> contents =
             contentRefService.getContentRefs(contentRefIds);
 
-        Map<String, Long> driveContentIdsByExternalId =
+        Map<String, List<ContentRefDTO>> driveContentsByExternalId =
             contents.stream()
                 .filter(content ->
                     content.provider() == Provider.GOOGLE_DRIVE
@@ -204,36 +204,24 @@ public class TaskContextService {
                     content.externalId() != null
                         && !content.externalId().isBlank()
                 )
-                .collect(Collectors.toMap(
-                    ContentRefDTO::externalId,
-                    ContentRefDTO::contentRefId,
-                    (first, second) -> first
-                ));
+                .collect(Collectors.groupingBy(ContentRefDTO::externalId));
 
-        if (driveContentIdsByExternalId.isEmpty()) {
+        if (driveContentsByExternalId.isEmpty()) {
             return;
         }
 
         taskDeliverableRepository
             .findAllByFileIdIn(
-                driveContentIdsByExternalId.keySet()
+                driveContentsByExternalId.keySet()
             )
-            .forEach(deliverable -> {
-                Long contentRefId =
-                    driveContentIdsByExternalId.get(
-                        deliverable.getFileId()
-                    );
-
-                if (contentRefId != null) {
-                    taskIdsByContent
-                        .get(contentRefId)
-                        .add(
-                            deliverable
-                                .getTask()
-                                .getTaskId()
-                        );
-                }
-            });
+            .stream()
+            .filter(TaskDeliverable::isSubmitted)
+            .forEach(deliverable -> driveContentsByExternalId.get(deliverable.getFileId()).stream()
+                .map(ContentRefDTO::contentRefId)
+                .filter(contentRefId -> deliverable.getTask().getWorkspaceId()
+                    .equals(contentRefService.getOwner(contentRefId).workspaceId()))
+                .forEach(contentRefId -> taskIdsByContent.get(contentRefId)
+                    .add(deliverable.getTask().getTaskId())));
     }
 
     private Map<Provider, List<ContentRefDTO>>

@@ -106,7 +106,7 @@ class TaskServiceTest {
 
         task.assignTo(10L);
 
-        when(taskRepository.findById(taskId))
+        when(taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId))
             .thenReturn(Optional.of(task));
 
         // when
@@ -153,7 +153,7 @@ class TaskServiceTest {
             TaskStatus.IN_PROGRESS
         );
 
-        when(taskRepository.findById(taskId))
+        when(taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId))
             .thenReturn(Optional.of(task));
 
         // when
@@ -181,8 +181,8 @@ class TaskServiceTest {
             TaskStatus.IN_PROGRESS
         );
 
-        when(taskRepository.findById(taskId))
-            .thenReturn(Optional.of(task));
+        when(taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, requestedWorkspaceId))
+            .thenReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() ->
@@ -205,19 +205,10 @@ class TaskServiceTest {
     void deleteTask_rejectsTaskFromAnotherWorkspace() {
         // given
         Long requestedWorkspaceId = 1L;
-        Long actualWorkspaceId = 2L;
         Long taskId = 100L;
 
-        Task task = new Task(
-            actualWorkspaceId,
-            "다른 워크스페이스 Task",
-            "설명",
-            LocalDate.of(2026, 10, 30),
-            TaskStatus.IN_PROGRESS
-        );
-
-        when(taskRepository.findById(taskId))
-            .thenReturn(Optional.of(task));
+        when(taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, requestedWorkspaceId))
+            .thenReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() ->

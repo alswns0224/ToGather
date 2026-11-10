@@ -56,8 +56,13 @@ public class TaskDeliverable extends BaseTimeEntity {
         if (ext == null || ext.isBlank()) {
             return true;
         }
+        String expected = ext.trim();
+        if (expected.startsWith(".")) {
+            expected = expected.substring(1);
+        }
         int dot = fileName == null ? -1 : fileName.lastIndexOf('.');
-        return dot >= 0 && fileName.substring(dot + 1).equalsIgnoreCase(ext);
+        return dot >= 0 && dot < fileName.length() - 1
+            && fileName.substring(dot + 1).equalsIgnoreCase(expected);
     }
 
     public void submit(String fileId, String fileName, String link, Long by) {
