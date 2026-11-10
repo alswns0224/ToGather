@@ -11,6 +11,7 @@ import com.togather.workspace.service.WorkspaceMemberService;
 import com.togather.task.dto.TaskDetailResponse;
 import com.togather.common.response.PageResponse;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,8 @@ import org.springframework.data.domain.PageRequest;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class TaskService {
+
+    private static final ZoneId TASK_DATE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final TaskRepository taskRepository;
     private final WorkspaceMemberService workspaceMemberService;
@@ -65,7 +68,7 @@ public class TaskService {
 
     /** 워크스페이스 전체 Task 목록 */
     public List<TaskSummary> getTasksByWorkspace(Long workspaceId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = currentTaskDate();
 
         return taskRepository.findAllByWorkspaceIdOrderByCreatedAtDesc(workspaceId)
             .stream()
@@ -75,7 +78,7 @@ public class TaskService {
 
     /** 내가 담당하는 Task 목록 - 다른 파트에서도 사용하는 공유 인터페이스 */
     public List<TaskSummary> getMyTasks(Long userId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = currentTaskDate();
 
         return taskRepository.findAllByAssigneeIdOrderByDueDateAsc(userId)
             .stream()
@@ -86,13 +89,13 @@ public class TaskService {
     /** Task 단건 조회 */
     public TaskSummary getTask(Long taskId) {
         return taskRepository.findById(taskId)
-            .map(task -> TaskSummary.from(task, LocalDate.now()))
+            .map(task -> TaskSummary.from(task, currentTaskDate()))
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
     }
 
     /** 여러 Task 조회 - 기존 A 파트 사용 가능성이 있으므로 유지 */
     public List<TaskSummary> getTasks(Collection<Long> taskIds) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = currentTaskDate();
 
         return taskRepository.findAllById(taskIds)
             .stream()
@@ -102,7 +105,7 @@ public class TaskService {
 
     /** 진행 중 Task - 회의 안건 후보용 */
     public List<TaskSummary> getTasksInProgress(Long workspaceId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = currentTaskDate();
 
         return taskRepository
             .findAllByWorkspaceIdAndStatusOrderByDueDateAsc(
@@ -147,7 +150,7 @@ public class TaskService {
             task.changeStatus(status);
         }
 
-        return TaskSummary.from(task, LocalDate.now());
+        return TaskSummary.from(task, currentTaskDate());
     }
 
     /** Task 삭제 */
@@ -165,7 +168,7 @@ public class TaskService {
             .filter(t -> t.getWorkspaceId().equals(workspaceId))
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
-        return TaskDetailResponse.from(task, LocalDate.now());
+        return TaskDetailResponse.from(task, currentTaskDate());
     }
 
     /** 화면용: 워크스페이스 Task 페이지 조회 */
@@ -176,7 +179,7 @@ public class TaskService {
         int page,
         int size
     ) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = currentTaskDate();
         PageRequest pageable = PageRequest.of(page, size);
 
         if (mine) {
@@ -197,5 +200,9 @@ public class TaskService {
             ),
             task -> TaskSummary.from(task, today)
         );
+    }
+
+    static LocalDate currentTaskDate() {
+        return LocalDate.now(TASK_DATE_ZONE);
     }
 }

@@ -19,7 +19,6 @@ import com.togather.task.dto.TaskSummary;
 import com.togather.task.repository.TaskContentLinkRepository;
 import com.togather.task.repository.TaskDeliverableRepository;
 import com.togather.task.repository.TaskRepository;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -59,7 +58,7 @@ public class TaskContextService {
             );
 
         TaskDetailResponse taskDetail =
-            TaskDetailResponse.from(task, LocalDate.now());
+            TaskDetailResponse.from(task, TaskService.currentTaskDate());
 
         List<TaskContentLink> links =
             taskContentLinkRepository.findAllByTaskId(taskId);
