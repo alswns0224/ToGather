@@ -10,6 +10,10 @@ public interface TaskContentLinkRepository
 
     List<TaskContentLink> findAllByTaskId(Long taskId);
 
+    boolean existsByTaskIdAndContentRefId(Long taskId, Long contentRefId);
+
+    void deleteByTaskIdAndContentRefId(Long taskId, Long contentRefId);
+
     List<TaskContentLink> findAllByContentRefIdIn(
         Collection<Long> contentRefIds
     );

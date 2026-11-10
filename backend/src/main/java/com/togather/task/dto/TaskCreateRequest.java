@@ -1,7 +1,9 @@
 package com.togather.task.dto;
 
 import com.togather.common.enums.TaskStatus;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -11,7 +13,7 @@ public record TaskCreateRequest(
     Long assigneeId,
     LocalDate dueDate,
     TaskStatus status,
-    List<DeliverableInput> deliverables
+    List<@Valid @NotNull DeliverableInput> deliverables
 ) {
 
     public TaskCommand toCommand() {

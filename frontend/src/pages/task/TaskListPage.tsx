@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react';
-import { useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import {
   createTask,
   deleteTask,
@@ -7,6 +7,7 @@ import {
   getTask,
   getTasks,
   updateTask,
+  type DeliverableInput,
   type TaskStatus,
   type TaskSummary,
 } from './api';
@@ -34,6 +35,7 @@ export default function TaskListPage() {
   const [description, setDescription] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [deliverables, setDeliverables] = useState<DeliverableInput[]>([]);
 
   // Task 수정 폼
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
@@ -127,13 +129,14 @@ export default function TaskListPage() {
           : null,
         dueDate: dueDate || null,
         status: 'IN_PROGRESS',
-        deliverables: [],
+        deliverables: deliverables.map(({ name, ext }) => ({ name: name.trim(), ext: ext.trim() })),
       });
 
       setTitle('');
       setDescription('');
       setAssigneeId('');
       setDueDate('');
+      setDeliverables([]);
       setShowCreate(false);
 
       setPage(0);
@@ -342,6 +345,50 @@ export default function TaskListPage() {
             setDueDate={setDueDate}
             members={members}
           />
+          <fieldset className="space-y-2">
+            <legend className={`text-xs font-bold ${MUTED}`}>필수 산출물</legend>
+            {deliverables.map((deliverable, index) => (
+              <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,8rem)_auto] items-end gap-2">
+                <label className="block">
+                  <span className={`mb-1 block text-xs ${MUTED}`}>산출물 이름</span>
+                  <input
+                    className={INPUT}
+                    value={deliverable.name}
+                    maxLength={200}
+                    required
+                    onChange={(event) => {
+                      const name = event.target.value;
+                      setDeliverables(items => items.map((item, position) => position === index ? { ...item, name } : item));
+                    }}
+                  />
+                </label>
+                <label className="block">
+                  <span className={`mb-1 block text-xs ${MUTED}`}>허용 확장자</span>
+                  <input
+                    className={INPUT}
+                    value={deliverable.ext}
+                    placeholder="예: pdf"
+                    pattern="[.]?[a-zA-Z0-9]+"
+                    maxLength={20}
+                    onChange={(event) => {
+                      const ext = event.target.value;
+                      setDeliverables(items => items.map((item, position) => position === index ? { ...item, ext } : item));
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={BTN_SUB}
+                  onClick={() => setDeliverables(items => items.filter((_, position) => position !== index))}
+                >
+                  제거
+                </button>
+              </div>
+            ))}
+            <button type="button" className={BTN_SUB} onClick={() => setDeliverables(items => [...items, { name: '', ext: '' }])}>
+              + 산출물 추가
+            </button>
+          </fieldset>
           <button type="submit" className={BTN_AI} disabled={creating}>
             {creating ? '생성 중...' : 'Task 만들기'}
           </button>
@@ -429,6 +476,9 @@ export default function TaskListPage() {
                 </div>
 
                 <div className="flex gap-2 border-0 border-t border-solid border-slate-200/60 pt-3 dark:border-white/10">
+                  <Link to={`/workspaces/${workspaceId}/tasks/${task.taskId}`} className={BTN_SUB}>
+                    자료·산출물
+                  </Link>
                   <button
                     type="button"
                     className={BTN_SUB}
