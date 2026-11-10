@@ -28,6 +28,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Task extends BaseTimeEntity {
 
+    private static final int DANGER_WINDOW_DAYS = 2;
+    private static final int DANGER_PROGRESS_THRESHOLD = 50;
+    private static final int WARNING_WINDOW_DAYS = 5;
+    private static final int WARNING_PROGRESS_THRESHOLD = 80;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long taskId;
@@ -84,7 +89,6 @@ public class Task extends BaseTimeEntity {
         return (int) (submitted * 100 / deliverables.size());
     }
 
-    /** TODO(C): 위험도 기준 확정 필요. 아래는 임시 기준이다. */
     public RiskLevel evaluateRisk(LocalDate today) {
         if (status == TaskStatus.DONE || dueDate == null) {
             return RiskLevel.NORMAL;
@@ -93,11 +97,11 @@ public class Task extends BaseTimeEntity {
         long daysLeft = ChronoUnit.DAYS.between(today, dueDate);
         int progress = calculateProgress();
 
-        if (daysLeft < 0 || (daysLeft <= 2 && progress < 50)) {
+        if (daysLeft < 0 || (daysLeft <= DANGER_WINDOW_DAYS && progress < DANGER_PROGRESS_THRESHOLD)) {
             return RiskLevel.DANGER;
         }
 
-        if (daysLeft <= 5 && progress < 80) {
+        if (daysLeft <= WARNING_WINDOW_DAYS && progress < WARNING_PROGRESS_THRESHOLD) {
             return RiskLevel.WARNING;
         }
 
