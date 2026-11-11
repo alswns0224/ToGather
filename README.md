@@ -82,8 +82,10 @@ export TMP='C:\gtmp' TEMP='C:\gtmp' JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpd
 | 파트 | 담당 | 백엔드 | 화면 |
 |---|---|---|---|
 | **A. 기반·연동·일정** | 백민준 | 로그인, 워크스페이스, OAuth 연동, 토큰 암호화, 권한 검사, Calendar, 회의 | UI-01, 02, 03, 07, 10 |
-| **B. 수집·Slack·Notion·AI** | 정철준 | 동기화 프레임워크, Slack, Notion, 논의 분석, AI 업무 보조, GeminiClient, ContentRef 저장 | UI-04, 05, 08, 13 |
-| **C. Drive·Gmail·Task·검색** | 이찬서 | Drive, Gmail, Task, 협업 맥락 조회, 임베딩, 통합 검색 | UI-06, 09, 11, 12 |
+| **B. 수집·Slack·Notion·AI·검색** | 정철준 | 동기화 프레임워크, Slack, Notion, 논의 분석, AI 업무 보조, GeminiClient, ContentRef 저장, 콘텐츠 임베딩, 통합 검색 | UI-04, 05, 08, 12, 13 |
+| **C. Drive·Gmail·Task·협업 맥락** | 이찬서 | Drive, Gmail, Task, 협업 맥락 조회 | UI-06, 09, 11 |
+
+C-07 콘텐츠 임베딩과 C-08 통합 검색은 B 담당으로 이관했습니다. 기존 이슈 번호는 유지하며 구현 현황과 남은 검증은 [기능 단위 이슈 목록](docs/issues.md)에 기록합니다.
 
 - 각자 맡은 파트의 **백엔드와 화면을 함께** 구현합니다.
 - 개발 기간: 2026-09-01 ~ 2026-12-09. 마지막 주(12/2~12/9)는 통합 테스트와 버그 수정에 씁니다.
@@ -181,7 +183,7 @@ com.togather
 ├── analysis      # Slack 논의 분석                   (B)
 ├── task          # Task, 산출물, 협업 맥락           (C)
 ├── meeting       # 회의, 가용시간, 추천              (A)
-├── search        # 임베딩, 통합 검색                 (C)
+├── search        # 임베딩, 통합 검색                 (B, C-07·08 이관)
 ├── assistant     # AI 업무 보조                      (B)
 └── common        # 공통 예외, 응답, 권한 검사, Enum  (세 명 공동)
 ```
