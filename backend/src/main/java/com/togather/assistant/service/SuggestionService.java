@@ -23,6 +23,7 @@ import com.togather.content.calendar.dto.PersonalEventRequest;
 import com.togather.content.calendar.service.CalendarContentService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.dto.ContentRefDTO;
+import com.togather.content.gmail.service.GmailContentService;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.content.slack.service.SlackContentService;
@@ -71,6 +72,7 @@ public class SuggestionService {
     private final PersonalTaskRepository personalTaskRepository;
     private final ContentRefRepository contentRefRepository;
     private final SlackContentService slackContentService;
+    private final GmailContentService gmailContentService;
     private final CalendarContentService calendarContentService;
     private final TaskGateway taskGateway;
     private final GeminiClient geminiClient;
@@ -248,6 +250,7 @@ public class SuggestionService {
 
     /** 명세서 filterRelevantMessages: 본인이 쓰거나 멘션된 Slack 메시지 + 내 Gmail, 이미 살펴본 메시지 제외 */
     List<ContentRef> filterRelevantMessages(Long workspaceId, Long userId) {
+        syncGmail(workspaceId, userId);
         LocalDateTime after = LocalDateTime.now(SlackApiClient.ZONE).minusDays(LOOKBACK_DAYS);
         List<ContentRef> all = new ArrayList<>(slackContentService.findMessagesByUser(workspaceId, userId));
         all.addAll(contentRefRepository.findAllByWorkspaceIdAndOwnerUserIdAndProviderAndCreatedAtAfterOrderByCreatedAtDesc(
@@ -266,6 +269,19 @@ public class SuggestionService {
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(MAX_MESSAGES)
                 .toList();
+    }
+
+    /**
+     * 내 Gmail을 먼저 가져온다. (C의 GmailContentService가 5분 넘게 동기화하지 않았으면 증분 동기화한다)
+     * Gmail은 개인 서비스라 처음 한 번은 누군가 불러줘야 동기화가 시작된다. 연결이 없거나 실패하면 Slack만 본다.
+     */
+    private void syncGmail(Long workspaceId, Long userId) {
+        try {
+            gmailContentService.getContentsByUser(workspaceId, userId);
+        } catch (RuntimeException e) {
+            log.info("Gmail 동기화 건너뜀, Slack 메시지만 살펴봄: workspaceId={}, error={}", workspaceId,
+                    e instanceof BusinessException be ? be.getErrorCode() : e.getClass().getSimpleName());
+        }
     }
 
     private static String scanKey(Long workspaceId, Long userId) {

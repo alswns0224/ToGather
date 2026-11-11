@@ -23,6 +23,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.calendar.service.CalendarContentService;
 import com.togather.content.dto.ContentRefDTO;
+import com.togather.content.gmail.service.GmailContentService;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.content.slack.client.SlackApiClient;
@@ -48,6 +49,8 @@ class SuggestionServiceTest extends IntegrationTestSupport {
     private IntegrationService integrationService;
     @MockitoBean
     private CalendarContentService calendarContentService;
+    @MockitoBean
+    private GmailContentService gmailContentService;
 
     @Autowired
     private SuggestionService suggestionService;
@@ -97,6 +100,40 @@ class SuggestionServiceTest extends IntegrationTestSupport {
 
         DetectResultResponse again = suggestionService.detectCandidates(workspaceId, userId, null);
         assertThat(again.scannedMessages()).isZero(); // 이미 Gemini에 보낸 메시지는 다시 보내지 않는다
+    }
+
+    @Test
+    void 후보를_찾기_전에_내_Gmail을_동기화한다() {
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of()));
+
+        suggestionService.detectCandidates(workspaceId, userId, null);
+
+        verify(gmailContentService).getContentsByUser(workspaceId, userId);
+    }
+
+    @Test
+    void Gmail_동기화가_실패해도_Slack_메시지로_후보를_찾는다() {
+        when(gmailContentService.getContentsByUser(workspaceId, userId))
+                .thenThrow(new BusinessException(ErrorCode.REAUTH_REQUIRED));
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiCandidate("TASK", "발표 자료 초안 작성", "s2", null, null))));
+
+        assertThat(suggestionService.detectCandidates(workspaceId, userId, null).created()).hasSize(1);
+    }
+
+    @Test
+    void 메일에서_찾은_후보는_승인하기_전에는_캘린더나_할_일에_등록하지_않는다() {
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiCandidate("SCHEDULE", "교수님 면담", "s3", "2026-11-20T15:00", null),
+                new AiCandidate("TASK", "면담 자료 준비", "s3", null, "2026-11-19"))));
+
+        DetectResultResponse result = suggestionService.detectCandidates(workspaceId, userId, null);
+
+        assertThat(result.created()).extracting(SuggestionDTO::sourceProvider).containsOnly(Provider.GMAIL);
+        assertThat(result.created()).extracting(s -> s.status().name()).containsOnly("PENDING");
+        verify(calendarContentService, never()).createPersonalEvent(any(), any(), any());
+        assertThat(suggestionService.getMyTodoList(workspaceId, userId).personalTasks()).isEmpty();
+        assertThat(suggestionService.getSuggestions(workspaceId, userId, null)).hasSize(2); // 검토 목록에만 있다
     }
 
     @Test
