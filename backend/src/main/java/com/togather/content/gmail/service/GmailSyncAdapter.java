@@ -310,11 +310,19 @@ public class GmailSyncAdapter implements SyncAdapter {
         int saved = 0;
 
         for (String messageId : messageIds) {
-            GmailMessage message =
-                gmailApiClient.getMessage(
+            GmailMessage message;
+            try {
+                message = gmailApiClient.getMessage(
                     token,
                     messageId
                 );
+            } catch (BusinessException e) {
+                if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
+                    // 목록·이력을 받은 뒤 삭제된 메시지는 다음 메일 수집을 막지 않는다.
+                    continue;
+                }
+                throw e;
+            }
 
             if (save(
                 workspaceId,

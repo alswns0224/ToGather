@@ -163,7 +163,7 @@ public class GmailApiClient {
         return ids;
     }
 
-    /** 메일 한 건의 제목·본문·발신자 등을 조회 */
+    /** 메일 한 건을 조회한다. 이미 없어진 메일은 RESOURCE_NOT_FOUND로 구분한다. */
     public GmailMessage getMessage(
         String token,
         String messageId
@@ -175,13 +175,20 @@ public class GmailApiClient {
             .buildAndExpand(messageId)
             .toUriString();
 
-        Map<String, Object> json = call(() ->
-            externalRestClient.get()
-                .uri(uri)
-                .headers(h -> h.setBearerAuth(token))
-                .retrieve()
-                .body(JSON)
-        );
+        Map<String, Object> json = call(() -> {
+            try {
+                return externalRestClient.get()
+                    .uri(uri)
+                    .headers(h -> h.setBearerAuth(token))
+                    .retrieve()
+                    .body(JSON);
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                    throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                }
+                throw e;
+            }
+        });
 
         return toMessage(json);
     }

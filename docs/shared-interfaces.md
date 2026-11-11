@@ -256,13 +256,17 @@ Map<Long, List<TaskSummary>> getTasksByContents(List<Long> contentRefIds);
 ### Gmail (GmailContentService)
 
 ```java
-List<ContentRefDTO> getContentsByUser(Long userId);
+// 오래된 경우 먼저 동기화한 뒤 해당 워크스페이스·사용자의 메일을 조회한다.
+List<ContentRefDTO> getContentsByUser(Long workspaceId, Long userId);
+// 저장된 메일 중 since 이후 변경된 범위를 조회한다.
+List<ContentRefDTO> getContentsByUser(Long workspaceId, Long userId, LocalDateTime since);
 ```
 
 사용처: B(AI 업무 보조 일정·할 일 후보 추출 SD-13-01·02)
 
 > B는 C가 `ContentRefService.upsert`로 저장한 메일(provider=GMAIL, ownerUserId=본인)을 content_ref에서 직접 읽습니다.
 > 그래서 C는 메일을 저장할 때 `ownerUserId`, `title`(제목), `content`(본문), `authorName`(보낸 사람), `createdAt`을 채워 주세요.
+> 첫 동기화는 `GmailContentService.getContentsByUser(workspaceId, userId)` 또는 `SyncService.syncNow(workspaceId, GMAIL, userId)` 호출로 시작한다. AI 후보 탐지 전 수집 호출 연결은 B 파트 후속 작업이다.
 
 ---
 
