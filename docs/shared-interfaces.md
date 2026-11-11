@@ -18,7 +18,7 @@
 | 4 | **Calendar·Notion 생성 메서드에 `workspaceId`, `userId`가 없음.** 누구의 토큰으로 호출할지 알 수 없음 | 모든 외부 호출 메서드 앞에 `workspaceId`, `userId` 추가 |
 | 5 | **회의 제안(MEETING_PROPOSAL) 연계 결과.** `outputTargetId`가 Meeting ID인지 Calendar 일정(ContentRef) ID인지 불명확 | SD-08-05대로 Calendar 일정을 바로 등록하고 `outputTargetId` = ContentRef ID |
 | 6 | **사용자 정보 조회.** 담당자·참여자 이름을 표시하려면 `users` 테이블이 필요한데 A 소유 | A가 `UserService.getUsers(ids)` 제공 |
-| 7 | **임베딩 API.** 통합 검색(C)에 임베딩이 필요하고 GeminiClient는 B 담당 | B의 `GeminiClient`에 `embed()` 포함 |
+| 7 | **임베딩 API.** 통합 검색에 임베딩이 필요하고 GeminiClient는 B 담당 | B의 `GeminiClient`에 `embed()` 포함. C-07·08 이관 후 임베딩·통합 검색도 B가 담당 |
 | 8 | **결정사항 조회.** Task 협업 맥락(C)에 근거 결정사항을 보여줘야 함 | B가 `AnalysisService.getItemSummary(itemId)` 제공 |
 
 ---
@@ -93,7 +93,7 @@ record PersonalEventRequest(String title, LocalDateTime startAt, LocalDateTime e
 ContentDetailDTO getContentDetail(Long contentRefId);
 ```
 
-사용처: B(논의 분석 회의 일정 등록 SD-08-05, AI 업무 보조 일정 승인 SD-13-01), C(통합 검색 상세)
+사용처 B(논의 분석 회의 일정 등록 SD-08-05, AI 업무 보조 일정 승인 SD-13-01, 통합 검색 상세)
 
 ### 회의 (MeetingService) [결정 3]
 
@@ -138,7 +138,7 @@ List<ContentRefDTO> getPersonalContents(Long ownerUserId, Provider provider, Loc
 List<ContentRefDTO> getPersonalContents(Long workspaceId, Long ownerUserId, Provider provider, LocalDateTime since);
 ```
 
-사용처: A(Calendar 일정 저장), C(Drive·Gmail 저장, 검색, 협업 맥락)
+사용처 A(Calendar 일정 저장), B(임베딩·통합 검색), C(Drive·Gmail 저장, 협업 맥락)
 
 ### 공통 DTO (명세서 CD-DTO)
 
@@ -168,7 +168,7 @@ List<ContentRefDTO> getContents(Long workspaceId);        // 삭제되지 않은
 ContentDetailDTO getContentDetail(Long contentRefId);     // body는 "# 제목, - 목록" 형식의 텍스트
 ```
 
-사용처: C(Task 관련 자료 후보 SD-09-05, 통합 검색 결과 상세 SD-12-01)
+사용처 C(Task 관련 자료 후보 SD-09-05), B(통합 검색 결과 상세 SD-12-01)
 
 ### Gemini (GeminiClient) [결정 7]
 
@@ -182,7 +182,7 @@ float[] embed(String text);                     // 임베딩 벡터
 List<float[]> embedAll(List<String> texts);
 ```
 
-사용처: C(임베딩, 통합 검색)
+사용처 B(임베딩, 통합 검색 — C-07·08 이관)
 
 ### 증분 동기화 (SyncAdapter) — C의 Drive·Gmail도 사용
 
@@ -276,7 +276,7 @@ List<ContentRefDTO> getContentsByUser(Long workspaceId, Long userId, LocalDateTi
             ┌──────────── getAccessToken / @LoginUser / checkMember ────────────┐
             │                                                                    │
             ▼                                                                    ▼
-   B (Slack·Notion·AI)  ── createTask, getMyTasks ──▶  C (Drive·Gmail·Task·검색)
+   B (Slack·Notion·AI)  ── createTask, getMyTasks ──▶  C (Drive·Gmail·Task)
      │      ▲    │                                         │     │
      │      │    └── createContent(Calendar),             │     └── getMeetingsByTask ──▶ A
      │      │        createPersonalEvent ──────────▶ A    │
