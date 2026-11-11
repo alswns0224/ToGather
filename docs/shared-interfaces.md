@@ -123,6 +123,9 @@ record ContentRefUpsert(Long workspaceId, Long ownerUserId, Provider provider, C
 
 ContentRefDTO getContentRef(Long contentRefId);
 List<ContentRefDTO> getContentRefs(Collection<Long> contentRefIds);
+// C-06 협업 맥락. 지정한 워크스페이스의 팀 콘텐츠만 포함하며 개인 콘텐츠는 제외한다.
+Map<Long, ContentState> getTeamContentStates(Long workspaceId, Collection<Long> contentRefIds);
+record ContentState(LocalDateTime createdAt, boolean originDeleted, boolean driveTrashed) {}
 Optional<ContentRefDTO> findByOrigin(Long workspaceId, Provider provider, String originId);
 ContentOwner getOwner(Long contentRefId);
 void updateContent(Long contentRefId, String title, String content);

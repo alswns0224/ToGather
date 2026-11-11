@@ -302,6 +302,23 @@ public class ContentRefService {
         );
     }
 
+    /** 협업 맥락에 필요한 생성 시각과 원본 상태를 같은 워크스페이스의 팀 콘텐츠만 조회한다. */
+    public Map<Long, ContentState> getTeamContentStates(
+        Long workspaceId,
+        Collection<Long> contentRefIds
+    ) {
+        return contentRefRepository.findAllById(contentRefIds).stream()
+            .filter(ref -> workspaceId.equals(ref.getWorkspaceId()))
+            .filter(ref -> ref.getOwnerUserId() == null)
+            .collect(Collectors.toMap(
+                ContentRef::getContentRefId,
+                ref -> new ContentState(ref.getCreatedAt(), ref.isOriginDeleted(), ref.isDriveTrashed())
+            ));
+    }
+
+    public record ContentState(LocalDateTime createdAt, boolean originDeleted, boolean driveTrashed) {
+    }
+
     /**
      * 원본 ID 기준 콘텐츠 조회.
      */

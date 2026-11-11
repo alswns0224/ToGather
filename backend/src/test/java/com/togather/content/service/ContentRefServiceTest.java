@@ -116,6 +116,26 @@ class ContentRefServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 팀_콘텐츠_상태는_개인_콘텐츠와_다른_워크스페이스를_제외한다() {
+        ContentRefDTO team = contentRefService.upsert(message("team-state", null, "팀 자료", T0, T0.plusDays(1)));
+        ContentRefDTO personal = contentRefService.upsert(mail("private-state", userId, T0));
+        Long otherWorkspaceId = createWorkspace(userId);
+        ContentRefDTO other = contentRefService.upsert(new ContentRefUpsert(
+                otherWorkspaceId, null, Provider.SLACK, ContentType.MESSAGE,
+                "other-state", "C1", null, "다른 공간", "본문", null, T0));
+        contentRefService.markOriginDeleted(team.contentRefId());
+
+        var states = contentRefService.getTeamContentStates(workspaceId,
+                List.of(team.contentRefId(), personal.contentRefId(), other.contentRefId()));
+
+        assertThat(states).containsOnlyKeys(team.contentRefId());
+        assertThat(states.get(team.contentRefId()).createdAt()).isEqualTo(T0);
+        assertThat(states.get(team.contentRefId()).originDeleted()).isTrue();
+        assertThat(states.get(team.contentRefId()).driveTrashed()).isFalse();
+        assertThat(contentRefService.getTeamContentStates(workspaceId, List.of())).isEmpty();
+    }
+
+    @Test
     void 원본이_삭제되면_사본을_본문으로_준다() {
         ContentRefDTO saved = contentRefService.upsert(message("1.0", null, "남길 내용", T0, null));
 

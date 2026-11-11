@@ -4,6 +4,7 @@ import PageHeader from '../../components/PageHeader';
 import { BTN_AI, BTN_SUB, CARD, INPUT, MUTED, SUB_CARD } from '../../components/ui';
 import { uploadDriveFile } from '../drive/api';
 import { getIntegrations, type TargetItem } from '../integration/api';
+import TaskContextPanels, { ContextContentCard, SOURCES } from './TaskContextPanels';
 import {
   getReferenceCandidates,
   getTaskContext,
@@ -13,19 +14,9 @@ import {
   unsubmitTaskDeliverable,
   type TaskContext,
   type TaskDeliverable,
-  type TaskReference,
   type TaskReferenceCandidate,
   type TaskReferenceProvider,
 } from './api';
-
-const SOURCES: Record<TaskReferenceProvider, string> = {
-  SLACK: 'Slack',
-  NOTION: 'Notion',
-  GOOGLE_DRIVE: 'Google Drive',
-};
-
-const displayName = (reference: TaskReference) =>
-  reference.title?.trim() || reference.content?.trim().slice(0, 100) || '제목 없음';
 
 const externalUrl = (url: string | null) => url && /^https?:\/\//i.test(url) ? url : null;
 
@@ -42,6 +33,7 @@ export default function TaskContextPage() {
 function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: string }) {
   const [context, setContext] = useState<TaskContext | null>(null);
   const [contextError, setContextError] = useState<string | null>(null);
+  const [contextRevision, setContextRevision] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [provider, setProvider] = useState<TaskReferenceProvider>('SLACK');
@@ -56,9 +48,15 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
 
   useEffect(() => {
     let active = true;
+    setContextError(null);
     getTaskContext(workspaceId, taskId)
       .then(result => { if (active) setContext(result); })
       .catch(error => { if (active) setContextError(errorText(error, 'Task를 불러오지 못했습니다.')); });
+    return () => { active = false; };
+  }, [workspaceId, taskId, contextRevision]);
+
+  useEffect(() => {
+    let active = true;
     getIntegrations(workspaceId)
       .then(integrations => {
         if (!active) return;
@@ -108,38 +106,51 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
   return (
     <section className="space-y-6">
       <PageHeader
-        eyebrow="TASK RESOURCES"
-        title={context?.task.title ?? 'Task 자료·산출물'}
+        eyebrow="TASK CONTEXT"
+        title={context?.task.title ?? 'Task 협업 맥락'}
         description={context ? `${context.task.status === 'DONE' ? '완료' : '진행 중'} · 진행률 ${context.task.progress}%` : undefined}
         actions={<Link className={BTN_SUB} to={`/workspaces/${workspaceId}/tasks`}>Task 목록</Link>}
       />
-      {contextError && <p role="alert" className="alert alert-error">{contextError}</p>}
+      {contextError && (
+        <div role="alert" className="alert alert-error">
+          <span>{contextError}</span>
+          <button type="button" className={BTN_SUB} onClick={() => setContextRevision(current => current + 1)}>
+            다시 시도
+          </button>
+        </div>
+      )}
       {actionError && <p role="alert" className="alert alert-error">{actionError}</p>}
       {!context && !contextError && <p className={MUTED}>Task를 불러오는 중...</p>}
+      {context && (
+        <TaskContextPanels workspaceId={workspaceId} context={context} />
+      )}
       {context && (
         <div className="grid gap-5 xl:grid-cols-2">
           <section className={`${CARD} space-y-4 p-6`}>
             <h2 className="m-0 text-lg">관련 자료</h2>
             {references.length === 0 && <p className={`text-sm ${MUTED}`}>아직 연결한 자료가 없습니다.</p>}
-            <ul className="m-0 list-none space-y-2 p-0">
-              {references.map(reference => {
-                const url = externalUrl(reference.deepLink);
-                return (
-                  <li key={reference.contentRefId} className={`${SUB_CARD} flex items-center justify-between gap-3 p-3`}>
-                    <div className="min-w-0 break-words">
-                      <p className={`m-0 text-xs ${MUTED}`}>{SOURCES[reference.provider as TaskReferenceProvider] ?? reference.provider}</p>
-                      {url
-                        ? <a href={url} target="_blank" rel="noreferrer">{displayName(reference)}</a>
-                        : <span>{displayName(reference)}</span>}
-                    </div>
-                    <button type="button" className={BTN_SUB} disabled={busy}
-                      onClick={() => void run(() => unlinkTaskReference(workspaceId, taskId, reference.contentRefId))}>
-                      연결 해제
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {Object.entries(context.contentsByProvider).map(([source, contents]) => (
+              <section key={source} className="space-y-2">
+                <h3 className={`m-0 text-sm font-semibold ${MUTED}`}>
+                  {SOURCES[source as TaskReferenceProvider] ?? source} · 생성 시각순
+                </h3>
+                <ul className="m-0 list-none space-y-2 p-0">
+                  {contents.map(reference => (
+                    <li key={reference.contentRefId}>
+                      <ContextContentCard workspaceId={workspaceId} reference={reference}
+                        state={context.contentStates[reference.contentRefId]}
+                        action={(
+                          <button type="button" className={BTN_SUB} disabled={busy}
+                            onClick={() => void run(() => unlinkTaskReference(workspaceId, taskId, reference.contentRefId))}>
+                            연결 해제
+                          </button>
+                        )}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
             <form className="flex flex-wrap items-end gap-2" onSubmit={findCandidates}>
               <label className="block">
                 <span className={`mb-1 block text-xs ${MUTED}`}>자료 출처</span>

@@ -1,4 +1,5 @@
 import { api, http, ws } from '../../api/client';
+import type { MeetingStatus } from '../meeting/api';
 
 export type TaskStatus = 'IN_PROGRESS' | 'DONE';
 export type RiskLevel = 'NORMAL' | 'WARNING' | 'DANGER';
@@ -61,6 +62,26 @@ export interface TaskContext {
   task: TaskDetail;
   contentsByProvider: Record<string, TaskReference[]>;
   deliverables: TaskDeliverable[];
+  originDecision: {
+    itemId: number;
+    itemType: string;
+    content: string;
+    evidenceContentRefIds: number[];
+  } | null;
+  originEvidence: TaskReference[];
+  meetings: {
+    meetingId: number;
+    title: string;
+    status: MeetingStatus;
+    startAt: string | null;
+  }[];
+  contentStates: Record<string, TaskContextContentState>;
+}
+
+export interface TaskContextContentState {
+  createdAt: string | null;
+  originDeleted: boolean;
+  driveTrashed: boolean;
 }
 
 export interface TaskCreateRequest {
@@ -134,6 +155,9 @@ const taskPath = (workspaceId: string, taskId: string) => ws(workspaceId, `/task
 
 export const getTaskContext = (workspaceId: string, taskId: string) =>
   http.get<TaskContext>(`${taskPath(workspaceId, taskId)}/context`);
+
+export const getTasksByContent = (workspaceId: string, contentRefId: number) =>
+  http.get<TaskSummary[]>(ws(workspaceId, `/contents/${contentRefId}/tasks`));
 
 export const getReferenceCandidates = (
   workspaceId: string, taskId: string, provider: TaskReferenceProvider, query: string,
