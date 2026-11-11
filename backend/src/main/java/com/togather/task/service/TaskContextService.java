@@ -7,6 +7,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.service.ContentRefService;
+import com.togather.content.service.ContentRefService.ContentState;
 import com.togather.meeting.dto.MeetingSummary;
 import com.togather.meeting.service.MeetingService;
 import com.togather.task.domain.Task;
@@ -74,9 +75,6 @@ public class TaskContextService {
                 ? List.of()
                 : contentRefService.getContentRefs(contentRefIds);
 
-        Map<Provider, List<ContentRefDTO>> contentsByProvider =
-            groupAndSortContents(contents);
-
         List<TaskDeliverableSummary> deliverables =
             task.getDeliverables().stream()
                 .sorted(Comparator.comparing(
@@ -102,6 +100,31 @@ public class TaskContextService {
             }
         }
 
+        Set<Long> contextContentIds = new LinkedHashSet<>(contentRefIds);
+        originEvidence.stream().map(ContentRefDTO::contentRefId).forEach(contextContentIds::add);
+        Map<Long, ContentState> contentStates = contentRefService
+            .getTeamContentStates(task.getWorkspaceId(), contextContentIds);
+
+        Comparator<ContentRefDTO> byCreatedAt = Comparator
+            .comparing(
+                (ContentRefDTO content) -> contentStates.get(content.contentRefId()).createdAt(),
+                Comparator.nullsLast(Comparator.naturalOrder())
+            )
+            .thenComparing(ContentRefDTO::contentRefId);
+
+        Map<Provider, List<ContentRefDTO>> contentsByProvider = contents.stream()
+            .filter(content -> contentStates.containsKey(content.contentRefId()))
+            .sorted(byCreatedAt)
+            .collect(Collectors.groupingBy(
+                ContentRefDTO::provider,
+                LinkedHashMap::new,
+                Collectors.toList()
+            ));
+        originEvidence = originEvidence.stream()
+            .filter(content -> contentStates.containsKey(content.contentRefId()))
+            .sorted(byCreatedAt)
+            .toList();
+
         List<MeetingSummary> meetings =
             meetingService.getMeetingsByTask(taskId);
 
@@ -111,7 +134,8 @@ public class TaskContextService {
             deliverables,
             originDecision,
             originEvidence,
-            meetings
+            meetings,
+            contentStates
         );
     }
 
@@ -223,24 +247,4 @@ public class TaskContextService {
                     .add(deliverable.getTask().getTaskId())));
     }
 
-    private Map<Provider, List<ContentRefDTO>>
-    groupAndSortContents(
-        List<ContentRefDTO> contents
-    ) {
-        Comparator<ContentRefDTO> comparator =
-            Comparator.comparing(
-                ContentRefDTO::lastModifiedAt,
-                Comparator.nullsLast(
-                    Comparator.reverseOrder()
-                )
-            );
-
-        return contents.stream()
-            .sorted(comparator)
-            .collect(Collectors.groupingBy(
-                ContentRefDTO::provider,
-                LinkedHashMap::new,
-                Collectors.toList()
-            ));
-    }
 }

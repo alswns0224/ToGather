@@ -477,7 +477,7 @@ export default function TaskListPage() {
 
                 <div className="flex gap-2 border-0 border-t border-solid border-slate-200/60 pt-3 dark:border-white/10">
                   <Link to={`/workspaces/${workspaceId}/tasks/${task.taskId}`} className={BTN_SUB}>
-                    자료·산출물
+                    협업 맥락·자료
                   </Link>
                   <button
                     type="button"
