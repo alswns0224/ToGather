@@ -20,7 +20,7 @@ import org.springframework.web.client.RestClientException;
 
 /**
  * Chroma 서버 REST API (v2) 클라이언트.
- * 실행: pip install chromadb → chroma run --path ./chroma-data (기본 localhost:8000)
+ * 실행: pip install chromadb → chroma run --host 127.0.0.1 --path backend/.local-chroma (127.0.0.1:8000)
  * 컬렉션은 처음 쓸 때 코사인 거리로 만든다.
  */
 @Slf4j

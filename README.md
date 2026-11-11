@@ -43,7 +43,7 @@ DB를 처음 상태로 되돌리려면 `docker compose down -v` 후 다시 `up` 
 - 1·2번 대신 `cd backend && ./gradlew bootTestRun`을 실행합니다. 내장 PostgreSQL이 함께 뜨고, 데이터는 `backend/.local-postgres`에 남습니다. (처음 상태로 되돌리려면 이 폴더를 지웁니다)
 - 통합 검색은 Docker 없이도 확인할 수 있습니다. ([Ollama](https://ollama.com) 설치 후)
   1. `ollama pull bge-m3` — 임베딩 모델 (약 1.2GB, 한 번만)
-  2. `pip install chromadb` → `chroma run --path ./chroma-data` — Chroma 서버 (localhost:8000)
+  2. `pip install chromadb` → `chroma run --host 127.0.0.1 --path backend/.local-chroma` — Chroma 서버 (127.0.0.1:8000)
   3. 백엔드를 켜면 1분마다 Slack·Notion·Drive 콘텐츠를 임베딩합니다. 둘 다 없으면 `.env`에 `SEARCH_ENABLED=false`
 
 **테스트**: `cd backend && ./gradlew test` — 통합 테스트도 내장 PostgreSQL로 돌아가서 Docker가 필요 없습니다.

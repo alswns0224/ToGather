@@ -27,9 +27,9 @@ public record SearchProperties(
 
     public SearchProperties {
         enabled = enabled == null || enabled;
-        ollamaUrl = blankToDefault(ollamaUrl, "http://localhost:11434");
+        ollamaUrl = blankToDefault(ollamaUrl, "http://127.0.0.1:11434");
         embeddingModel = blankToDefault(embeddingModel, "bge-m3");
-        chromaUrl = blankToDefault(chromaUrl, "http://localhost:8000");
+        chromaUrl = blankToDefault(chromaUrl, "http://127.0.0.1:8000");
         collection = blankToDefault(collection, "togather_contents");
         batchSize = batchSize == null ? 32 : batchSize;
         minScore = minScore == null ? 0.35 : minScore;

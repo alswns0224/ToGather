@@ -68,9 +68,9 @@ togather:
   # Ollama·Chroma가 없는 환경에서는 SEARCH_ENABLED=false
   search:
     enabled: ${SEARCH_ENABLED:true}
-    ollama-url: ${OLLAMA_URL:http://localhost:11434}
+    ollama-url: ${OLLAMA_URL:http://127.0.0.1:11434}
     embedding-model: ${EMBEDDING_MODEL:bge-m3}
-    chroma-url: ${CHROMA_URL:http://localhost:8000}
+    chroma-url: ${CHROMA_URL:http://127.0.0.1:8000}
     collection: togather_contents
     # 밀린 콘텐츠를 모아서 임베딩하는 간격
     index-interval: PT1M
