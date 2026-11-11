@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent,
 } from 'react';
 import { Link, useParams } from 'react-router';
 
@@ -167,6 +168,8 @@ export default function DrivePage() {
   // ---------------------------------------------------
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
 
   const [uploadFile, setUploadFile] =
     useState<File | null>(null);
@@ -208,6 +211,8 @@ export default function DrivePage() {
     setShowTrash(false);
     setQuery('');
     setUploadFile(null);
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
     setUploadFolderId('');
     setPreviewFile(null);
 
@@ -402,6 +407,8 @@ export default function DrivePage() {
       ? uploadFolderId
       : (folderIds[0] ?? '');
 
+  const canSelectUpload = !loading && !isBusy && Boolean(chosenFolderId);
+
   // ===================================================
   // 9. 파일 검색 및 선택
   // ===================================================
@@ -546,8 +553,12 @@ export default function DrivePage() {
   function handleFileSelect(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    const file =
-      event.target.files?.[0] ?? null;
+    selectUploadFile(event.target.files?.[0] ?? null);
+    event.target.value = '';
+  }
+
+  function selectUploadFile(file: File | null) {
+    if (!canSelectUpload || workingRef.current) return;
 
     setError(null);
     setNotice(null);
@@ -560,7 +571,6 @@ export default function DrivePage() {
     if (file.size === 0) {
       setUploadFile(null);
       setError('빈 파일은 업로드할 수 없습니다.');
-      event.target.value = '';
       return;
     }
 
@@ -569,7 +579,6 @@ export default function DrivePage() {
       setError(
         '100MB 이하 파일만 업로드할 수 있습니다.',
       );
-      event.target.value = '';
       return;
     }
 
@@ -580,11 +589,46 @@ export default function DrivePage() {
     ) {
       setUploadFile(null);
       setError('파일 이름이 올바르지 않습니다.');
-      event.target.value = '';
       return;
     }
 
     setUploadFile(file);
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    if (canSelectUpload) setIsDraggingFile(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = canSelectUpload ? 'copy' : 'none';
+  }
+
+  function handleDragLeave() {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFile(false);
+  }
+
+  function handleFileDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
+    if (!canSelectUpload || workingRef.current || !event.dataTransfer.types.includes('Files')) return;
+
+    const files = event.dataTransfer.files;
+    const hasDirectory = Array.from(event.dataTransfer.items)
+      .some(item => item.webkitGetAsEntry?.()?.isDirectory);
+    if (hasDirectory || files.length !== 1) {
+      setUploadFile(null);
+      setNotice(null);
+      setError('파일을 한 개씩 업로드해 주세요. 폴더는 업로드할 수 없습니다.');
+      return;
+    }
+    selectUploadFile(files[0]);
   }
 
   // ===================================================
@@ -909,7 +953,18 @@ export default function DrivePage() {
           {/* ----------------------------------------- */}
 
           <div
-            className={`${CARD} rounded-[26px] border-2 border-dashed border-indigo-300 p-6 text-center dark:border-white/15`}
+            role="region"
+            aria-label="Google Drive 파일 업로드 영역"
+            aria-busy={working === 'upload'}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleFileDrop}
+            className={`${CARD} rounded-[26px] border-2 border-dashed p-6 text-center transition-colors ${
+              isDraggingFile && canSelectUpload
+                ? 'border-indigo-500 bg-indigo-500/10 dark:border-indigo-400'
+                : 'border-indigo-300 dark:border-white/15'
+            }`}
           >
             <div className="mb-3 text-3xl">
               ☁️
@@ -925,6 +980,14 @@ export default function DrivePage() {
               {' '}
               (최대 100MB)
             </p>
+
+            {canSelectUpload && (
+              <p aria-live="polite" className={`mt-2 text-xs ${MUTED}`}>
+                {isDraggingFile
+                  ? '여기에 놓으면 업로드할 파일로 선택됩니다.'
+                  : '파일 한 개를 이 영역에 끌어놓거나 아래에서 선택해 주세요.'}
+              </p>
+            )}
 
             {folderIds.length > 0 ? (
               <div className="mx-auto mt-4 max-w-lg space-y-3 text-left">
@@ -965,7 +1028,7 @@ export default function DrivePage() {
                   type="file"
                   className="hidden"
                   aria-label="업로드할 파일"
-                  disabled={isBusy}
+                  disabled={!canSelectUpload}
                   onChange={handleFileSelect}
                 />
 
