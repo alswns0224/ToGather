@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.togather.common.enums.ContentType;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
+import com.togather.common.exception.ErrorCode;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.gmail.client.GmailApiClient;
 import com.togather.content.gmail.client.GmailApiClient.GmailMessage;
@@ -491,6 +492,43 @@ class GmailSyncAdapterTest {
             previousHistoryId,
             result.syncCursor()
         );
+    }
+
+    @Test
+    void sync_skipsMessagesDeletedAfterHistoryWasRead() {
+        when(integrationService.getAccessToken(1L, 10L, Provider.GMAIL)).thenReturn("token");
+        when(gmailApiClient.listHistory("token", "1000", 5))
+            .thenReturn(new HistoryResult(List.of("gone", "live"), List.of(), "1001"));
+        when(gmailApiClient.getMessage("token", "gone"))
+            .thenThrow(new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        var createdAt = java.time.LocalDateTime.of(2026, 11, 11, 10, 0);
+        when(gmailApiClient.getMessage("token", "live"))
+            .thenReturn(new GmailMessage("live", "thread", "1001", "검증", "from", "to",
+                "본문", "요약", createdAt, "https://mail.google.com/mail/u/0/#inbox/live"));
+        when(contentRefService.upsert(any(ContentRefUpsert.class)))
+            .thenReturn(new ContentRefDTO(50L, Provider.GMAIL, ContentType.MAIL, "live", "검증",
+                "본문", null, null, createdAt, 0, false));
+
+        var result = gmailSyncAdapter.sync(new SyncContext(1L, "", 10L, null, "1000", 10L));
+
+        assertEquals(1, result.savedCount());
+        assertEquals("1001", result.syncCursor());
+        verify(gmailApiClient).getMessage("token", "live");
+    }
+
+    @Test
+    void sync_doesNotSkipOtherMessageFailures() {
+        when(integrationService.getAccessToken(1L, 10L, Provider.GMAIL)).thenReturn("token");
+        when(gmailApiClient.listHistory("token", "1000", 5))
+            .thenReturn(new HistoryResult(List.of("failed"), List.of(), "1001"));
+        when(gmailApiClient.getMessage("token", "failed"))
+            .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+        var error = assertThrows(BusinessException.class,
+            () -> gmailSyncAdapter.sync(new SyncContext(1L, "", 10L, null, "1000", 10L)));
+
+        assertEquals(ErrorCode.EXTERNAL_API_ERROR, error.getErrorCode());
+        verify(contentRefService, never()).upsert(any(ContentRefUpsert.class));
     }
 
     @Test
