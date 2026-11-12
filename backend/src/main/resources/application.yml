@@ -64,8 +64,16 @@ togather:
     # 운영에서는 false
     dev-login: ${DEV_LOGIN_ENABLED:false}
 
-  chroma:
-    url: ${CHROMA_URL:http://localhost:8000}
+  # 통합 검색 (C-07·08): BGE-M3 임베딩(Ollama) + Chroma 벡터 검색
+  # Ollama·Chroma가 없는 환경에서는 SEARCH_ENABLED=false
+  search:
+    enabled: ${SEARCH_ENABLED:true}
+    ollama-url: ${OLLAMA_URL:http://127.0.0.1:11434}
+    embedding-model: ${EMBEDDING_MODEL:bge-m3}
+    chroma-url: ${CHROMA_URL:http://127.0.0.1:8000}
+    collection: togather_contents
+    # 밀린 콘텐츠를 모아서 임베딩하는 간격
+    index-interval: PT1M
 
   google:
     client-id: ${GOOGLE_CLIENT_ID:}

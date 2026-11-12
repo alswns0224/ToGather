@@ -18,7 +18,7 @@
 | 4 | **Calendar·Notion 생성 메서드에 `workspaceId`, `userId`가 없음.** 누구의 토큰으로 호출할지 알 수 없음 | 모든 외부 호출 메서드 앞에 `workspaceId`, `userId` 추가 |
 | 5 | **회의 제안(MEETING_PROPOSAL) 연계 결과.** `outputTargetId`가 Meeting ID인지 Calendar 일정(ContentRef) ID인지 불명확 | SD-08-05대로 Calendar 일정을 바로 등록하고 `outputTargetId` = ContentRef ID |
 | 6 | **사용자 정보 조회.** 담당자·참여자 이름을 표시하려면 `users` 테이블이 필요한데 A 소유 | A가 `UserService.getUsers(ids)` 제공 |
-| 7 | **임베딩 API.** 통합 검색에 임베딩이 필요하고 GeminiClient는 B 담당 | B의 `GeminiClient`에 `embed()` 포함. C-07·08 이관 후 임베딩·통합 검색도 B가 담당 |
+| 7 | **임베딩 API.** 통합 검색에 임베딩이 필요함 | 주제제안서 기술 스택대로 **BGE-M3**(Ollama로 실행)로 임베딩하고 **Chroma**에 저장한다. `search.client.EmbeddingClient` / `VectorStore`. Gemini는 논의 분석·후보 추출에만 쓴다. C-07·08 이관 후 임베딩·통합 검색은 B 담당 |
 | 8 | **결정사항 조회.** Task 협업 맥락(C)에 근거 결정사항을 보여줘야 함 | B가 `AnalysisService.getItemSummary(itemId)` 제공 |
 
 ---
@@ -178,11 +178,31 @@ ContentDetailDTO getContentDetail(Long contentRefId);     // body는 "# 제목, 
 ```java
 String generate(String prompt);                 // 텍스트 생성 (논의 분석, 후보 추출)
 <T> T generateJson(String prompt, Class<T> type); // JSON 응답을 객체로 변환
-float[] embed(String text);                     // 임베딩 벡터
+float[] embed(String text);                     // Gemini 임베딩 (통합 검색에는 쓰지 않음, 아래 BGE-M3 사용)
 List<float[]> embedAll(List<String> texts);
 ```
 
-사용처 B(임베딩, 통합 검색 — C-07·08 이관)
+사용처 B(논의 분석, AI 업무 보조)
+
+### 임베딩·통합 검색 (EmbeddingClient · VectorStore) [결정 7] — B (C-07·08 이관)
+
+위치: `search.client`. 임베딩은 **BGE-M3**(다국어 모델, Ollama로 실행), 벡터 저장·유사도 검색은 **Chroma**.
+연결할 수 없으면 `SEARCH_UNAVAILABLE`(503). 설정은 `togather.search.*` (`OLLAMA_URL`, `EMBEDDING_MODEL`, `CHROMA_URL`, `SEARCH_ENABLED`).
+
+```java
+// EmbeddingClient (OllamaEmbeddingClient: POST {OLLAMA_URL}/api/embed, model=bge-m3)
+List<float[]> embedAll(List<String> texts);
+float[] embed(String text);
+
+// VectorStore (ChromaVectorStore: Chroma REST v2, 코사인 거리, 벡터 ID = "cr-{contentRefId}")
+void upsert(List<VectorDoc> docs);              // VectorDoc(contentRefId, workspaceId, provider, vector)
+void delete(Collection<Long> contentRefIds);
+List<VectorHit> searchVectors(float[] vector, Long workspaceId, Collection<String> providers, int limit);
+```
+
+- 색인(`ContentIndexService`): 1분마다 새로 저장되거나 원본 수정 시각이 바뀐 Slack·Notion·Drive 콘텐츠를 모아 임베딩하고,
+  원본에서 지워진 콘텐츠는 Chroma에서 뺀다. 임베딩한 콘텐츠는 `content_embedding`(V8)에 기록한다.
+- 검색(`SearchService`): `GET /api/workspaces/{id}/search?q=&providers=SLACK,NOTION&limit=20` → 관련도순 결과 + 연결된 Task(`TaskContextService.getTasksByContents`)
 
 ### 증분 동기화 (SyncAdapter) — C의 Drive·Gmail도 사용
 

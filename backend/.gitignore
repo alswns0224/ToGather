@@ -7,3 +7,4 @@ out/
 bin/
 .vscode/
 .local-postgres/
+.local-chroma/
