@@ -1150,3 +1150,198 @@ hr {
     display: none;
   }
 }
+
+/* 일정: 달력 카드 | 선택한 날 패널 (팀원 UI 시안) */
+.cal-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.45fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.cal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.cal-head {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.cal-head.sun,
+.cal-cell.sun .cal-date {
+  color: var(--danger);
+}
+
+.cal-head.sat,
+.cal-cell.sat .cal-date {
+  color: var(--info);
+}
+
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  min-height: 104px;
+  padding: 8px;
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+}
+
+.cal-cell:nth-child(7n) {
+  border-right: none;
+}
+
+.cal-week .cal-cell {
+  min-height: 320px;
+}
+
+.cal-cell:hover {
+  background: var(--surface-2);
+}
+
+.cal-cell.outside .cal-date {
+  color: var(--muted) !important;
+  opacity: 0.6;
+  font-weight: 500;
+}
+
+.cal-cell.selected {
+  background: var(--primary-soft);
+}
+
+.cal-date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cal-cell.today .cal-date {
+  border: 1.5px solid var(--primary);
+  color: var(--primary);
+}
+
+.cal-cell.selected .cal-date {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff !important;
+}
+
+.cal-chip {
+  overflow: hidden;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cal-chip.team {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.cal-chip.personal {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.cal-chip.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.cal-filter-team::first-letter {
+  color: var(--primary);
+}
+
+.cal-filter-personal::first-letter {
+  color: var(--info);
+}
+
+.cal-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px !important;
+}
+
+.cal-day-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cal-day-item.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.cal-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.cal-dot.team {
+  background: var(--primary);
+}
+
+.cal-dot.personal {
+  background: var(--info);
+}
+
+.badge-info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+@media (max-width: 1100px) {
+  .cal-board {
+    grid-template-columns: 1fr;
+  }
+
+  .cal-cell {
+    min-height: 70px;
+    padding: 4px;
+  }
+}
