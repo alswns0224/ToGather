@@ -215,9 +215,9 @@ function MeetingCreateForm({ workspaceId, onClose }: { workspaceId: string; onCl
         </div>
       </fieldset>
       <fieldset>
-        <legend>안건 (진행 중인 Task)</legend>
+        <legend>안건 (진행 중인 팀 작업)</legend>
         {tasks.loading && <Loading />}
-        {tasks.data?.length === 0 && <span className="muted small">진행 중인 Task가 없습니다.</span>}
+        {tasks.data?.length === 0 && <span className="muted small">진행 중인 팀 작업이 없습니다.</span>}
         <div className="tags">
           {tasks.data?.map((t) => (
             <label key={t.taskId} className="tag selectable">

@@ -75,7 +75,7 @@ export default function TaskListPage() {
       setError(
         e instanceof Error
           ? e.message
-          : 'Task를 불러오지 못했습니다.',
+          : '팀 작업을 불러오지 못했습니다.',
       );
     } finally {
       setLoading(false);
@@ -146,7 +146,7 @@ export default function TaskListPage() {
       setError(
         e instanceof Error
           ? e.message
-          : 'Task를 생성하지 못했습니다.',
+          : '팀 작업을 생성하지 못했습니다.',
       );
     } finally {
       setCreating(false);
@@ -179,7 +179,7 @@ export default function TaskListPage() {
       setError(
         e instanceof Error
           ? e.message
-          : 'Task 상세정보를 불러오지 못했습니다.',
+          : '팀 작업 상세정보를 불러오지 못했습니다.',
       );
     } finally {
       setEditLoading(false);
@@ -235,7 +235,7 @@ export default function TaskListPage() {
       setError(
         e instanceof Error
           ? e.message
-          : 'Task를 수정하지 못했습니다.',
+          : '팀 작업을 수정하지 못했습니다.',
       );
     } finally {
       setSaving(false);
@@ -249,7 +249,7 @@ export default function TaskListPage() {
     }
 
     const confirmed = window.confirm(
-      '이 Task를 삭제하시겠습니까?',
+      '이 팀 작업을 삭제하시겠습니까?',
     );
 
     if (!confirmed) {
@@ -271,7 +271,7 @@ export default function TaskListPage() {
       setError(
         e instanceof Error
           ? e.message
-          : 'Task를 삭제하지 못했습니다.',
+          : '팀 작업을 삭제하지 못했습니다.',
       );
     } finally {
       setDeletingTaskId(null);
@@ -312,18 +312,18 @@ export default function TaskListPage() {
     <section className="stack">
       <PageHeader
         icon={<NavIcon name="tasks" className="h-[22px] w-[22px] text-[var(--primary)]" />}
-        title="Task 관리"
+        title="팀 작업"
         description="산출물 제출에 따라 진행률이 자동 계산되며, 작업을 클릭하면 협업 맥락으로 이동합니다."
         actions={
           <button type="button" className="btn btn-primary" onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? '닫기' : '+ 새 Task 추가'}
+            {showCreate ? '닫기' : '+ 새 팀 작업'}
           </button>
         }
       />
 
       <div className="task-kpis">
         <div className="card task-kpi">
-          <span>{mineOnly ? '내 Task' : '전체'}</span>
+          <span>{mineOnly ? '내 담당' : '전체'}</span>
           <strong>{total}건</strong>
         </div>
         <div className="card task-kpi">
@@ -340,7 +340,7 @@ export default function TaskListPage() {
         </div>
       </div>
 
-      {/* Task 생성 */}
+      {/* 팀 작업 생성 */}
       {showCreate && (
         <form onSubmit={handleCreate} className={`${CARD} space-y-4 p-5`}>
           <strong className="text-[15px]">새 Task</strong>
@@ -400,7 +400,7 @@ export default function TaskListPage() {
             </button>
           </fieldset>
           <button type="submit" className={BTN_AI} disabled={creating}>
-            {creating ? '생성 중...' : 'Task 만들기'}
+            {creating ? '생성 중...' : '팀 작업 만들기'}
           </button>
         </form>
       )}
@@ -430,8 +430,8 @@ export default function TaskListPage() {
             </div>
             <div className="segmented">
               {[
-                { mine: false, label: '모두의 Task' },
-                { mine: true, label: '내 Task' },
+                { mine: false, label: '모두의 작업' },
+                { mine: true, label: '내 담당' },
               ].map((t) => (
                 <button
                   key={t.label}
@@ -468,7 +468,7 @@ export default function TaskListPage() {
           <div className={`p-8 text-center text-sm ${MUTED}`}>불러오는 중...</div>
         ) : visible.length === 0 ? (
           <div className={`p-8 text-center text-sm ${MUTED}`}>
-            {tasks.length === 0 ? '등록된 Task가 없습니다. "+ 새 Task 추가"로 만들어 보세요.' : '조건에 맞는 Task가 없습니다.'}
+            {tasks.length === 0 ? '등록된 팀 작업이 없습니다. "+ 새 팀 작업"로 만들어 보세요.' : '조건에 맞는 팀 작업이 없습니다.'}
           </div>
         ) : (
           visible.map((task) =>

@@ -238,7 +238,7 @@ function Agendas({
                   {a.task.title}
                 </Link>
               ) : (
-                <span className="text-sm text-[var(--muted)]">(삭제된 Task)</span>
+                <span className="text-sm text-[var(--muted)]">(삭제된 팀 작업)</span>
               )}
               {a.task && a.task.riskLevel !== 'NORMAL' && !done && (
                 <span className={`badge ${a.task.riskLevel === 'DANGER' ? 'badge-danger' : 'badge-warning'} !text-[10px]`}>
@@ -291,7 +291,7 @@ function Agendas({
               </button>
             ))}
           {candidates.data && candidates.data.filter((t) => !used.has(t.taskId)).length === 0 && (
-            <span className="muted small">추가할 수 있는 진행 중 Task가 없습니다.</span>
+            <span className="muted small">추가할 수 있는 진행 중 팀 작업이 없습니다.</span>
           )}
         </div>
       )}

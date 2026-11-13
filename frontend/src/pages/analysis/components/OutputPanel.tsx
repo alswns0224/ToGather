@@ -185,7 +185,7 @@ function TaskStep({
       <>
         <StatusBadge status="SUCCESS" />
         <span className="grow">{item.content}</span>
-        <Link to={`/workspaces/${workspaceId}/tasks/${item.outputTargetId}`}>Task 보기</Link>
+        <Link to={`/workspaces/${workspaceId}/tasks/${item.outputTargetId}`}>팀 작업 보기</Link>
       </>
     );
   }
@@ -238,7 +238,7 @@ function TaskStep({
           onChange={(e) => setForm({ ...form, dueDate: e.target.value || null })}
         />
         <button className="btn btn-primary btn-small" disabled={busy || !form.assigneeId || !form.dueDate}>
-          {busy ? '만드는 중...' : item.outputStatus === 'FAILED' ? '다시 시도' : 'Task 만들기'}
+          {busy ? '만드는 중...' : item.outputStatus === 'FAILED' ? '다시 시도' : '팀 작업 만들기'}
         </button>
       </div>
       {error && <div className="alert alert-error small">{error}</div>}

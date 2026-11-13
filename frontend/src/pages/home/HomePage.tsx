@@ -11,7 +11,7 @@ import { getPages } from '../notion/api';
 import { getChannels } from '../slack/api';
 import { getPendingAnalyses } from '../analysis/api';
 import { getMeetings } from '../meeting/api';
-import { candidateWhen, getSuggestions } from '../assistant/api';
+import { candidateWhen, getMyTodoList, getSuggestions } from '../assistant/api';
 import { getIntegrations, PROVIDER_LABELS, type ConnectionStatus } from '../integration/api';
 import { formatDate, formatDateTime } from '../../utils/date';
 
@@ -60,7 +60,7 @@ export default function HomePage() {
   const base = `/workspaces/${workspaceId}`;
 
   const data = useAsync(async () => {
-    const [ws, members, tasks, drive, notion, channels, analyses, meetings, suggestions, integrations] = await Promise.all([
+    const [ws, members, tasks, drive, notion, channels, analyses, meetings, suggestions, integrations, todos] = await Promise.all([
       safe(getWorkspace(workspaceId)),
       safe(getMembers(workspaceId)),
       safe(getTasks(workspaceId, 0, 100)),
@@ -71,8 +71,9 @@ export default function HomePage() {
       safe(getMeetings(workspaceId)),
       safe(getSuggestions(workspaceId)),
       safe(getIntegrations(workspaceId)),
+      safe(getMyTodoList(workspaceId)),
     ]);
-    return { ws, members, tasks, drive, notion, channels, analyses, meetings, suggestions, integrations };
+    return { ws, members, tasks, drive, notion, channels, analyses, meetings, suggestions, integrations, todos };
   }, [workspaceId]);
 
   const d = data.data;
@@ -87,6 +88,34 @@ export default function HomePage() {
   const memberName = (id: number | null) => d?.members?.find((m) => m.userId === id)?.name ?? '미지정';
 
   // 최근 AI 정리 · 회의 일정: 검토할 일정 후보, 검토 대기 논의 정리, 다가오는 회의
+  // 이번 주 마감: 끝나지 않은 팀 작업 + 개인 할 일 중 마감이 7일 안이거나 이미 지난 것
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(today.getTime() + 7 * 86_400_000);
+  const dueDate = (v: string) => new Date(`${v}T00:00:00`);
+  const dueThisWeek = [
+    ...inProgress
+      .filter((t) => t.dueDate && dueDate(t.dueDate) < weekEnd)
+      .map((t) => ({
+        key: `t-${t.taskId}`,
+        title: t.title,
+        due: t.dueDate!,
+        kind: '팀 작업',
+        who: memberName(t.assigneeId),
+        to: `${base}/tasks/${t.taskId}`,
+      })),
+    ...(d?.todos?.personalTasks ?? [])
+      .filter((t) => t.status !== 'DONE' && t.dueDate && dueDate(t.dueDate) < weekEnd)
+      .map((t) => ({
+        key: `p-${t.personalTaskId}`,
+        title: t.title,
+        due: t.dueDate!,
+        kind: '개인 할 일',
+        who: '나만 보기',
+        to: `${base}/assistant`,
+      })),
+  ].sort((a, b) => a.due.localeCompare(b.due));
+
   const recent = [
     ...pendingSuggestions
       .filter((s) => s.type === 'SCHEDULE')
@@ -125,7 +154,7 @@ export default function HomePage() {
               <NavIcon name="search" /> 통합 검색
             </Link>
             <button type="button" className="btn btn-primary" onClick={() => navigate(`${base}/tasks`)}>
-              + 새 Task 만들기
+              + 새 팀 작업
             </button>
           </>
         }
@@ -137,7 +166,7 @@ export default function HomePage() {
         <>
           <div className="task-kpis">
             <Kpi
-              label="진행 중 Task"
+              label="진행 중 팀 작업"
               icon="tasks"
               to={`${base}/tasks`}
               value={
@@ -160,7 +189,7 @@ export default function HomePage() {
               icon="analyses"
               to={`${base}/slack/analyses`}
               value={`${d.analyses?.length ?? 0}건`}
-              sub="검토 대기 · 확정하면 Task로 이어져요"
+              sub="검토 대기 · 확정하면 팀 작업으로 이어져요"
               subClass="text-[var(--primary)]"
             />
             <Kpi
@@ -173,15 +202,15 @@ export default function HomePage() {
           </div>
 
           <div className="home-board">
-            {/* Task 현황 */}
+            {/* 팀 작업 현황 */}
             <div className="card home-card">
               <div className="flex items-center justify-between">
-                <strong className="text-[17px]">핵심 Task & 산출물 진행 현황</strong>
+                <strong className="text-[17px]">팀 작업 & 산출물 진행 현황</strong>
                 <Link to={`${base}/tasks`} className="text-sm font-semibold text-[var(--muted)] no-underline">
                   전체 보기 →
                 </Link>
               </div>
-              {taskItems.length === 0 && <p className="m-0 text-sm text-[var(--muted)]">아직 Task가 없어요.</p>}
+              {taskItems.length === 0 && <p className="m-0 text-sm text-[var(--muted)]">아직 팀 작업이 없어요.</p>}
               {taskItems.slice(0, 5).map((t) => {
                 const done = t.status === 'DONE';
                 const name = memberName(t.assigneeId);
@@ -209,6 +238,35 @@ export default function HomePage() {
             </div>
 
             <div className="flex flex-col gap-4">
+              {/* 이번 주 마감 */}
+              <div className="card home-card">
+                <div className="flex items-center justify-between">
+                  <strong className="text-[17px]">이번 주 마감</strong>
+                  <span className="text-xs text-[var(--muted)]">팀 작업 · 개인 할 일</span>
+                </div>
+                {dueThisWeek.length === 0 && (
+                  <p className="m-0 text-sm text-[var(--muted)]">7일 안에 마감인 팀 작업이나 개인 할 일이 없어요.</p>
+                )}
+                {dueThisWeek.map((item) => {
+                  const overdue = dueDate(item.due) < today;
+                  return (
+                    <Link key={item.key} to={item.to} className="home-conn no-underline">
+                      <span className={`badge ${item.kind === '팀 작업' ? 'badge-primary' : 'badge-success'} flex-shrink-0`}>
+                        {item.kind}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[15px] font-bold text-[var(--text)]">{item.title}</span>
+                        <span className="text-xs text-[var(--muted)]">{item.who}</span>
+                      </span>
+                      <span className={`flex-shrink-0 text-xs font-bold ${overdue ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}>
+                        {overdue ? '지남 · ' : ''}
+                        {formatDate(item.due)}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+
               {/* 연동 상태 */}
               <div className="card home-card">
                 <div className="flex items-center justify-between">

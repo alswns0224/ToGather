@@ -209,7 +209,7 @@ function LinkedTasks({ workspaceId, contentRefId }: { workspaceId: string; conte
         {tasks.error && <ErrorBox error={tasks.error} onRetry={tasks.reload} />}
         {tasks.data && tasks.data.length === 0 && (
           <div className="text-[13px] text-[var(--muted)]">
-            이 문서를 자료로 쓰는 Task가 없어요. Task의 협업 맥락에서 이 문서를 연결할 수 있어요.
+            이 문서를 자료로 쓰는 팀 작업이 없어요. 팀 작업의 협업 맥락에서 이 문서를 연결할 수 있어요.
           </div>
         )}
         {tasks.data?.map((t) => (

@@ -28,7 +28,7 @@ const MENU_GROUPS: { title: string; items: Menu[] }[] = [
     title: '팀의 작업',
     items: [
       { to: 'slack/analyses', label: '논의 정리', icon: 'analyses', also: 'slack/analysis/' },
-      { to: 'tasks', label: 'Task', icon: 'tasks' },
+      { to: 'tasks', label: '팀 작업', icon: 'tasks' },
       { to: 'assistant', label: 'AI 업무 보조', icon: 'assistant' },
     ],
   },
@@ -51,7 +51,7 @@ const ALL_MENUS = [{ to: 'home', label: '대시보드', icon: 'home' } as Menu, 
 /** 상단바에 보여줄 현재 메뉴 이름 (가장 길게 맞는 경로) */
 function currentMenuLabel(pathname: string, workspaceId: string) {
   const path = pathname.replace(`/workspaces/${workspaceId}/`, '');
-  if (path.startsWith('tasks/')) return 'Task 협업 맥락';
+  if (path.startsWith('tasks/')) return '팀 작업 협업 맥락';
   const match = ALL_MENUS.filter(
     (m) => path === m.to || path.startsWith(`${m.to}/`) || (m.also && path.startsWith(m.also)),
   ).sort((a, b) => b.to.length - a.to.length)[0];

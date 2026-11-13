@@ -266,7 +266,7 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
                 <div className="analysis-main-foot">
                   <div className="grow">
                     <div className="text-[13px] font-bold">내용과 근거를 확인한 뒤 확정해 주세요.</div>
-                    <div className="text-[11px] text-[var(--muted)]">확정 후 문서·Task·일정을 만들 수 있어요.</div>
+                    <div className="text-[11px] text-[var(--muted)]">확정 후 문서·팀 작업·일정을 만들 수 있어요.</div>
                   </div>
                   <button type="button" className={BTN_SUB} onClick={discard} disabled={busy}>
                     취소 (반영 안 함)
@@ -284,7 +284,7 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
               {data.status === 'CONFIRMED' && (
                 <div className="analysis-main-foot">
                   <div className="grow text-[13px] font-bold text-[var(--success)]">✓ 확정 완료됨</div>
-                  <span className="text-[11px] text-[var(--muted)]">오른쪽에서 문서·Task·일정을 만들 수 있어요.</span>
+                  <span className="text-[11px] text-[var(--muted)]">오른쪽에서 문서·팀 작업·일정을 만들 수 있어요.</span>
                 </div>
               )}
             </>
@@ -357,7 +357,7 @@ function NextActions({ data }: { data: AnalysisResultDTO }) {
         <span>›</span>
       </div>
       <div className="analysis-next">
-        <span>☑ 후속 작업 {count('FOLLOW_UP')}개를 Task로 생성</span>
+        <span>☑ 후속 작업 {count('FOLLOW_UP')}개를 팀 작업으로 생성</span>
         <span>›</span>
       </div>
       <div className="analysis-next">

@@ -190,7 +190,7 @@ function WorkspaceSettings({
 
   const remove = async () => {
     const typed = window.prompt(
-      `워크스페이스와 모든 데이터(Task, 회의, 연동)가 삭제됩니다.\n삭제하려면 워크스페이스 이름 "${initial.name}"을 입력하세요.`,
+      `워크스페이스와 모든 데이터(팀 작업, 회의, 연동)가 삭제됩니다.\n삭제하려면 워크스페이스 이름 "${initial.name}"을 입력하세요.`,
     );
     if (typed !== initial.name) return;
     try {

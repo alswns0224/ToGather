@@ -1108,7 +1108,7 @@ export default function DrivePage() {
                       : showTrash
                         ? '복원 가능'
                         : selected && !taskLoading
-                          ? `Task ${tasks.length}개`
+                          ? `팀 작업 ${tasks.length}개`
                           : ''}
                   </span>
                 </button>
@@ -1178,11 +1178,11 @@ export default function DrivePage() {
                     <span className="badge">{tasks.length}</span>
                   </div>
                   {taskLoading ? (
-                    <p className="m-0 text-[13px] text-[var(--muted)]">Task를 불러오는 중입니다...</p>
+                    <p className="m-0 text-[13px] text-[var(--muted)]">팀 작업을 불러오는 중입니다...</p>
                   ) : taskError ? (
                     <p className="m-0 text-[13px] text-[var(--danger)]">{taskError}</p>
                   ) : tasks.length === 0 ? (
-                    <p className="m-0 text-[13px] text-[var(--muted)]">연결된 Task가 없습니다.</p>
+                    <p className="m-0 text-[13px] text-[var(--muted)]">연결된 팀 작업이 없습니다.</p>
                   ) : (
                     tasks.map((task) => (
                       <Link

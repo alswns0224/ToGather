@@ -141,7 +141,7 @@ export default function LoginPage() {
 
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 shadow-xs">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-xs font-bold text-[var(--text)]">☑ Task</span>
+                  <span className="text-xs font-bold text-[var(--text)]">☑ 팀 작업</span>
                   <span className="rounded-full bg-[var(--success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--success)]">
                     진행 중
                   </span>

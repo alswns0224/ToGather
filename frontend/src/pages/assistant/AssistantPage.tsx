@@ -187,9 +187,9 @@ export default function AssistantPage() {
                     onApproved={(where, id) => {
                       setApproved(
                         where === 'PERSONAL'
-                          ? { text: '내 할 일에 추가했어요.', to: null, tab: 'TODO' }
+                          ? { text: '개인 할 일에 추가했어요.', to: null, tab: 'TODO' }
                           : where === 'TEAM'
-                            ? { text: '팀 Task로 등록했어요. 팀원 모두 Task 목록에서 볼 수 있어요.', to: `/workspaces/${workspaceId}/tasks/${id}` }
+                            ? { text: '팀 작업으로 등록했어요. 팀원 모두 팀 작업 목록에서 볼 수 있어요.', to: `/workspaces/${workspaceId}/tasks/${id}` }
                             : where === 'TEAM_CALENDAR'
                               ? { text: '팀 캘린더에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` }
                               : { text: '내 Google Calendar에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` },
@@ -212,9 +212,9 @@ export default function AssistantPage() {
           {todos.data && (
             <div className="assistant-board">
               <div className="card flex flex-col gap-3">
-                <strong className="text-[15px]">담당 Task</strong>
+                <strong className="text-[15px]">내 담당 팀 작업</strong>
                 {todos.data.assignedTasks.length === 0 ? (
-                  <p className="small muted m-0">담당한 Task가 없습니다.</p>
+                  <p className="small muted m-0">담당한 팀 작업이 없습니다.</p>
                 ) : (
                   todos.data.assignedTasks.map((t) => (
                     <Link
@@ -416,10 +416,10 @@ function SuggestionReview({
         ) : (
           <div className="segmented assistant-target">
             <button type="button" className={target === 'PERSONAL' ? 'active' : ''} onClick={() => setTarget('PERSONAL')}>
-              내 할 일 (나만 보기)
+              개인 할 일 (나만 보기)
             </button>
             <button type="button" className={target === 'TEAM' ? 'active' : ''} onClick={() => setTarget('TEAM')}>
-              팀 Task (모두 보기)
+              팀 작업 (모두 보기)
             </button>
           </div>
         )}
@@ -485,8 +485,8 @@ function SuggestionReview({
                 ? '승인하고 팀 일정 등록'
                 : '승인하고 내 일정 등록'
               : target === 'TEAM'
-                ? '승인하고 팀 Task 등록'
-                : '승인하고 내 할 일 등록'}
+                ? '승인하고 팀 작업 등록'
+                : '승인하고 개인 할 일 등록'}
         </button>
       </div>
       <div className="text-center text-xs text-[var(--muted)]">
@@ -495,8 +495,8 @@ function SuggestionReview({
             ? '📅 팀 일정은 팀 캘린더에 등록되고, 일정 화면에서 팀원 모두가 볼 수 있어요.'
             : '📅 개인 일정은 내 Google Calendar에 등록돼요.'
           : target === 'TEAM'
-            ? '☑ 팀 Task는 Task 목록에서 팀원 모두가 볼 수 있어요.'
-            : '☑ 내 할 일은 "내 할 일" 탭에서 나만 볼 수 있어요.'}
+            ? '☑ 팀 작업은 팀 작업 목록에서 팀원 모두가 볼 수 있어요.'
+            : '☑ 개인 할 일은 "내 할 일" 탭에서 나만 볼 수 있어요.'}
       </div>
     </form>
   );

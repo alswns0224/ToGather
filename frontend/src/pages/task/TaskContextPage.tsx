@@ -31,7 +31,7 @@ const errorText = (error: unknown, fallback: string) => error instanceof Error ?
 export default function TaskContextPage() {
   const { workspaceId, taskId } = useParams();
   if (!workspaceId || !taskId) {
-    return <p className="alert alert-error">Task를 찾을 수 없습니다.</p>;
+    return <p className="alert alert-error">팀 작업을 찾을 수 없습니다.</p>;
   }
   return <TaskResources key={`${workspaceId}/${taskId}`} workspaceId={workspaceId} taskId={taskId} />;
 }
@@ -59,7 +59,7 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
     setContextError(null);
     getTaskContext(workspaceId, taskId)
       .then(result => { if (active) setContext(result); })
-      .catch(error => { if (active) setContextError(errorText(error, 'Task를 불러오지 못했습니다.')); });
+      .catch(error => { if (active) setContextError(errorText(error, '팀 작업을 불러오지 못했습니다.')); });
     return () => { active = false; };
   }, [workspaceId, taskId, contextRevision]);
 
@@ -119,7 +119,7 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
     <section className="stack">
       <div className="flex items-center justify-between gap-3">
         <Link to={`/workspaces/${workspaceId}/tasks`} className="text-[15px] font-bold text-[var(--muted)] no-underline hover:text-[var(--text)]">
-          ← Task 목록으로
+          ← 팀 작업 목록으로
         </Link>
         {task && (
           <span className={`text-sm font-bold ${done ? 'text-[var(--success)]' : 'text-[var(--primary)]'}`}>
@@ -137,11 +137,11 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
         </div>
       )}
       {actionError && <p role="alert" className="alert alert-error">{actionError}</p>}
-      {!context && !contextError && <p className={MUTED}>Task를 불러오는 중...</p>}
+      {!context && !contextError && <p className={MUTED}>팀 작업을 불러오는 중...</p>}
 
       {context && task && (
         <>
-          {/* Task 머리 카드 */}
+          {/* 팀 작업 머리 카드 */}
           <div className="card flex flex-col gap-2 !p-6">
             <h1 className="!m-0 flex items-center gap-2.5 !text-[26px] !font-extrabold">
               <NavIcon name="tasks" className="h-6 w-6 text-[var(--primary)]" />
@@ -164,10 +164,10 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
             </div>
           </div>
 
-          {/* 논의 → 결정 → Task */}
+          {/* 논의 → 결정 → 팀 작업 */}
           {context.originDecision && (
             <div className="taskctx-origin">
-              <div className="text-sm font-bold text-[var(--primary)]">논의 → 결정 → Task 연결 맥락</div>
+              <div className="text-sm font-bold text-[var(--primary)]">논의 → 결정 → 팀 작업 연결 맥락</div>
               <div className="pre text-[15px]">결정: {context.originDecision.content}</div>
               {context.originEvidence.length > 0 && (
                 <div className="flex flex-col gap-1">
@@ -295,7 +295,7 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
               <div className="card flex flex-col gap-3 !p-5">
                 <strong className="text-[17px]">필수 산출물 제출</strong>
                 {context.deliverables.length === 0 && (
-                  <p className={`m-0 text-sm ${MUTED}`}>이 Task에 설정된 산출물이 없습니다.</p>
+                  <p className={`m-0 text-sm ${MUTED}`}>이 팀 작업에 설정된 산출물이 없습니다.</p>
                 )}
                 {context.deliverables.length > 0 && (
                   <>
