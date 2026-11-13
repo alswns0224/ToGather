@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import {
   createTask,
   deleteTask,
@@ -16,7 +16,8 @@ import {
   type MemberResponse,
 } from '../workspace/api';
 import PageHeader from '../../components/PageHeader';
-import { BTN_AI, BTN_DANGER, BTN_SUB, CARD, INPUT, MUTED, SUB_CARD } from '../../components/ui';
+import { BTN_AI, BTN_SUB, CARD, INPUT, MUTED } from '../../components/ui';
+import NavIcon from '../../layouts/NavIcon';
 
 export default function TaskListPage() {
   const { workspaceId } = useParams();
@@ -295,45 +296,54 @@ export default function TaskListPage() {
     Math.ceil(total / pageSize),
   );
 
+  const [statusFilter, setStatusFilter] = useState<'ALL' | TaskStatus>('ALL');
+  const [query, setQuery] = useState('');
+  const navigate = useNavigate();
+
+  const inProgress = tasks.filter((t) => t.status !== 'DONE').length;
+  const done = tasks.filter((t) => t.status === 'DONE').length;
+  const atRisk = tasks.filter((t) => t.status !== 'DONE' && t.riskLevel !== 'NORMAL').length;
+  const q = query.trim().toLowerCase();
+  const visible = tasks.filter(
+    (t) => (statusFilter === 'ALL' || t.status === statusFilter) && (!q || t.title.toLowerCase().includes(q)),
+  );
+
   return (
-    <section className="space-y-6">
+    <section className="stack">
       <PageHeader
-        eyebrow="TASK BOARD"
-        title="작업 (Task)"
-        description="담당자 · 마감일 · 필요 산출물을 정하고 진행 상황과 마감 위험도를 확인합니다."
+        icon={<NavIcon name="tasks" className="h-[22px] w-[22px] text-[var(--primary)]" />}
+        title="Task 관리"
+        description="산출물 제출에 따라 진행률이 자동 계산되며, 작업을 클릭하면 협업 맥락으로 이동합니다."
         actions={
-          <button type="button" className={BTN_AI} onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? '닫기' : '+ 새 Task'}
+          <button type="button" className="btn btn-primary" onClick={() => setShowCreate((v) => !v)}>
+            {showCreate ? '닫기' : '+ 새 Task 추가'}
           </button>
         }
       />
 
-      {/* 전체 / 내 Task */}
-      <div className={`${SUB_CARD} inline-flex gap-1 p-1`}>
-        {[
-          { mine: false, label: '👥 전체 Task' },
-          { mine: true, label: '🙋 내 Task' },
-        ].map((t) => (
-          <button
-            key={t.label}
-            type="button"
-            onClick={() => {
-              setMineOnly(t.mine);
-              setPage(0);
-            }}
-            className={`cursor-pointer rounded-xl border-0 px-4 py-1.5 text-xs font-bold transition ${
-              mineOnly === t.mine ? 'bg-indigo-600 text-white' : `bg-transparent ${MUTED}`
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="task-kpis">
+        <div className="card task-kpi">
+          <span>{mineOnly ? '내 Task' : '전체'}</span>
+          <strong>{total}건</strong>
+        </div>
+        <div className="card task-kpi">
+          <span>진행 중</span>
+          <strong className="text-[var(--primary)]">{inProgress}건</strong>
+        </div>
+        <div className="card task-kpi">
+          <span>완료</span>
+          <strong className="text-[var(--success)]">{done}건</strong>
+        </div>
+        <div className="card task-kpi">
+          <span>마감 주의</span>
+          <strong className="text-[var(--warning)]">{atRisk}건</strong>
+        </div>
       </div>
 
       {/* Task 생성 */}
       {showCreate && (
-        <form onSubmit={handleCreate} className={`${CARD} space-y-4 p-7`}>
-          <h2 className="!text-lg">새 Task</h2>
+        <form onSubmit={handleCreate} className={`${CARD} space-y-4 p-5`}>
+          <strong className="text-[15px]">새 Task</strong>
           <TaskFields
             title={title}
             setTitle={setTitle}
@@ -397,18 +407,74 @@ export default function TaskListPage() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {loading ? (
-        <p className={`text-sm ${MUTED}`}>불러오는 중...</p>
-      ) : tasks.length === 0 ? (
-        <div className={`${CARD} p-10 text-center`}>
-          <p className={`m-0 text-sm ${MUTED}`}>등록된 Task가 없습니다. "+ 새 Task"로 만들어 보세요.</p>
+      <div className="card overflow-hidden !p-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className="flex flex-wrap gap-2">
+            <div className="segmented">
+              {(
+                [
+                  ['ALL', '전체'],
+                  ['IN_PROGRESS', '진행 중'],
+                  ['DONE', '완료'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={statusFilter === value ? 'active' : ''}
+                  onClick={() => setStatusFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="segmented">
+              {[
+                { mine: false, label: '모두의 Task' },
+                { mine: true, label: '내 Task' },
+              ].map((t) => (
+                <button
+                  key={t.label}
+                  type="button"
+                  className={mineOnly === t.mine ? 'active' : ''}
+                  onClick={() => {
+                    setMineOnly(t.mine);
+                    setPage(0);
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <input
+            className="input !w-[300px] max-w-full"
+            placeholder="작업명 검색..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {tasks.map((task) =>
+
+        <div className="task-row task-head">
+          <span>작업명</span>
+          <span>담당자</span>
+          <span>진행률</span>
+          <span>마감일</span>
+          <span>상태</span>
+          <span />
+        </div>
+
+        {loading ? (
+          <div className={`p-8 text-center text-sm ${MUTED}`}>불러오는 중...</div>
+        ) : visible.length === 0 ? (
+          <div className={`p-8 text-center text-sm ${MUTED}`}>
+            {tasks.length === 0 ? '등록된 Task가 없습니다. "+ 새 Task 추가"로 만들어 보세요.' : '조건에 맞는 Task가 없습니다.'}
+          </div>
+        ) : (
+          visible.map((task) =>
             editingTaskId === task.taskId ? (
               /* 수정 폼 */
-              <form key={task.taskId} onSubmit={handleEditSubmit} className={`${CARD} space-y-3 p-6`}>
+              <form key={task.taskId} onSubmit={handleEditSubmit} className="space-y-3 border-b border-[var(--border-soft)] bg-[var(--surface-2)] p-5">
                 <TaskFields
                   title={editTitle}
                   setTitle={setEditTitle}
@@ -441,47 +507,40 @@ export default function TaskListPage() {
                 </div>
               </form>
             ) : (
-              /* Task 카드 */
-              <div key={task.taskId} className={`${CARD} flex flex-col justify-between gap-4 p-6`}>
-                <div>
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${RISK[task.riskLevel]?.className ?? ''}`}>
-                      {RISK[task.riskLevel]?.text ?? task.riskLevel}
-                    </span>
-                    {task.status === 'DONE' && (
-                      <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                        ✓ 완료
-                      </span>
-                    )}
-                    <span className="flex-1" />
-                    <span className="text-xs font-bold text-indigo-500">{task.progress}%</span>
-                  </div>
-                  <h3 className="m-0 text-base leading-snug font-bold">{task.title}</h3>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-white/10">
+              <div
+                key={task.taskId}
+                className="task-row task-item"
+                onClick={() => navigate(`/workspaces/${workspaceId}/tasks/${task.taskId}`)}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-base font-bold">{task.title}</div>
+                  <div className="text-xs text-[var(--muted)]">협업 맥락 · 자료 보기 →</div>
+                </div>
+                <span className="text-sm">{getAssigneeName(task.assigneeId)}</span>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
                     <div
                       className="h-full rounded-full bg-[image:var(--brand-grad)]"
                       style={{ width: `${Math.min(100, Math.max(0, task.progress))}%` }}
                     />
                   </div>
+                  <span className="w-10 text-right text-sm font-bold">{task.progress}%</span>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
-                    {getAssigneeName(task.assigneeId).slice(0, 2)}
+                <span className="text-sm">{task.dueDate ?? '미정'}</span>
+                <span className="flex flex-wrap gap-1">
+                  <span className={`badge ${task.status === 'DONE' ? 'badge-success' : 'badge-primary'}`}>
+                    {task.status === 'DONE' ? '완료' : '진행 중'}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="m-0 truncate text-xs font-bold">{getAssigneeName(task.assigneeId)}</p>
-                    <p className={`m-0 text-[11px] ${MUTED}`}>마감 {task.dueDate ?? '미정'}</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 border-0 border-t border-solid border-slate-200/60 pt-3 dark:border-white/10">
-                  <Link to={`/workspaces/${workspaceId}/tasks/${task.taskId}`} className={BTN_SUB}>
-                    협업 맥락·자료
-                  </Link>
+                  {task.status !== 'DONE' && task.riskLevel !== 'NORMAL' && (
+                    <span className={`badge ${task.riskLevel === 'DANGER' ? 'badge-danger' : 'badge-warning'}`}>
+                      {task.riskLevel === 'DANGER' ? '위험' : '주의'}
+                    </span>
+                  )}
+                </span>
+                <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
-                    className={BTN_SUB}
+                    className="btn btn-small"
                     disabled={editLoading}
                     onClick={() => void handleEditStart(task.taskId)}
                   >
@@ -489,21 +548,21 @@ export default function TaskListPage() {
                   </button>
                   <button
                     type="button"
-                    className={BTN_DANGER}
+                    className="btn btn-small btn-danger"
                     disabled={deletingTaskId === task.taskId}
                     onClick={() => void handleDelete(task.taskId)}
                   >
-                    {deletingTaskId === task.taskId ? '삭제 중...' : '삭제'}
+                    {deletingTaskId === task.taskId ? '삭제 중' : '삭제'}
                   </button>
-                </div>
+                </span>
               </div>
             ),
-          )}
-        </div>
-      )}
+          )
+        )}
+      </div>
 
       {/* 페이지네이션 */}
-      {!loading && total > 0 && (
+      {!loading && total > pageSize && (
         <div className="flex items-center justify-center gap-3">
           <button type="button" className={BTN_SUB} disabled={page === 0} onClick={() => setPage((current) => current - 1)}>
             이전
@@ -525,12 +584,6 @@ export default function TaskListPage() {
     </section>
   );
 }
-
-const RISK: Record<string, { text: string; className: string }> = {
-  NORMAL: { text: '● 정상', className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
-  WARNING: { text: '● 주의', className: 'bg-amber-500/20 text-amber-600 dark:text-amber-400' },
-  DANGER: { text: '● 위험', className: 'bg-rose-500/15 text-rose-600 dark:text-rose-400' },
-};
 
 /** 생성·수정 폼에서 함께 쓰는 입력칸 */
 function TaskFields({
