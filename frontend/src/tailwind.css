@@ -17,6 +17,25 @@
 /* 다크 모드: <html class="dark">일 때 dark: 클래스가 적용된다. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * 화면 곳곳에 쓰인 indigo·violet·purple·blue 색을 현재 테마 색으로 연결한다.
+ * 페이지마다 색을 바꾸지 않아도 당근 오렌지 테마로 바꾸면 이 색들도 함께 바뀐다. (index.css의 --primary, --primary-2)
+ */
+@theme {
+  --color-indigo-300: color-mix(in oklab, var(--primary) 55%, white);
+  --color-indigo-400: color-mix(in oklab, var(--primary) 80%, white);
+  --color-indigo-500: var(--primary);
+  --color-indigo-600: var(--primary);
+  --color-indigo-700: var(--primary-hover);
+  --color-violet-400: color-mix(in oklab, var(--primary-2) 80%, white);
+  --color-violet-500: var(--primary-2);
+  --color-purple-500: var(--primary-2);
+  --color-blue-300: color-mix(in oklab, var(--primary) 55%, white);
+  --color-blue-400: color-mix(in oklab, var(--primary) 80%, white);
+  --color-blue-500: var(--primary);
+  --color-blue-600: var(--primary);
+}
+
 @theme {
   --font-sans: 'Pretendard Variable', Pretendard, Inter, 'Noto Sans KR', -apple-system, BlinkMacSystemFont,
     'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;

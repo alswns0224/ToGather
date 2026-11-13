@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 export type Theme = 'light' | 'dark';
-/** indigo: 파랑·보라(기본), carrot: 당근 오렌지 */
+/** carrot: 당근 오렌지(기본, 팀원 UI 시안), indigo: 파랑·보라 */
 export type Palette = 'indigo' | 'carrot';
 
 const STORAGE_KEY = 'togather-theme';
@@ -20,11 +20,11 @@ function initialTheme(): Theme {
 
 function initialPalette(): Palette {
   try {
-    if (localStorage.getItem(PALETTE_KEY) === 'carrot') return 'carrot';
+    if (localStorage.getItem(PALETTE_KEY) === 'indigo') return 'indigo';
   } catch {
     // 저장소를 쓸 수 없으면 기본 색을 쓴다.
   }
-  return 'indigo';
+  return 'carrot';
 }
 
 /**

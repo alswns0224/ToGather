@@ -486,7 +486,7 @@ function Recommendations({
                 <div className="flex items-center justify-between gap-2">
                   <span
                     className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                      top ? 'bg-[linear-gradient(135deg,#4F46E5,#7C3AED)] text-white' : 'bg-indigo-500/15 text-indigo-500'
+                      top ? 'bg-[image:var(--brand-grad)] text-white' : 'bg-indigo-500/15 text-indigo-500'
                     }`}
                   >
                     {c.tied ? '공동 ' : ''}#{c.rank}

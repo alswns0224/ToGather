@@ -459,7 +459,7 @@ export default function TaskListPage() {
                   <h3 className="m-0 text-base leading-snug font-bold">{task.title}</h3>
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-white/10">
                     <div
-                      className="h-full rounded-full bg-[linear-gradient(90deg,#4F46E5,#7C3AED)]"
+                      className="h-full rounded-full bg-[image:var(--brand-grad)]"
                       style={{ width: `${Math.min(100, Math.max(0, task.progress))}%` }}
                     />
                   </div>

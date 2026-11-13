@@ -45,11 +45,23 @@ const SUB_MENU: { to: string; label: string; icon: IconName }[] = [
   { to: 'integrations', label: '연동 관리', icon: 'link' },
 ];
 
+/** 상단바에 보여줄 현재 메뉴 이름 (가장 길게 맞는 경로) */
+const ALL_MENUS = [...TOP_MENU, ...MENU_GROUPS.flatMap((g) => g.items), ...SUB_MENU] as { to: string; label: string; also?: string }[];
+
+function currentMenuLabel(pathname: string, workspaceId: string) {
+  const path = pathname.replace(`/workspaces/${workspaceId}/`, '');
+  const match = ALL_MENUS.filter(
+    (m) => path === m.to || path.startsWith(`${m.to}/`) || (m.also && path.startsWith(m.also)),
+  ).sort((a, b) => b.to.length - a.to.length)[0];
+  if (path.startsWith('tasks/')) return 'Task 협업 맥락';
+  return match?.label ?? '';
+}
+
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `group flex w-full items-center gap-3 rounded-lg px-3 py-[7px] text-sm font-medium no-underline transition-all ${
+  `group flex w-full items-center gap-[9px] rounded-[10px] px-2.5 py-[7px] text-sm font-semibold no-underline transition-all ${
     isActive
-      ? 'bg-[image:var(--brand-grad)] text-white shadow-sm'
-      : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white'
+      ? 'bg-[image:var(--brand-grad)] text-white shadow-[0_3px_10px_rgba(0,0,0,0.16)]'
+      : 'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
   }`;
 
 function MenuLink({
@@ -76,7 +88,7 @@ function MenuLink({
     >
       {({ isActive }) => (
         <>
-          <span className={isActive || alsoActive ? 'text-white' : 'text-slate-400'}>
+          <span className={isActive || alsoActive ? 'text-white' : 'text-[var(--muted)]'}>
             <NavIcon name={icon} />
           </span>
           <span className="flex-1 truncate text-left">{label}</span>
@@ -92,6 +104,8 @@ export default function WorkspaceLayout() {
   const { theme, palette } = useTheme();
   const logoSrc = palette === 'indigo' ? '/togather-logo-mark.png' : theme === 'dark' ? '/togather-logo-white.png' : '/togather-logo-carrot.png';
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const menuLabel = currentMenuLabel(pathname, workspaceId);
   // 멤버가 아니면 403이 와서 여기서 막힌다.
   const workspace = useAsync(() => getWorkspace(workspaceId), [workspaceId]);
   const wsName = workspace.data?.name ?? '';
@@ -102,13 +116,15 @@ export default function WorkspaceLayout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-100">
-      <aside className="flex h-full w-[220px] flex-shrink-0 select-none flex-col border-r border-slate-200 bg-[var(--surface)] dark:border-white/10">
+    <div className="flex h-screen overflow-hidden text-[var(--text)]">
+      <aside className="flex h-full w-[232px] flex-shrink-0 select-none flex-col border-r border-[var(--border)] bg-[var(--surface)]">
         {/* 로고 */}
         <div className="flex items-center justify-between border-b border-slate-200/80 px-4 pt-[14px] pb-3 dark:border-white/10">
           <Link to="/workspaces" className="flex items-center gap-2 no-underline">
 <img src={logoSrc} alt="ToGather" className="h-7 w-auto flex-shrink-0" />
-            <span className="text-[16px] font-bold tracking-tight text-slate-900 dark:text-white">ToGather</span>
+            <span className="text-[18px] font-bold tracking-tight text-[var(--text)]">
+              <span className="text-[var(--primary)]">To</span>Gather
+            </span>
           </Link>
           <ThemeToggle />
         </div>
@@ -118,7 +134,7 @@ export default function WorkspaceLayout() {
           <Link
             to="/workspaces"
             title="워크스페이스 목록으로"
-            className="flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-800 no-underline shadow-sm transition-all hover:border-blue-300 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-2)] px-3 py-2.5 text-[var(--text)] no-underline transition-all hover:border-[var(--primary)]"
           >
             <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-blue-600 text-[10px] font-bold text-white">
               {wsName.slice(0, 1)}
@@ -145,7 +161,7 @@ export default function WorkspaceLayout() {
         <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
           {MENU_GROUPS.map((group) => (
             <div key={group.title} className="space-y-0.5">
-              <div className="px-3 pb-1 text-[11px] font-bold tracking-wide text-slate-400 dark:text-slate-500">
+              <div className="px-2.5 pb-1 text-[11px] font-bold tracking-wide text-[var(--muted)]">
                 {group.title}
               </div>
               {group.items.map((m) => (
@@ -187,27 +203,28 @@ export default function WorkspaceLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* 상단바 */}
-        <header className="flex h-14 flex-shrink-0 items-center justify-between gap-4 border-b border-slate-200/70 px-6 dark:border-white/10">
+        <header className="flex h-14 flex-shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--surface)] px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             <span className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-emerald-500" />
-            <span className="truncate text-xs font-bold">{wsName}</span>
+            <span className="truncate text-sm font-semibold">{wsName}</span>
+            {menuLabel && <span className={`truncate text-xs text-[var(--muted)]`}>/ {menuLabel}</span>}
           </div>
           <Link
             to={`/workspaces/${workspaceId}/search`}
-            className="flex max-w-md flex-1 items-center justify-between rounded-2xl border border-slate-200/70 bg-slate-50/90 px-4 py-2 text-xs text-slate-500 no-underline transition-all hover:border-indigo-500/60 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400"
+            className="flex max-w-md flex-1 items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-4 py-2 text-xs text-[var(--muted)] no-underline transition-all hover:border-[var(--primary)]"
           >
             <span>🔍 통합 검색</span>
           </Link>
           <div className="flex items-center gap-2">
             <Link
               to="/workspaces"
-              className="rounded-xl border border-slate-200/70 bg-slate-50/90 px-3 py-1.5 text-xs font-bold text-slate-800 no-underline dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200"
+              className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5 text-xs font-bold text-[var(--text)] no-underline"
             >
               공간 전환
             </Link>
             <Link
               to={`/workspaces/${workspaceId}/slack/analyses`}
-              className="rounded-xl bg-[linear-gradient(135deg,#4F46E5_0%,#7C3AED_55%,#C026D3_100%)] px-3.5 py-1.5 text-xs font-bold text-white no-underline shadow-[0_6px_20px_-4px_rgba(124,58,237,0.45)] transition hover:-translate-y-px hover:brightness-105"
+              className="rounded-[10px] bg-[image:var(--brand-grad)] px-3.5 py-1.5 text-xs font-bold text-white no-underline transition hover:brightness-95"
             >
               ✨ AI 논의 정리
             </Link>
@@ -215,7 +232,7 @@ export default function WorkspaceLayout() {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1200px] p-6">
+          <div className="mx-auto max-w-[1320px] px-[26px] py-5">
             {workspace.loading && <Loading />}
             {workspace.error && <ErrorBox error={workspace.error} onRetry={workspace.reload} />}
             {workspace.data && <Outlet />}
