@@ -79,7 +79,7 @@ export default function ItemCard({
   const decidedElsewhere = outputDone ? (item.itemType === 'FOLLOW_UP' ? 'Task에서 지정' : '일정에서 지정') : '미정';
 
   return (
-    <li className="analysis-item stack">
+    <li className={`analysis-item type-${item.itemType.toLowerCase()} stack`}>
       <div className="row">
         <span className="pre grow">{item.content}</span>
         {outputDone ? (
