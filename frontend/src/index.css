@@ -1345,3 +1345,120 @@ hr {
     padding: 4px;
   }
 }
+
+/* 회의 목록 줄 (시안의 회의 카드 머리) */
+.meeting-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px !important;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.meeting-row:hover {
+  border-color: var(--primary);
+}
+
+.meeting-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* 회의 상세: 회의 카드 | 추천 시간 (팀원 UI 시안) */
+.meeting-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.meeting-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px !important;
+}
+
+.meeting-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px !important;
+}
+
+.meeting-agenda {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.meeting-confirmed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--success);
+  border-radius: 12px;
+  background: var(--success-soft);
+}
+
+.meeting-cand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.meeting-cand.active {
+  border: 2px solid var(--primary);
+  background: var(--primary-soft);
+}
+
+.meeting-radio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+}
+
+.meeting-radio.on {
+  border-color: var(--primary);
+}
+
+.meeting-radio.on::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+@media (max-width: 1100px) {
+  .meeting-board {
+    grid-template-columns: 1fr;
+  }
+}
