@@ -1590,3 +1590,67 @@ hr {
     grid-template-columns: 1fr;
   }
 }
+
+/* Task 협업 맥락 (팀원 UI 시안) */
+.taskctx-origin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--primary-soft);
+}
+
+.taskctx-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.taskctx-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.taskctx-link > summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.taskctx-deliv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.taskctx-deliv.done {
+  background: var(--success-soft);
+}
+
+.taskctx-meeting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--warning-soft);
+}
+
+@media (max-width: 1100px) {
+  .taskctx-board {
+    grid-template-columns: 1fr;
+  }
+}
