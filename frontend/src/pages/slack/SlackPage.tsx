@@ -14,7 +14,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
-import ServiceLogo from '../../components/ServiceLogo';
+import NavIcon from '../../layouts/NavIcon';
 import { BTN_SUB } from '../../components/ui';
 import { formatDateTime, fromLocalIso, sameDay } from '../../utils/date';
 import Composer from './components/Composer';
@@ -98,7 +98,7 @@ export default function SlackPage() {
   return (
     <section className="stack">
       <PageHeader
-        icon={<ServiceLogo service="slack" />}
+        icon={<NavIcon name="slack" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="Slack"
         description="팀의 대화를 모으고, 논의를 작업으로 이어보세요."
         actions={

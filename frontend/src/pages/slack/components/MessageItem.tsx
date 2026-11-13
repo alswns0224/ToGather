@@ -15,7 +15,10 @@ function avatarColor(name: string | null) {
 
 export function Avatar({ name }: { name: string | null }) {
   return (
-    <span className="slack-avatar" style={{ background: avatarColor(name) }}>
+    <span
+      className="slack-avatar"
+      style={{ background: `color-mix(in oklab, ${avatarColor(name)} 14%, transparent)`, color: avatarColor(name) }}
+    >
       {(name ?? '?').slice(0, 1)}
     </span>
   );
