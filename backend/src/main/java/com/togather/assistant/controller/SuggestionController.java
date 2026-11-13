@@ -12,6 +12,7 @@ import com.togather.common.auth.WorkspaceAccessChecker;
 import com.togather.common.enums.SuggestionType;
 import com.togather.common.response.ApiResponse;
 import jakarta.validation.Valid;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -72,10 +73,29 @@ public class SuggestionController {
     /** 일정 승인 → 개인 캘린더 등록. 결과: 일정의 contentRefId */
     @PostMapping("/suggestions/{suggestionId}/approve-schedule")
     public ApiResponse<Map<String, Long>> approveSchedule(@LoginUser Long userId, @PathVariable Long workspaceId,
-                                                          @PathVariable Long suggestionId) {
+                                                          @PathVariable Long suggestionId,
+                                                          @RequestBody(required = false) ScheduleApproveRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(Map.of("contentRefId",
-                suggestionService.approveSchedule(workspaceId, userId, suggestionId)));
+        return ApiResponse.ok(Map.of("contentRefId", suggestionService.approveSchedule(workspaceId, userId,
+                suggestionId, request == null ? null : request.endAt())));
+    }
+
+    /** 개인 일정으로 승인할 때 끝 시각 (선택, 없으면 1시간) */
+    public record ScheduleApproveRequest(LocalDateTime endAt) {
+    }
+
+    /** 일정 승인 → 팀 캘린더 등록. 본문의 participantIds가 없으면 승인한 사람만 참여한다. 결과: 일정의 contentRefId */
+    @PostMapping("/suggestions/{suggestionId}/approve-team-schedule")
+    public ApiResponse<Map<String, Long>> approveTeamSchedule(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                              @PathVariable Long suggestionId,
+                                                              @RequestBody(required = false) TeamScheduleApproveRequest request) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(Map.of("contentRefId", suggestionService.approveTeamSchedule(workspaceId, userId,
+                suggestionId, request == null ? null : request.participantIds(), request == null ? null : request.endAt())));
+    }
+
+    /** 팀 일정으로 승인할 때 참여자 (선택) */
+    public record TeamScheduleApproveRequest(List<Long> participantIds, LocalDateTime endAt) {
     }
 
     /** 할 일 승인 → 개인 할 일 등록 */
@@ -85,6 +105,20 @@ public class SuggestionController {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         return ApiResponse.ok(Map.of("personalTaskId",
                 suggestionService.approveTask(workspaceId, userId, suggestionId)));
+    }
+
+    /** 할 일 승인 → 팀 Task 등록. 본문의 assigneeId가 없으면 승인한 사람이 담당한다. */
+    @PostMapping("/suggestions/{suggestionId}/approve-team-task")
+    public ApiResponse<Map<String, Long>> approveTeamTask(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                          @PathVariable Long suggestionId,
+                                                          @RequestBody(required = false) TeamTaskApproveRequest request) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(Map.of("taskId", suggestionService.approveTeamTask(workspaceId, userId, suggestionId,
+                request == null ? null : request.assigneeId())));
+    }
+
+    /** 팀 Task로 승인할 때 담당자 (선택) */
+    public record TeamTaskApproveRequest(Long assigneeId) {
     }
 
     @PostMapping("/suggestions/{suggestionId}/dismiss")

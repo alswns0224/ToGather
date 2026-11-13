@@ -82,3 +82,92 @@ textarea.input.notion-editor {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── 팀원 UI 시안 3단: 문서 목록 | 문서 | 연결된 작업 ── */
+.notion-board {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.notion-list,
+.notion-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px !important;
+}
+
+.notion-tabs {
+  display: flex;
+  width: 100%;
+}
+
+.notion-tabs > button {
+  flex: 1;
+}
+
+.notion-board .notion-item {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  padding: 12px 14px;
+  gap: 4px;
+}
+
+.notion-board .notion-item:hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.notion-board .notion-item.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.notion-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px !important;
+}
+
+.notion-origin {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+}
+
+.notion-task {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.notion-task:hover {
+  outline: 1px solid var(--primary);
+}
+
+@media (max-width: 1200px) {
+  .notion-board {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .notion-board > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 800px) {
+  .notion-board {
+    grid-template-columns: 1fr;
+  }
+}

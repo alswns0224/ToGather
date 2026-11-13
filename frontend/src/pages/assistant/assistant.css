@@ -3,3 +3,66 @@
 .done-text {
   text-decoration: line-through;
 }
+
+/* 시안 배치: 후보 목록 | 후보 검토 */
+.assistant-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 1.05fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.assistant-cand {
+  display: block;
+  width: 100%;
+  padding: 14px 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-cand:hover {
+  border-color: var(--primary);
+}
+
+.assistant-cand.active {
+  border: 2px solid var(--primary);
+  background: var(--primary-soft);
+}
+
+.assistant-field {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.assistant-field > span:first-child {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.assistant-field .input {
+  height: 46px;
+  font-size: 15px;
+}
+
+@media (max-width: 960px) {
+  .assistant-board {
+    grid-template-columns: 1fr;
+  }
+}
+
+.assistant-target {
+  display: flex;
+  width: 100%;
+}
+
+.assistant-target > button {
+  flex: 1;
+  min-height: 40px;
+}

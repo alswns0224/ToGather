@@ -10,14 +10,10 @@ import { Link, useParams } from 'react-router';
 
 import { http, ws } from '../../api/client';
 import PageHeader from '../../components/PageHeader';
+import NavIcon from '../../layouts/NavIcon';
 
 import {
-  BTN_PRIMARY,
-  BTN_SUB,
-  CARD,
-  INPUT,
   MUTED,
-  SUB_CARD,
 } from '../../components/ui';
 
 import {
@@ -869,883 +865,448 @@ export default function DrivePage() {
   }, [previewFile]);
 
   // ===================================================
-  // 화면
+  // 화면 (팀원 UI 시안: 업로드 줄 + 파일 표 | 파일 상세)
   // ===================================================
 
+  const lastSyncedAt = statuses
+    .map((s) => s.lastSyncedAt)
+    .filter((v): v is string => !!v)
+    .sort()
+    .pop();
+
   return (
-    <section className="space-y-5">
-
-      {/* ============================================= */}
-      {/* 페이지 상단 */}
-      {/* ============================================= */}
-
+    <section className="stack">
       <PageHeader
-        eyebrow="GOOGLE DRIVE"
-        title="자료 (Drive)"
-        description="연동한 Google Drive 파일과 Task 산출물을 관리합니다."
+        icon={<NavIcon name="drive" className="h-[22px] w-[22px] text-[var(--primary)]" />}
+        title="Drive"
+        description="팀의 파일을 모으고, 작업과 연결하세요."
         actions={
           <>
+            {folderIds.length > 0 ? (
+              <span className="badge badge-success">● 연결됨</span>
+            ) : (
+              !loading && <span className="badge">연결 안 됨</span>
+            )}
+            {folderIds.length > 0 && (
+              <span className="text-xs text-[var(--muted)]">
+                {folderIds.length}개 폴더 연결{lastSyncedAt && ` · 마지막 동기화 ${formatDate(lastSyncedAt)}`}
+              </span>
+            )}
             <button
               type="button"
-              className={BTN_SUB}
-              disabled={loading || isBusy}
-              onClick={() => void refresh(false)}
-            >
-              {working === 'refresh'
-                ? '새로고침 중...'
-                : '새로고침'}
-            </button>
-
-            <button
-              type="button"
-              className={BTN_PRIMARY}
+              className="btn !h-[34px]"
               disabled={loading || isBusy}
               onClick={() => void refresh(true)}
             >
-              {working === 'sync'
-                ? '동기화 중...'
-                : '↻ Drive 동기화'}
+              {working === 'sync' ? '동기화 중...' : working === 'refresh' ? '불러오는 중...' : '↻ 동기화'}
             </button>
           </>
         }
       />
 
-      {/* ============================================= */}
-      {/* 오류 메시지 */}
-      {/* ============================================= */}
-
       {error && (
-        <div
-          role="alert"
-          className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-300"
-        >
+        <div role="alert" className="alert alert-error">
           {error}
         </div>
       )}
-
-      {/* ============================================= */}
-      {/* 성공 메시지 */}
-      {/* ============================================= */}
-
       {notice && (
-        <div
-          role="status"
-          className="rounded-xl border border-indigo-400/30 bg-indigo-500/10 p-3 text-xs text-indigo-600 dark:text-indigo-300"
-        >
+        <div role="status" className="alert alert-success">
           {notice}
         </div>
       )}
 
-      {/* ============================================= */}
-      {/* 메인 콘텐츠 */}
-      {/* ============================================= */}
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-
-        {/* =========================================== */}
-        {/* 왼쪽: 업로드 + 파일 목록 */}
-        {/* =========================================== */}
-
-        <div className="space-y-4 lg:col-span-8">
-
-          {/* ----------------------------------------- */}
-          {/* Google Drive 파일 업로드 */}
-          {/* ----------------------------------------- */}
-
-          <div
-            role="region"
-            aria-label="Google Drive 파일 업로드 영역"
-            aria-busy={working === 'upload'}
-            onDragEnter={handleDragEnter}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleFileDrop}
-            className={`${CARD} rounded-[26px] border-2 border-dashed p-6 text-center transition-colors ${
-              isDraggingFile && canSelectUpload
-                ? 'border-indigo-500 bg-indigo-500/10 dark:border-indigo-400'
-                : 'border-indigo-300 dark:border-white/15'
-            }`}
-          >
-            <div className="mb-3 text-3xl">
-              ☁️
-            </div>
-
-            <h2 className="m-0 text-sm font-bold">
-              Google Drive 파일 볼트
-            </h2>
-
-            <p className={`mt-2 text-xs leading-relaxed ${MUTED}`}>
-              연동된 Google Drive 폴더에 파일을
-              직접 업로드할 수 있습니다.
-              {' '}
-              (최대 100MB)
-            </p>
-
-            {canSelectUpload && (
-              <p aria-live="polite" className={`mt-2 text-xs ${MUTED}`}>
-                {isDraggingFile
-                  ? '여기에 놓으면 업로드할 파일로 선택됩니다.'
-                  : '파일 한 개를 이 영역에 끌어놓거나 아래에서 선택해 주세요.'}
-              </p>
-            )}
-
-            {folderIds.length > 0 ? (
-              <div className="mx-auto mt-4 max-w-lg space-y-3 text-left">
-
-                <label
-                  htmlFor="drive-upload-folder"
-                  className="block text-xs font-bold"
-                >
-                  업로드할 폴더
-                </label>
-
-                <select
-                  id="drive-upload-folder"
-                  value={chosenFolderId}
-                  onChange={event =>
-                    setUploadFolderId(
-                      event.target.value,
-                    )
-                  }
-                  disabled={isBusy}
-                  className={`${INPUT} w-full text-xs`}
-                >
-                  {folderIds.map((id, index) => (
-                    <option
-                      key={id}
-                      value={id}
-                    >
-                      {folderIds.length === 1
-                        ? '연동된 Drive 폴더'
-                        : `연동 폴더 ${index + 1}`}
-                      {' ('}{id}{')'}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  aria-label="업로드할 파일"
-                  disabled={!canSelectUpload}
-                  onChange={handleFileSelect}
-                />
-
-                {uploadFile && (
-                  <div
-                    className={`${SUB_CARD} break-all p-3 text-xs`}
-                  >
-                    <p className="m-0 font-bold">
-                      📄 {uploadFile.name}
-                    </p>
-
-                    <p className={`mt-1 ${MUTED}`}>
-                      파일 크기:{' '}
-                      {formatDriveFileSize(
-                        uploadFile.size,
-                      )}
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap justify-center gap-2">
-
-                  <button
-                    type="button"
-                    className={BTN_SUB}
-                    disabled={loading || isBusy}
-                    onClick={() =>
-                      fileInputRef.current?.click()
-                    }
-                  >
-                    파일 선택
-                  </button>
-
-                  <button
-                    type="button"
-                    className={BTN_PRIMARY}
-                    disabled={
-                      loading ||
-                      isBusy ||
-                      !uploadFile ||
-                      !chosenFolderId
-                    }
-                    onClick={() =>
-                      void handleUpload()
-                    }
-                  >
-                    {working === 'upload'
-                      ? '업로드 중...'
-                      : '☁️ ToGather에서 업로드'}
-                  </button>
-
-                </div>
-
-                {working === 'upload' && (
-                  <div
-                    role="status"
-                    className="rounded-xl bg-indigo-500/10 p-3 text-center text-xs text-indigo-500"
-                  >
-                    Google Drive에 파일을 업로드하고
-                    있습니다.
-                    {' '}
-                    완료 후 목록이 자동 갱신됩니다.
-                  </div>
-                )}
-
-              </div>
+      {/* 업로드 줄 */}
+      <div
+        role="region"
+        aria-label="Google Drive 파일 업로드 영역"
+        aria-busy={working === 'upload'}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleFileDrop}
+        className={`drive-drop${isDraggingFile && canSelectUpload ? ' dragging' : ''}`}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="drive-drop-icon">☁️</span>
+          <div className="min-w-0">
+            {uploadFile ? (
+              <>
+                <div className="truncate text-[15px] font-bold">📄 {uploadFile.name}</div>
+                <div className="text-[13px] text-[var(--muted)]">{formatDriveFileSize(uploadFile.size)}</div>
+              </>
             ) : (
-              <div className="mt-4 space-y-2">
-                <p className={`text-xs ${MUTED}`}>
-                  {loading
-                    ? '연동된 폴더를 확인하고 있습니다...'
-                    : '업로드할 폴더가 없습니다. 연동 관리에서 Google Drive 폴더를 선택해 주세요.'}
-                </p>
-
-                {!loading && (
-                  <Link
-                    to={`/workspaces/${workspaceId}/integrations`}
-                    className="inline-block text-xs font-bold text-indigo-500 hover:underline"
-                  >
-                    연동 관리로 이동 →
-                  </Link>
-                )}
-              </div>
-            )}
-
-            <a
-              href="https://drive.google.com/drive/my-drive"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-block text-xs font-bold text-indigo-500 hover:underline"
-            >
-              Google Drive에서 직접 관리하기 ↗
-            </a>
-          </div>
-
-          {/* ----------------------------------------- */}
-          {/* 파일 목록 및 휴지통 */}
-          {/* ----------------------------------------- */}
-
-          <div
-            className={`${CARD} space-y-4 rounded-[26px] p-5`}
-          >
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-
-              <div>
-                <h2 className="m-0 text-sm font-bold">
-                  {showTrash
-                    ? 'Drive 휴지통'
-                    : '파일 목록'}
-                </h2>
-
-                <p className={`mt-1 text-xs ${MUTED}`}>
-                  {showTrash
-                    ? `복원 가능한 항목 ${trashFiles.length}개`
-                    : `총 ${files.length}개 파일`}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => {
-                    setShowTrash(false);
-                    setSelectedId(null);
-                    setQuery('');
-                  }}
-                  className={
-                    !showTrash
-                      ? BTN_PRIMARY
-                      : BTN_SUB
-                  }
-                >
-                  📁 파일
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => {
-                    setShowTrash(true);
-                    setSelectedId(null);
-                    setQuery('');
-                  }}
-                  className={
-                    showTrash
-                      ? BTN_PRIMARY
-                      : BTN_SUB
-                  }
-                >
-                  🗑 휴지통
-                </button>
-
-              </div>
-            </div>
-
-            {/* 파일명 검색 */}
-
-            <input
-              type="search"
-              value={query}
-              onChange={event =>
-                setQuery(event.target.value)
-              }
-              placeholder={
-                showTrash
-                  ? '휴지통 파일명 검색'
-                  : '파일명 검색'
-              }
-              aria-label="파일명 검색"
-              className={`${INPUT} w-full !py-2 text-xs`}
-            />
-
-            {/* 파일 목록 본문 */}
-
-            {loading ? (
-              <div className="py-12 text-center">
-                <p className={`text-xs ${MUTED}`}>
-                  Google Drive 파일을 불러오는 중입니다...
-                </p>
-              </div>
-            ) : visibleFiles.length === 0 ? (
-              <div className="py-12 text-center">
-
-                <div className="mb-3 text-3xl">
-                  {showTrash ? '🗑️' : '📂'}
+              <>
+                <div className="text-[15px] font-bold">
+                  {isDraggingFile ? '여기에 놓으면 업로드할 파일로 선택돼요' : '파일을 끌어놓거나 선택하세요'}
                 </div>
-
-                <p className={`text-xs ${MUTED}`}>
-                  {query
-                    ? '검색 결과가 없습니다.'
-                    : showTrash
-                      ? '휴지통에 표시할 파일이 없습니다.'
-                      : '동기화된 파일이 없습니다.'}
-                </p>
-
-                {!query && !showTrash && (
-                  <Link
-                    to={`/workspaces/${workspaceId}/integrations`}
-                    className="mt-3 inline-block text-xs font-bold text-indigo-500 hover:underline"
-                  >
-                    연동 관리에서 Drive 폴더 확인하기 →
-                  </Link>
-                )}
-
-              </div>
-            ) : (
-
-              <div className="space-y-2.5">
-
-                {visibleFiles.map(file => {
-
-                  const selected =
-                    selectedFile?.contentRefId ===
-                    file.contentRefId;
-
-                  const format =
-                    fileFormat(file);
-
-                  const isWorkingFile =
-                    workingFileId ===
-                    file.contentRefId;
-
-                  return (
-                    <button
-                      key={file.contentRefId}
-                      type="button"
-                      onClick={() => {
-                        if (showTrash) {
-                          void handleRestore(file);
-                        } else {
-                          setSelectedId(file.contentRefId);
-                        }
-                      }}
-                      disabled={isBusy}
-                      aria-pressed={selected}
-                      className={`flex w-full items-center justify-between gap-3 rounded-2xl p-4 text-left transition ${
-                        selected
-                          ? 'border border-indigo-400/40 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 shadow-sm'
-                          : SUB_CARD
-                      }`}
-                    >
-
-                      <span className="flex min-w-0 items-center gap-3">
-
-                        <span
-                          className={`shrink-0 rounded-xl px-2.5 py-1 text-[10px] font-bold ${
-                            format === 'ZIP'
-                              ? 'bg-amber-500/20 text-amber-500'
-                              : 'bg-indigo-500/15 text-indigo-500'
-                          }`}
-                        >
-                          {format}
-                        </span>
-
-                        <span className="min-w-0">
-
-                          <span className="block truncate text-xs font-bold">
-                            {file.title || '(제목 없음)'}
-                          </span>
-
-                          <span
-                            className={`mt-1 block text-[11px] ${MUTED}`}
-                          >
-                            최종 수정{' '}
-                            {formatDate(
-                              file.lastModifiedAt,
-                            )}
-                          </span>
-
-                        </span>
-
-                      </span>
-
-                      <span className="shrink-0 text-[10px] font-bold text-indigo-500">
-
-                        {isWorkingFile
-                          ? working === 'delete'
-                            ? '삭제 중...'
-                            : working === 'restore'
-                              ? '복원 중...'
-                              : '처리 중...'
-                          : showTrash
-                            ? '복원하기 →'
-                            : selected
-                              ? taskLoading
-                                ? 'Task 조회 중'
-                                : `🔗 관련 Task ${tasks.length}개`
-                              : '상세 보기 →'}
-
-                      </span>
-
-                    </button>
-                  );
-                })}
-
-              </div>
+                <div className="text-[13px] text-[var(--muted)]">
+                  {folderIds.length > 0
+                    ? '파일당 최대 100MB'
+                    : loading
+                      ? '연동된 폴더를 확인하고 있습니다...'
+                      : '업로드할 폴더가 없어요. 연동 관리에서 Drive 폴더를 선택해 주세요.'}
+                </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* =========================================== */}
-        {/* 오른쪽: 파일 상세 패널 */}
-        {/* =========================================== */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          aria-label="업로드할 파일"
+          disabled={!canSelectUpload}
+          onChange={handleFileSelect}
+        />
 
-        <aside
-          className={`${CARD} rounded-[26px] p-6 lg:col-span-4`}
-        >
-
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-white/10">
-
-            <h2 className="m-0 text-sm font-bold">
-              파일 프리뷰 인스펙터
-            </h2>
-
-            {selectedFile?.deepLink?.startsWith(
-              'https://',
-            ) && (
-              <a
-                href={selectedFile.deepLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs font-bold text-indigo-500 hover:underline"
-              >
-                Drive 원본 ↗
-              </a>
-            )}
-
+        {folderIds.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="drive-upload-folder" className="text-[13px] text-[var(--muted)]">
+              업로드할 폴더
+            </label>
+            <select
+              id="drive-upload-folder"
+              value={chosenFolderId}
+              onChange={(event) => setUploadFolderId(event.target.value)}
+              disabled={isBusy}
+              className="input !w-auto max-w-[220px]"
+            >
+              {folderIds.map((id, index) => (
+                <option key={id} value={id}>
+                  {folderIds.length === 1 ? '연동된 Drive 폴더' : `연동 폴더 ${index + 1}`}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={loading || isBusy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              파일 선택
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={loading || isBusy || !uploadFile || !chosenFolderId}
+              onClick={() => void handleUpload()}
+            >
+              {working === 'upload' ? '업로드 중...' : '업로드'}
+            </button>
           </div>
+        ) : (
+          !loading && (
+            <Link to={`/workspaces/${workspaceId}/integrations`} className="btn">
+              연동 관리로 이동 →
+            </Link>
+          )
+        )}
+      </div>
+
+      <div className="drive-board">
+        {/* 파일 목록 */}
+        <div className="card overflow-hidden !p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
+            <div className="flex items-center gap-1.5">
+              <strong className="text-[17px]">{showTrash ? 'Drive 휴지통' : '파일 목록'}</strong>
+              <span className="badge">{showTrash ? trashFiles.length : files.length}</span>
+            </div>
+            <a
+              href="https://drive.google.com/drive/my-drive"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-small"
+            >
+              ↗ Drive에서 열기
+            </a>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-soft)] px-5 pb-4">
+            <div className="segmented">
+              <button
+                type="button"
+                disabled={isBusy}
+                className={!showTrash ? 'active' : ''}
+                onClick={() => {
+                  setShowTrash(false);
+                  setSelectedId(null);
+                  setQuery('');
+                }}
+              >
+                파일 ({files.length})
+              </button>
+              <button
+                type="button"
+                disabled={isBusy}
+                className={showTrash ? 'active' : ''}
+                onClick={() => {
+                  setShowTrash(true);
+                  setSelectedId(null);
+                  setQuery('');
+                }}
+              >
+                휴지통 ({trashFiles.length})
+              </button>
+            </div>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={showTrash ? '🔍 휴지통 파일명 검색' : '🔍 파일명 검색'}
+              aria-label="파일명 검색"
+              className="input min-w-[180px] flex-1"
+            />
+          </div>
+
+          <div className="drive-row drive-head">
+            <span>파일 이름</span>
+            <span>최근 수정</span>
+            <span>{showTrash ? '' : '연결'}</span>
+          </div>
+
+          {loading ? (
+            <div className="py-12 text-center text-[13px] text-[var(--muted)]">Google Drive 파일을 불러오는 중입니다...</div>
+          ) : visibleFiles.length === 0 ? (
+            <div className="py-12 text-center text-[13px] text-[var(--muted)]">
+              {query ? '검색 결과가 없습니다.' : showTrash ? '휴지통에 표시할 파일이 없습니다.' : '동기화된 파일이 없습니다.'}
+              {!query && !showTrash && (
+                <div className="mt-2">
+                  <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리에서 Drive 폴더 확인하기 →</Link>
+                </div>
+              )}
+            </div>
+          ) : (
+            visibleFiles.map((file) => {
+              const selected = selectedFile?.contentRefId === file.contentRefId;
+              const format = fileFormat(file);
+              const isWorkingFile = workingFileId === file.contentRefId;
+              return (
+                <button
+                  key={file.contentRefId}
+                  type="button"
+                  onClick={() => setSelectedId(file.contentRefId)}
+                  disabled={isBusy}
+                  aria-pressed={selected}
+                  className={`drive-row drive-item${selected ? ' selected' : ''}`}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className={`drive-ext ext-${format.toLowerCase()}`}>{format.slice(0, 4)}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[15px] font-bold">{file.title || '(제목 없음)'}</span>
+                      {file.syncFailed && <span className="text-xs text-[var(--warning)]">동기화 실패</span>}
+                    </span>
+                  </span>
+                  <span className="text-sm">{formatDate(file.lastModifiedAt)}</span>
+                  <span className="text-xs font-bold text-[var(--primary)]">
+                    {isWorkingFile
+                      ? working === 'delete'
+                        ? '삭제 중...'
+                        : working === 'restore'
+                          ? '복원 중...'
+                          : '처리 중...'
+                      : showTrash
+                        ? '복원 가능'
+                        : selected && !taskLoading
+                          ? `팀 작업 ${tasks.length}개`
+                          : ''}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* 파일 상세 */}
+        <aside className="card drive-side">
+          <strong className="text-[17px]">파일 상세</strong>
 
           {selectedFile ? (
             <>
-
-              {/* 파일 제목 */}
-
-              <h3 className="mt-4 break-all text-base font-bold">
-                {selectedFile.title || '(제목 없음)'}
-              </h3>
-
-              {/* 파일 형식 및 수정일 */}
-
-              <p className={`mt-2 text-xs ${MUTED}`}>
-                {fileFormat(selectedFile)}
-                {' · '}
-                {formatDate(
-                  selectedFile.lastModifiedAt,
-                )}
-              </p>
-
-              {/* 동기화 오류 */}
-
-              {selectedFile.syncFailed && (
-                <div className="mt-3 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-500">
-                  마지막 콘텐츠 갱신에 실패했습니다.
-                </div>
-              )}
-
-              {/* 파일 메타데이터 */}
-
-              <div className="mt-5 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-4">
-
-                <span className="text-[10px] font-bold uppercase text-indigo-500">
-                  파일 메타데이터
+              <div className="flex items-start gap-3">
+                <span className={`drive-ext ext-${fileFormat(selectedFile).toLowerCase()}`}>
+                  {fileFormat(selectedFile).slice(0, 4)}
                 </span>
-
-                <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-relaxed">
-                  {fileDescription(selectedFile) ||
-                    '파일 본문 메타데이터가 없습니다.'}
-                </p>
-
+                <div className="min-w-0">
+                  <div className="break-all text-base font-bold">{selectedFile.title || '(제목 없음)'}</div>
+                  <div className="text-[13px] text-[var(--muted)]">
+                    {fileFormat(selectedFile)} · 수정 {formatDate(selectedFile.lastModifiedAt)}
+                  </div>
+                </div>
               </div>
 
-              {/* ------------------------------------- */}
-              {/* 미리보기 및 다운로드 */}
-              {/* ------------------------------------- */}
+              {selectedFile.syncFailed && (
+                <div className="alert alert-error small">마지막 콘텐츠 갱신에 실패했습니다.</div>
+              )}
+
+              <div className="drive-meta">
+                <div className="mb-1 text-xs font-bold text-[var(--primary)]">파일 정보</div>
+                <p className="m-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+                  {fileDescription(selectedFile) || '파일 본문 메타데이터가 없습니다.'}
+                </p>
+              </div>
 
               {!showTrash && (
-                <div className="mt-5 grid grid-cols-2 gap-2">
-
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    disabled={
-                      isBusy ||
-                      !canPreviewDriveFile(selectedFile)
-                    }
-                    onClick={() =>
-                      openPreview(selectedFile)
-                    }
-                    className={`${BTN_SUB} text-center`}
+                    disabled={isBusy || !canPreviewDriveFile(selectedFile)}
+                    onClick={() => openPreview(selectedFile)}
+                    className="btn !h-11"
                     title={
                       canPreviewDriveFile(selectedFile)
                         ? 'ToGather에서 파일 미리보기'
                         : '이 파일 형식은 미리보기를 지원하지 않습니다.'
                     }
                   >
-                    👁 미리보기
+                    ↗ 크게 보기
                   </button>
-
                   <a
-                    href={
-                      getDriveDownloadUrl(
-                        workspaceId,
-                        selectedFile.contentRefId,
-                      )
-                    }
-                    className={`${BTN_PRIMARY} text-center`}
+                    href={getDriveDownloadUrl(workspaceId, selectedFile.contentRefId)}
+                    className="btn btn-primary !h-11"
                     aria-label="파일 다운로드"
                   >
                     ⬇ 다운로드
                   </a>
-
                 </div>
               )}
-
-              {/* ------------------------------------- */}
-              {/* 관련 Task */}
-              {/* ------------------------------------- */}
 
               {!showTrash && (
-                <div className="mt-5 border-t border-slate-200 pt-4 dark:border-white/10">
-
-                  <h4 className="m-0 text-xs font-bold">
-                    🔗 연결된 Task
-                  </h4>
-
+                <div className="flex flex-col gap-2 border-t border-[var(--border-soft)] pt-4">
+                  <div className="flex items-center gap-1.5">
+                    <strong className="text-[15px]">연결된 Task</strong>
+                    <span className="badge">{tasks.length}</span>
+                  </div>
                   {taskLoading ? (
-                    <p className={`mt-3 text-xs ${MUTED}`}>
-                      Task를 불러오는 중입니다...
-                    </p>
+                    <p className="m-0 text-[13px] text-[var(--muted)]">팀 작업을 불러오는 중입니다...</p>
                   ) : taskError ? (
-                    <p className="mt-3 text-xs text-rose-500">
-                      {taskError}
-                    </p>
+                    <p className="m-0 text-[13px] text-[var(--danger)]">{taskError}</p>
                   ) : tasks.length === 0 ? (
-                    <p className={`mt-3 text-xs ${MUTED}`}>
-                      연결된 Task가 없습니다.
-                    </p>
+                    <p className="m-0 text-[13px] text-[var(--muted)]">연결된 팀 작업이 없습니다.</p>
                   ) : (
-                    <div className="mt-3 space-y-2">
-
-                      {tasks.map(task => (
-                        <div
-                          key={task.taskId}
-                          className={`${SUB_CARD} p-3 text-xs`}
-                        >
-
-                          <p className="m-0 font-bold">
-                            {task.title}
-                          </p>
-
-                          <p className={`mt-2 ${MUTED}`}>
-                            {task.status === 'DONE'
-                              ? '완료'
-                              : '진행 중'}
-                            {' · '}
-                            진행률 {task.progress}%
-                          </p>
-
+                    tasks.map((task) => (
+                      <Link
+                        key={task.taskId}
+                        to={`/workspaces/${workspaceId}/tasks/${task.taskId}`}
+                        className="notion-task !p-3"
+                      >
+                        <strong className="text-sm text-[var(--text)]">☑ {task.title}</strong>
+                        <div className="mt-1 flex items-center gap-2 text-xs">
+                          <span className={`badge ${task.status === 'DONE' ? 'badge-success' : 'badge-primary'}`}>
+                            {task.status === 'DONE' ? '완료' : '진행 중'}
+                          </span>
+                          <span className="text-[var(--muted)]">진행률 {task.progress}%</span>
                         </div>
-                      ))}
-
-                    </div>
+                      </Link>
+                    ))
                   )}
-
-                  <Link
-                    to={`/workspaces/${workspaceId}/tasks`}
-                    className="mt-4 inline-block text-xs font-bold text-indigo-500 hover:underline"
-                  >
-                    Task 목록으로 이동 →
-                  </Link>
-
                 </div>
               )}
 
-              {/* ------------------------------------- */}
-              {/* 파일 삭제 / 복원 */}
-              {/* ------------------------------------- */}
-
-              <div className="mt-5 border-t border-slate-200 pt-4 dark:border-white/10">
-
+              <div className="border-t border-[var(--border-soft)] pt-4">
                 {showTrash ? (
                   <>
-
-                    <p className={`mb-3 text-xs ${MUTED}`}>
-                      휴지통에 있는 파일입니다.
-                      복원하면 일반 파일 목록에 다시 표시됩니다.
+                    <p className="mb-3 text-[13px] text-[var(--muted)]">
+                      휴지통에 있는 파일입니다. 복원하면 일반 파일 목록에 다시 표시됩니다.
                     </p>
-
                     <button
                       type="button"
                       disabled={isBusy}
-                      className={BTN_PRIMARY}
-                      onClick={() =>
-                        void handleRestore(
-                          selectedFile,
-                        )
-                      }
+                      className="btn btn-primary w-full"
+                      onClick={() => void handleRestore(selectedFile)}
                     >
-                      {working === 'restore'
-                        ? '복원 중...'
-                        : '↩ Google Drive에서 복원'}
+                      {working === 'restore' ? '복원 중...' : '↩ Google Drive에서 복원'}
                     </button>
-
                   </>
                 ) : (
-                  <>
-
-                    <p className={`mb-3 text-xs ${MUTED}`}>
-                      파일 삭제 시 Google Drive 휴지통으로
-                      이동하며, 영구 삭제되지 않습니다.
-                    </p>
-
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() =>
-                        void handleDelete(
-                          selectedFile,
-                        )
-                      }
-                      className="text-xs font-bold text-rose-500 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {working === 'delete'
-                        ? '삭제 중...'
-                        : '🗑 휴지통으로 이동'}
-                    </button>
-
-                  </>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void handleDelete(selectedFile)}
+                    className="btn btn-danger !h-11 w-full"
+                    title="Google Drive 휴지통으로 이동하며, 영구 삭제되지 않습니다."
+                  >
+                    {working === 'delete' ? '삭제 중...' : '🗑 휴지통으로 이동'}
+                  </button>
                 )}
-
               </div>
-
             </>
           ) : (
-
-            <div className="py-12 text-center">
-
-              <div className="mb-3 text-3xl">
-                📄
-              </div>
-
-              <p className={`text-xs ${MUTED}`}>
-                왼쪽에서 파일을 선택하면
-                상세 정보가 표시됩니다.
-              </p>
-
+            <div className="py-12 text-center text-[13px] text-[var(--muted)]">
+              왼쪽에서 파일을 선택하면 상세 정보가 표시됩니다.
             </div>
           )}
-
         </aside>
       </div>
 
-      {/* ============================================= */}
       {/* Drive 동기화 상태 */}
-      {/* ============================================= */}
-
-      {statuses.length > 0 && (
-        <div className={`${CARD} space-y-3 p-5`}>
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
-
-            <h3 className="m-0 text-xs font-bold">
-              Drive 동기화 상태
-            </h3>
-
-            <span className={`text-[11px] ${MUTED}`}>
-              화면 자동 조회: 60초 간격
-            </span>
-
-          </div>
-
-          <div className="space-y-2">
-
-            {statuses.map(status => (
-
-              <div
-                key={status.targetId}
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl p-3 text-xs ${MUTED} bg-slate-50 dark:bg-white/5`}
-              >
-
-                <span
-                  className="max-w-[65%] truncate"
-                  title={status.targetId}
-                >
-                  폴더 ID: {status.targetId}
-                </span>
-
-                <span
-                  className={
-                    status.failed
-                      ? 'font-bold text-rose-500'
-                      : 'font-bold text-emerald-500'
-                  }
-                >
-                  {status.failed
-                    ? '동기화 실패'
-                    : '정상'}
-                </span>
-
-                <span>
-                  {formatDate(
-                    status.lastSyncedAt,
-                  )}
-                </span>
-
-                {status.failed && status.lastError && (
-                  <p className="w-full text-rose-500">
-                    {status.lastError}
-                  </p>
-                )}
-
+      {statuses.some((s) => s.failed) && (
+        <div className="card flex flex-col gap-2">
+          <strong className="text-sm">동기화에 실패한 폴더</strong>
+          {statuses
+            .filter((s) => s.failed)
+            .map((status) => (
+              <div key={status.targetId} className="text-[13px] text-[var(--danger)]">
+                폴더 {status.targetId} · {formatDate(status.lastSyncedAt)}
+                {status.lastError && ` · ${status.lastError}`}
               </div>
-
             ))}
-
-          </div>
         </div>
       )}
 
-      {/* ============================================= */}
       {/* 파일 미리보기 모달 */}
-      {/* ============================================= */}
-
       {previewFile && (
         <div
           role="presentation"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={event => {
-            if (
-              event.target === event.currentTarget
-            ) {
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
               setPreviewFile(null);
             }
           }}
         >
-
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Google Drive 파일 미리보기"
-            className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900"
+            className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-[var(--surface)] shadow-2xl"
           >
-
-            {/* 모달 헤더 */}
-
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-white/10">
-
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] p-4">
               <div className="min-w-0">
-
-                <h3 className="truncate text-sm font-bold">
-                  {previewFile.title || '(제목 없음)'}
-                </h3>
-
-                <p className={`mt-1 text-xs ${MUTED}`}>
-                  Google Drive 파일 미리보기
-                </p>
-
+                <h3 className="m-0 truncate text-sm font-bold">{previewFile.title || '(제목 없음)'}</h3>
+                <p className={`m-0 mt-1 text-xs ${MUTED}`}>Google Drive 파일 미리보기</p>
               </div>
-
               <div className="flex shrink-0 items-center gap-2">
-
                 <a
-                  href={
-                    getDrivePreviewUrl(
-                      workspaceId,
-                      previewFile.contentRefId,
-                    )
-                  }
+                  href={getDrivePreviewUrl(workspaceId, previewFile.contentRefId)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={BTN_SUB}
+                  className="btn"
                 >
                   새 탭
                 </a>
-
                 <button
                   type="button"
-                  onClick={() =>
-                    setPreviewFile(null)
-                  }
-                  className={BTN_PRIMARY}
+                  onClick={() => setPreviewFile(null)}
+                  className="btn btn-primary"
                   aria-label="미리보기 닫기"
                 >
                   닫기 ✕
                 </button>
-
               </div>
-
             </div>
-
-            {/* 파일 본문 */}
-
-            <div className="min-h-0 flex-1 bg-slate-100 dark:bg-slate-950">
-
+            <div className="min-h-0 flex-1 bg-[var(--surface-2)]">
               <iframe
                 key={previewFile.contentRefId}
-                src={
-                  getDrivePreviewUrl(
-                    workspaceId,
-                    previewFile.contentRefId,
-                  )
-                }
-                title={
-                  `${previewFile.title || '파일'} 미리보기`
-                }
+                src={getDrivePreviewUrl(workspaceId, previewFile.contentRefId)}
+                title={`${previewFile.title || '파일'} 미리보기`}
                 className="h-full w-full border-0"
                 referrerPolicy="no-referrer"
               />
-
             </div>
-
           </div>
         </div>
       )}
-
     </section>
   );
 }

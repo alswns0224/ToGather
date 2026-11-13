@@ -19,6 +19,7 @@ import com.togather.common.enums.SuggestionStatus;
 import com.togather.common.enums.SuggestionType;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
+import com.togather.content.calendar.dto.CalendarEventRequest;
 import com.togather.content.calendar.dto.PersonalEventRequest;
 import com.togather.content.calendar.service.CalendarContentService;
 import com.togather.content.domain.ContentRef;
@@ -179,6 +180,12 @@ public class SuggestionService {
     /** 일정 후보를 개인 캘린더에 등록하고 승인한다. 시간이 미정이면 먼저 일시를 정해야 한다. */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Long approveSchedule(Long workspaceId, Long userId, Long suggestionId) {
+        return approveSchedule(workspaceId, userId, suggestionId, null);
+    }
+
+    /** endAt이 없으면 1시간짜리 일정으로 등록한다. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Long approveSchedule(Long workspaceId, Long userId, Long suggestionId, LocalDateTime endAt) {
         Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
         if (suggestion.getType() != SuggestionType.SCHEDULE) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -187,7 +194,30 @@ public class SuggestionService {
             throw new BusinessException(ErrorCode.SUGGESTION_TIME_REQUIRED);
         }
         ContentRefDTO event = calendarContentService.createPersonalEvent(workspaceId, userId,
-                buildEventData(suggestion));
+                buildEventData(suggestion, endAt));
+        suggestion.approveAsEvent(event.contentRefId());
+        suggestionRepository.save(suggestion);
+        return event.contentRefId();
+    }
+
+    /**
+     * 일정 후보를 팀 캘린더에 등록하고 승인한다. 참여자를 비우면 승인한 사람만 참여자로 넣는다.
+     * 팀원 모두가 일정 화면에서 보게 된다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Long approveTeamSchedule(Long workspaceId, Long userId, Long suggestionId, List<Long> participantIds,
+                                    LocalDateTime endAt) {
+        Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
+        if (suggestion.getType() != SuggestionType.SCHEDULE) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        if (suggestion.getDetectedDatetime() == null) {
+            throw new BusinessException(ErrorCode.SUGGESTION_TIME_REQUIRED);
+        }
+        List<Long> participants = participantIds == null || participantIds.isEmpty() ? List.of(userId) : participantIds;
+        ContentRefDTO event = calendarContentService.createContent(workspaceId, userId,
+                new CalendarEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), endAt, participants,
+                        "AI 업무 보조에서 찾은 일정입니다."));
         suggestion.approveAsEvent(event.contentRefId());
         suggestionRepository.save(suggestion);
         return event.contentRefId();
@@ -204,6 +234,23 @@ public class SuggestionService {
                 suggestion.getDueDate(), suggestion.getSourceContentRefId()));
         suggestion.approveAsPersonalTask(task.getPersonalTaskId());
         return task.getPersonalTaskId();
+    }
+
+    /**
+     * 할 일 후보를 팀 Task로 등록하고 승인한다. 담당자를 정하지 않으면 승인한 사람이 맡는다.
+     * 팀원 모두가 Task 목록에서 보게 된다.
+     */
+    @Transactional
+    public Long approveTeamTask(Long workspaceId, Long userId, Long suggestionId, Long assigneeId) {
+        Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
+        if (suggestion.getType() != SuggestionType.TASK) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        Long taskId = taskGateway.createTask(workspaceId, new TaskGateway.FollowUpTask(suggestion.getTitle(),
+                "AI 업무 보조에서 찾은 할 일입니다.", assigneeId != null ? assigneeId : userId,
+                suggestion.getDueDate(), null));
+        suggestion.approveAsTeamTask(taskId);
+        return taskId;
     }
 
     /** 무시하면 목록에서 사라지고, 같은 메시지에서 다시 추출하지 않는다. */
@@ -318,9 +365,9 @@ public class SuggestionService {
         return title == null ? "" : title.toLowerCase().replaceAll("[\\s\\p{Punct}]", "");
     }
 
-    /** 명세서 buildEventData: 일정은 1시간으로 등록한다. */
-    private static PersonalEventRequest buildEventData(Suggestion suggestion) {
-        return new PersonalEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), null);
+    /** 명세서 buildEventData: 끝 시각을 정하지 않으면 1시간으로 등록한다. */
+    private static PersonalEventRequest buildEventData(Suggestion suggestion, LocalDateTime endAt) {
+        return new PersonalEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), endAt);
     }
 
     private List<Suggestion> saveNew(Long userId, List<Suggestion> suggestions) {

@@ -48,6 +48,9 @@ public class Suggestion extends BaseTimeEntity {
 
     private Long createdPersonalTaskId;
 
+    /** 팀 Task로 승인했으면 만든 Task */
+    private Long createdTaskId;
+
     public Suggestion(Long ownerUserId, SuggestionType type, Long sourceContentRefId, String title,
                       LocalDateTime detectedDatetime, LocalDate dueDate) {
         this.ownerUserId = ownerUserId;
@@ -72,6 +75,11 @@ public class Suggestion extends BaseTimeEntity {
 
     public void approveAsPersonalTask(Long createdPersonalTaskId) {
         this.createdPersonalTaskId = createdPersonalTaskId;
+        this.status = SuggestionStatus.APPROVED;
+    }
+
+    public void approveAsTeamTask(Long createdTaskId) {
+        this.createdTaskId = createdTaskId;
         this.status = SuggestionStatus.APPROVED;
     }
 

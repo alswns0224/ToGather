@@ -4,9 +4,9 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { search, type SearchItem, type SearchProvider, type SearchResponse } from './api';
 import { ApiError } from '../../api/client';
 import PageHeader from '../../components/PageHeader';
-import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
-import { Empty, ErrorBox, Loading } from '../../components/Status';
-import { BTN_AI, CARD, INPUT, MUTED, SUB_CARD } from '../../components/ui';
+import { ErrorBox } from '../../components/Status';
+import { MUTED } from '../../components/ui';
+import NavIcon from '../../layouts/NavIcon';
 import { formatDateTime } from '../../utils/date';
 
 const PROVIDERS: { key: SearchProvider; label: string }[] = [
@@ -56,45 +56,32 @@ export default function SearchPage() {
     update(input, providers);
   };
 
-  const toggle = (key: SearchProvider) =>
-    update(query, providers.includes(key) ? providers.filter((p) => p !== key) : [...providers, key]);
+  const only = (key: SearchProvider | null) => update(query, key ? [key] : []);
+  const activeTab = providers.length === 1 ? providers[0] : null;
 
   return (
-    <section className="space-y-6">
+    <section className="stack">
       <PageHeader
-        eyebrow="SEMANTIC SEARCH"
+        icon={<NavIcon name="search" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="통합 검색"
-        description="Slack · Notion · Drive에 흩어진 내용을 키워드가 아니라 문맥으로 찾습니다. (BGE-M3 임베딩 · Chroma)"
+        description="대화·문서·파일을 키워드가 아니라 문맥으로 찾아요. (BGE-M3 임베딩 · Chroma)"
       />
 
-      <form onSubmit={submit} className={`${CARD} space-y-4 p-6`}>
-        <div className="flex gap-2">
-          <input
-            className={INPUT}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="예: 발표 담당은 누구로 정했지?"
-            maxLength={200}
-            autoFocus
-          />
-          <button type="submit" className={`${BTN_AI} flex-shrink-0`} disabled={!input.trim()}>
-            🔍 검색
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`text-xs ${MUTED}`}>출처</span>
-          <button
-            type="button"
-            onClick={() => update(query, [])}
-            className={chip(providers.length === 0)}
-          >
+      <form onSubmit={submit} className="card flex flex-col gap-3">
+        <input
+          className="input !h-[42px] !text-[15px]"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="검색어를 입력하고 Enter (예: 발표 담당은 누구로 정했지?)"
+          maxLength={200}
+          autoFocus
+        />
+        <div className="segmented self-start">
+          <button type="button" className={activeTab === null ? 'active' : ''} onClick={() => only(null)}>
             전체
           </button>
           {PROVIDERS.map((p) => (
-            <button key={p.key} type="button" onClick={() => toggle(p.key)} className={chip(providers.includes(p.key))}>
-              <span className="inline-block h-4 w-4">
-                <ServiceLogo service={PROVIDER_LOGO[p.key]} />
-              </span>
+            <button key={p.key} type="button" className={activeTab === p.key ? 'active' : ''} onClick={() => only(p.key)}>
               {p.label}
             </button>
           ))}
@@ -102,11 +89,11 @@ export default function SearchPage() {
       </form>
 
       {!query.trim() ? (
-        <div className={`${CARD} space-y-3 p-6`}>
-          <p className="m-0 text-sm font-bold">이렇게 물어보세요</p>
+        <div className="card flex flex-col gap-3">
+          <strong className="text-sm">이렇게 물어보세요</strong>
           <div className="flex flex-wrap gap-2">
             {EXAMPLES.map((ex) => (
-              <button key={ex} type="button" className={chip(false)} onClick={() => update(ex, providers)}>
+              <button key={ex} type="button" className="search-example" onClick={() => update(ex, providers)}>
                 {ex}
               </button>
             ))}
@@ -116,7 +103,7 @@ export default function SearchPage() {
           </p>
         </div>
       ) : state.loading ? (
-        <Loading text="검색하는 중..." />
+        <div className="card text-sm">의미 기반 벡터 검색 중...</div>
       ) : state.error ? (
         <ErrorBox
           error={
@@ -135,72 +122,63 @@ export default function SearchPage() {
 
 function Results({ workspaceId, data }: { workspaceId: string; data: SearchResponse }) {
   return (
-    <div className="space-y-3">
+    <>
       <p className={`m-0 text-xs ${MUTED}`}>
         "{data.query}" 검색 결과 {data.items.length}건
         {data.pending > 0 && ` · 아직 검색에 반영 중인 콘텐츠 ${data.pending}건`}
       </p>
-      {data.items.length === 0 ? (
-        <Empty>
-          관련된 내용을 찾지 못했습니다. 다른 표현으로 물어보거나 출처 필터를 풀어 보세요.
-          {data.pending > 0 && ' 최근 내용은 1~2분 뒤 검색됩니다.'}
-        </Empty>
-      ) : (
-        data.items.map((item) => <ResultCard key={item.contentRefId} workspaceId={workspaceId} item={item} />)
-      )}
-    </div>
+      <div className="card overflow-hidden !p-0">
+        {data.items.length === 0 ? (
+          <div className="p-8 text-center text-sm text-[var(--muted)]">
+            검색 결과가 없습니다. 다른 표현으로 물어보거나 출처를 "전체"로 바꿔 보세요.
+            {data.pending > 0 && ' 최근 내용은 1~2분 뒤 검색됩니다.'}
+          </div>
+        ) : (
+          data.items.map((item) => <ResultRow key={item.contentRefId} workspaceId={workspaceId} item={item} />)
+        )}
+      </div>
+    </>
   );
 }
 
-function ResultCard({ workspaceId, item }: { workspaceId: string; item: SearchItem }) {
+function ResultRow({ workspaceId, item }: { workspaceId: string; item: SearchItem }) {
   const label = PROVIDERS.find((p) => p.key === item.provider)?.label ?? item.provider;
   return (
-    <article className={`${CARD} space-y-2 p-5`}>
-      <div className="flex items-center gap-2">
-        <span className="inline-block h-6 w-6 flex-shrink-0">
-          <ServiceLogo service={PROVIDER_LOGO[item.provider]} />
-        </span>
-        <strong className="min-w-0 truncate text-sm">{item.title || label}</strong>
-        <span className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-bold text-indigo-500">
-          관련도 {Math.round(item.score * 100)}%
-        </span>
-        <span className="flex-1" />
-        <span className={`flex-shrink-0 text-[11px] ${MUTED}`}>
+    <article className="search-row">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="badge badge-primary flex-shrink-0">{label}</span>
+          <strong className="truncate text-[15px]">{item.title || label}</strong>
+          <span className="flex-shrink-0 text-[11px] font-bold text-[var(--muted)]">
+            관련도 {Math.round(item.score * 100)}%
+          </span>
+        </div>
+        <span className="flex-shrink-0 text-xs text-[var(--muted)]">
           {item.authorName && `${item.authorName} · `}
           {item.createdAt && formatDateTime(item.createdAt)}
         </span>
       </div>
-      {item.snippet && <p className="m-0 text-sm leading-relaxed">{item.snippet}</p>}
-      <div className="flex flex-wrap items-center gap-2">
-        {item.tasks.map((t) => (
-          <Link
-            key={t.taskId}
-            to={`/workspaces/${workspaceId}/tasks/${t.taskId}`}
-            className={`${SUB_CARD} px-2.5 py-1 text-[11px] font-bold no-underline`}
-          >
-            ✅ {t.title}
-          </Link>
-        ))}
-        <span className="flex-1" />
-        {item.appPath && (
-          <Link to={`/workspaces/${workspaceId}${item.appPath}`} className="text-xs font-bold">
-            ToGather에서 열기
-          </Link>
-        )}
-        {item.deepLink && (
-          <a href={item.deepLink} target="_blank" rel="noreferrer" className="text-xs">
-            {label}에서 보기
-          </a>
-        )}
-      </div>
+      {item.snippet && <div className="text-[13px] text-[var(--muted)]">{item.snippet}</div>}
+      {(item.tasks.length > 0 || item.appPath || item.deepLink) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {item.tasks.map((t) => (
+            <Link key={t.taskId} to={`/workspaces/${workspaceId}/tasks/${t.taskId}`} className="badge no-underline">
+              ☑ {t.title}
+            </Link>
+          ))}
+          <span className="flex-1" />
+          {item.appPath && (
+            <Link to={`/workspaces/${workspaceId}${item.appPath}`} className="font-bold">
+              ToGather에서 열기
+            </Link>
+          )}
+          {item.deepLink && (
+            <a href={item.deepLink} target="_blank" rel="noreferrer">
+              {label}에서 보기
+            </a>
+          )}
+        </div>
+      )}
     </article>
   );
-}
-
-function chip(active: boolean) {
-  return `inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${
-    active
-      ? 'border-indigo-500 bg-indigo-600 text-white'
-      : 'border-slate-200/70 bg-slate-50/90 text-slate-700 hover:border-indigo-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200'
-  }`;
 }

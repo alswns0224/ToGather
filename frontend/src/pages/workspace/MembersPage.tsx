@@ -15,7 +15,9 @@ import { useAsync } from '../../hooks/useAsync';
 import { useLoginUser } from '../../components/RequireAuth';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import { formatDateTime } from '../../utils/date';
-import { BTN_AI, BTN_DANGER, BTN_PRIMARY, BTN_SUB, CARD, EYEBROW, INPUT, MUTED, SUB_CARD } from '../../components/ui';
+import { BTN_AI, BTN_DANGER, CARD, INPUT, MUTED } from '../../components/ui';
+import PageHeader from '../../components/PageHeader';
+import NavIcon from '../../layouts/NavIcon';
 
 export default function MembersPage() {
   const { workspaceId = '' } = useParams();
@@ -37,39 +39,56 @@ export default function MembersPage() {
   };
 
   return (
-    <section className="mx-auto max-w-5xl space-y-6">
-      <div className={`${CARD} p-7`}>
-        <span className={EYEBROW}>TEAM</span>
-        <h1 className="mt-2 !text-2xl">{workspace.data?.name ?? '팀원'}</h1>
-        {workspace.data?.description && <p className={`m-0 mt-1 text-xs ${MUTED}`}>{workspace.data.description}</p>}
-        {isOwner && <InviteLinkBox workspaceId={workspaceId} />}
-      </div>
+    <section className="stack">
+      <PageHeader
+        icon={<NavIcon name="members" className="h-[22px] w-[22px] text-[var(--primary)]" />}
+        title="팀원 관리"
+        description={
+          isOwner
+            ? '초대 링크를 만들어 팀원을 초대하고 역할을 관리합니다.'
+            : `${workspace.data?.name ?? ''} 팀원 목록입니다. 초대와 내보내기는 팀장만 할 수 있어요.`
+        }
+        actions={isOwner ? <InviteActions workspaceId={workspaceId} /> : undefined}
+      />
 
       {actionError && <ErrorBox error={actionError} />}
       {members.loading && <Loading />}
       {members.error && <ErrorBox error={members.error} onRetry={members.reload} />}
       {members.data && members.data.length === 0 && <Empty>팀원이 없습니다.</Empty>}
       {members.data && members.data.length > 0 && (
-        <div className={`${CARD} grid grid-cols-1 gap-3 p-6 md:grid-cols-2`}>
+        <div className="card overflow-hidden !p-0">
+          <div className="members-row members-head">
+            <span>이름 / 이메일</span>
+            <span>참여일</span>
+            <span>역할</span>
+            <span>관리</span>
+          </div>
           {members.data.map((m) => (
-            <div key={m.userId} className={`${SUB_CARD} flex items-center justify-between gap-3 p-4`}>
+            <div key={m.userId} className="members-row">
               <div className="flex min-w-0 items-center gap-3">
                 <Avatar name={m.name} src={m.profileImage} />
                 <div className="min-w-0">
-                  <p className="m-0 text-sm font-bold">
-                    {m.name}{' '}
-                    <span className="text-[10px] text-indigo-500">
-                      ({m.role === 'OWNER' ? '팀장' : '팀원'}){m.userId === user.userId && ' · 나'}
-                    </span>
-                  </p>
-                  <p className={`m-0 truncate text-xs ${MUTED}`}>{m.email}</p>
+                  <div className="text-[15px] font-bold">{m.name}</div>
+                  <div className="truncate text-[13px] text-[var(--muted)]">{m.email}</div>
                 </div>
               </div>
-              {isOwner && m.role !== 'OWNER' && (
-                <button className={BTN_DANGER} onClick={() => remove(m.userId, m.name)}>
-                  내보내기
-                </button>
-              )}
+              <span className="text-sm">{formatDateTime(m.joinedAt)}</span>
+              <span>
+                <span className={`badge ${m.role === 'OWNER' ? 'badge-primary' : ''}`}>
+                  {m.role === 'OWNER' ? '관리자' : '구성원'}
+                </span>
+              </span>
+              <span>
+                {m.userId === user.userId ? (
+                  <span className="text-[13px] text-[var(--muted)]">본인</span>
+                ) : isOwner && m.role !== 'OWNER' ? (
+                  <button type="button" className="btn btn-danger btn-small" onClick={() => remove(m.userId, m.name)}>
+                    내보내기
+                  </button>
+                ) : (
+                  <span className="text-[13px] text-[var(--muted)]">-</span>
+                )}
+              </span>
             </div>
           ))}
         </div>
@@ -87,63 +106,57 @@ export default function MembersPage() {
   );
 }
 
-function InviteLinkBox({ workspaceId }: { workspaceId: string }) {
+/** 머리 오른쪽: 초대 링크 복사(없으면 만들어서 복사) · 새 링크 만들기 */
+function InviteActions({ workspaceId }: { workspaceId: string }) {
   const active = useAsync(() => getActiveInviteLink(workspaceId), [workspaceId]);
   const [link, setLink] = useState<InviteLinkResponse | null>(null);
-  const [error, setError] = useState<Error>();
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const current = link ?? active.data ?? null;
 
   const create = async () => {
-    setError(undefined);
+    setError(null);
     try {
-      setLink(await createInviteLink(workspaceId));
-      setCopied(false);
+      const next = await createInviteLink(workspaceId);
+      setLink(next);
+      return next;
     } catch (err) {
-      setError(err as Error);
+      setError((err as Error).message);
+      return null;
     }
   };
 
   const copy = async () => {
-    if (!current) return;
-    await navigator.clipboard.writeText(current.url);
-    setCopied(true);
+    const target = current ?? (await create());
+    if (!target) return;
+    try {
+      await navigator.clipboard.writeText(target.url);
+      setCopied(true);
+    } catch {
+      window.prompt('초대 링크를 복사하세요.', target.url);
+    }
   };
 
   return (
-    <div className={`${SUB_CARD} mt-5 flex flex-wrap items-center justify-between gap-3 p-4`}>
-      {active.loading && <Loading />}
-      {error && <ErrorBox error={error} />}
-      {current ? (
-        <>
-          <div className="min-w-0 flex-1">
-            <p className="m-0 text-xs font-bold">🔗 팀원 초대 링크 (만료: {formatDateTime(current.expiresAt)})</p>
-            <input
-              className="mt-1 w-full border-0 bg-transparent p-0 text-xs font-bold text-indigo-500 outline-none"
-              readOnly
-              value={current.url}
-              onFocus={(e) => e.target.select()}
-            />
-          </div>
-          <div className="flex gap-2">
-            <button className={BTN_SUB} onClick={create}>
-              새 링크
-            </button>
-            <button className={BTN_PRIMARY} onClick={copy}>
-              {copied ? '복사됨 ✓' : '링크 복사'}
-            </button>
-          </div>
-        </>
-      ) : (
-        !active.loading && (
-          <>
-            <p className={`m-0 text-xs ${MUTED}`}>🔗 초대 링크를 만들어 팀원에게 보내세요. (7일간 유효)</p>
-            <button className={BTN_PRIMARY} onClick={create}>
-              초대 링크 만들기
-            </button>
-          </>
-        )
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex gap-2">
+        <button type="button" className="btn" onClick={copy}>
+          {copied ? '복사됨 ✓' : '초대 링크 복사'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={async () => {
+            if ((await create()) !== null) setCopied(false);
+          }}
+        >
+          새 초대 링크 만들기
+        </button>
+      </div>
+      {current && (
+        <span className="text-[11px] text-[var(--muted)]">초대 링크 만료 {formatDateTime(current.expiresAt)}</span>
       )}
+      {error && <span className="text-[11px] text-[var(--danger)]">{error}</span>}
     </div>
   );
 }
@@ -177,7 +190,7 @@ function WorkspaceSettings({
 
   const remove = async () => {
     const typed = window.prompt(
-      `워크스페이스와 모든 데이터(Task, 회의, 연동)가 삭제됩니다.\n삭제하려면 워크스페이스 이름 "${initial.name}"을 입력하세요.`,
+      `워크스페이스와 모든 데이터(팀 작업, 회의, 연동)가 삭제됩니다.\n삭제하려면 워크스페이스 이름 "${initial.name}"을 입력하세요.`,
     );
     if (typed !== initial.name) return;
     try {
@@ -189,8 +202,8 @@ function WorkspaceSettings({
   };
 
   return (
-    <form className={`${CARD} space-y-4 p-7`} onSubmit={save}>
-      <h2 className="!text-xl">워크스페이스 설정 (팀장)</h2>
+    <form className={`${CARD} space-y-4 p-5`} onSubmit={save}>
+      <strong className="text-[15px]">워크스페이스 설정 (팀장)</strong>
       <label className="block">
         <span className={`mb-1 block text-xs font-bold ${MUTED}`}>이름</span>
         <input
@@ -230,10 +243,8 @@ function WorkspaceSettings({
 
 function Avatar({ name, src }: { name: string; src: string | null }) {
   return src ? (
-    <img className="h-10 w-10 flex-shrink-0 rounded-full object-cover ring-2 ring-white dark:ring-slate-900" src={src} alt="" referrerPolicy="no-referrer" />
+    <img className="h-9 w-9 flex-shrink-0 rounded-full object-cover" src={src} alt="" referrerPolicy="no-referrer" />
   ) : (
-    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white ring-2 ring-white dark:ring-slate-900">
-      {name.slice(0, 2)}
-    </span>
+    <span className="tg-avatar !h-9 !w-9 !text-sm">{name.slice(0, 1)}</span>
   );
 }
