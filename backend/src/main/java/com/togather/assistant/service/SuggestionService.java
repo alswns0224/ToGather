@@ -206,6 +206,23 @@ public class SuggestionService {
         return task.getPersonalTaskId();
     }
 
+    /**
+     * 할 일 후보를 팀 Task로 등록하고 승인한다. 담당자를 정하지 않으면 승인한 사람이 맡는다.
+     * 팀원 모두가 Task 목록에서 보게 된다.
+     */
+    @Transactional
+    public Long approveTeamTask(Long workspaceId, Long userId, Long suggestionId, Long assigneeId) {
+        Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
+        if (suggestion.getType() != SuggestionType.TASK) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        Long taskId = taskGateway.createTask(workspaceId, new TaskGateway.FollowUpTask(suggestion.getTitle(),
+                "AI 업무 보조에서 찾은 할 일입니다.", assigneeId != null ? assigneeId : userId,
+                suggestion.getDueDate(), null));
+        suggestion.approveAsTeamTask(taskId);
+        return taskId;
+    }
+
     /** 무시하면 목록에서 사라지고, 같은 메시지에서 다시 추출하지 않는다. */
     @Transactional
     public void dismissSuggestion(Long workspaceId, Long userId, Long suggestionId) {

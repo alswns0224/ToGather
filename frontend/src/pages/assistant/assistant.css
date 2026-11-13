@@ -56,3 +56,13 @@
     grid-template-columns: 1fr;
   }
 }
+
+.assistant-target {
+  display: flex;
+  width: 100%;
+}
+
+.assistant-target > button {
+  flex: 1;
+  min-height: 40px;
+}

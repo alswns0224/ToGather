@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router';
 import {
   approveSchedule,
   approveTask,
+  approveTeamTask,
   completePersonalTask,
   createPersonalTask,
   deletePersonalTask,
@@ -18,6 +19,8 @@ import {
   type SuggestionDTO,
 } from './api';
 import { ApiError } from '../../api/client';
+import { getMembers, type MemberResponse } from '../workspace/api';
+import { useLoginUser } from '../../components/RequireAuth';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
@@ -33,6 +36,8 @@ export default function AssistantPage() {
   const [tab, setTab] = useState<Tab>('SCHEDULE');
   const suggestions = useAsync(() => getSuggestions(workspaceId), [workspaceId]);
   const todos = useAsync(() => getMyTodoList(workspaceId), [workspaceId]);
+  const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
+  const [approved, setApproved] = useState<{ text: string; to: string | null; tab?: Tab } | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -92,6 +97,21 @@ export default function AssistantPage() {
         }
       />
       {notice && <div className={`alert ${notice.ok ? 'alert-success' : 'alert-error'}`}>{notice.text}</div>}
+      {approved && (
+        <div className="alert alert-success">
+          <span>{approved.text}</span>
+          {approved.tab && (
+            <button type="button" className="btn btn-small" onClick={() => { setTab(approved.tab!); setApproved(null); }}>
+              바로 보기
+            </button>
+          )}
+          {approved.to && (
+            <Link to={approved.to} className="btn btn-small">
+              바로 보기
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="tg-underline-tabs">
         {TABS.map(([t, label, n]) => (
@@ -159,7 +179,17 @@ export default function AssistantPage() {
                     key={selected.suggestionId}
                     workspaceId={workspaceId}
                     suggestion={selected}
+                    members={members.data ?? []}
                     onChanged={reload}
+                    onApproved={(where, id) => {
+                      setApproved(
+                        where === 'PERSONAL'
+                          ? { text: '내 할 일에 추가했어요.', to: null, tab: 'TODO' }
+                          : where === 'TEAM'
+                            ? { text: '팀 Task로 등록했어요. 팀원 모두 Task 목록에서 볼 수 있어요.', to: `/workspaces/${workspaceId}/tasks/${id}` }
+                            : { text: '내 Google Calendar에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` },
+                      );
+                    }}
                   />
                 ) : (
                   <div className="text-[13px] text-[var(--muted)]">왼쪽에서 후보를 고르면 여기서 확인하고 승인할 수 있어요.</div>
@@ -247,12 +277,20 @@ function SuggestionCard({
 function SuggestionReview({
   workspaceId,
   suggestion,
+  members,
   onChanged,
+  onApproved,
 }: {
   workspaceId: string;
   suggestion: SuggestionDTO;
+  members: MemberResponse[];
   onChanged: () => void;
+  onApproved: (where: 'PERSONAL' | 'TEAM' | 'CALENDAR', id: number) => void;
 }) {
+  const me = useLoginUser();
+  /** 할 일 후보: 나만 보는 개인 할 일 / 팀원 모두 보는 팀 Task */
+  const [target, setTarget] = useState<'PERSONAL' | 'TEAM'>('PERSONAL');
+  const [assigneeId, setAssigneeId] = useState<number>(me.userId);
   const [form, setForm] = useState({
     title: suggestion.title,
     detectedDatetime: suggestion.detectedDatetime,
@@ -288,9 +326,16 @@ function SuggestionReview({
     e.preventDefault();
     void run(async () => {
       if (dirty) await updateSuggestion(workspaceId, suggestion.suggestionId, form);
-      await (isSchedule
-        ? approveSchedule(workspaceId, suggestion.suggestionId)
-        : approveTask(workspaceId, suggestion.suggestionId));
+      if (isSchedule) {
+        const r = await approveSchedule(workspaceId, suggestion.suggestionId);
+        onApproved('CALENDAR', r.contentRefId);
+      } else if (target === 'TEAM') {
+        const r = await approveTeamTask(workspaceId, suggestion.suggestionId, assigneeId);
+        onApproved('TEAM', r.taskId);
+      } else {
+        const r = await approveTask(workspaceId, suggestion.suggestionId);
+        onApproved('PERSONAL', r.personalTaskId);
+      }
     });
   };
 
@@ -346,15 +391,37 @@ function SuggestionReview({
       )}
       <div className="assistant-field">
         <span>등록 위치</span>
-        <div className="input flex items-center gap-2">
-          {isSchedule && (
+        {isSchedule ? (
+          <div className="input flex items-center gap-2">
             <span className="inline-flex h-4 w-4">
               <ServiceLogo service="gcal" />
             </span>
-          )}
-          {isSchedule ? 'Google Calendar · 내 일정' : 'ToGather · 내 할 일'}
-        </div>
+            Google Calendar · 내 일정
+          </div>
+        ) : (
+          <div className="segmented assistant-target">
+            <button type="button" className={target === 'PERSONAL' ? 'active' : ''} onClick={() => setTarget('PERSONAL')}>
+              내 할 일 (나만 보기)
+            </button>
+            <button type="button" className={target === 'TEAM' ? 'active' : ''} onClick={() => setTarget('TEAM')}>
+              팀 Task (모두 보기)
+            </button>
+          </div>
+        )}
       </div>
+      {!isSchedule && target === 'TEAM' && (
+        <label className="assistant-field">
+          <span>담당자</span>
+          <select className="input" value={assigneeId} onChange={(e) => setAssigneeId(Number(e.target.value))}>
+            {(members.length ? members : [{ userId: me.userId, name: me.name } as MemberResponse]).map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.name}
+                {m.userId === me.userId ? ' (나)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {error && <div className="alert alert-error small">{error}</div>}
 
@@ -372,11 +439,15 @@ function SuggestionReview({
           disabled={busy || !form.title.trim() || (isSchedule && !form.detectedDatetime)}
           title={isSchedule && !form.detectedDatetime ? '날짜와 시간을 먼저 정해 주세요' : undefined}
         >
-          {busy ? '처리 중...' : isSchedule ? '승인하고 일정 등록' : '승인하고 할 일 등록'}
+          {busy ? '처리 중...' : isSchedule ? '승인하고 일정 등록' : target === 'TEAM' ? '승인하고 팀 Task 등록' : '승인하고 내 할 일 등록'}
         </button>
       </div>
       <div className="text-center text-xs text-[var(--muted)]">
-        {isSchedule ? '📅 승인한 일정은 캘린더에서 확인할 수 있어요.' : '☑ 승인한 할 일은 "내 할 일" 탭에서 확인할 수 있어요.'}
+        {isSchedule
+          ? '📅 승인한 일정은 캘린더에서 확인할 수 있어요.'
+          : target === 'TEAM'
+            ? '☑ 팀 Task는 Task 목록에서 팀원 모두가 볼 수 있어요.'
+            : '☑ 내 할 일은 "내 할 일" 탭에서 나만 볼 수 있어요.'}
       </div>
     </form>
   );

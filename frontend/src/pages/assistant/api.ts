@@ -58,6 +58,10 @@ export const approveSchedule = (workspaceId: string, id: number) =>
 export const approveTask = (workspaceId: string, id: number) =>
   http.post<{ personalTaskId: number }>(base(workspaceId, `/suggestions/${id}/approve-task`));
 
+/** 할 일 후보를 팀 Task로 승인 (담당자를 비우면 승인한 사람) */
+export const approveTeamTask = (workspaceId: string, id: number, assigneeId: number | null) =>
+  http.post<{ taskId: number }>(base(workspaceId, `/suggestions/${id}/approve-team-task`), { assigneeId });
+
 export const dismissSuggestion = (workspaceId: string, id: number) =>
   http.post<void>(base(workspaceId, `/suggestions/${id}/dismiss`));
 
