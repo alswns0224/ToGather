@@ -46,7 +46,7 @@ const SUB_MENU: Menu[] = [
   { to: 'integrations', label: '연동 관리', icon: 'integrations' },
 ];
 
-const ALL_MENUS = [...TOP_MENU, ...MENU_GROUPS.flatMap((g) => g.items), ...SUB_MENU];
+const ALL_MENUS = [{ to: 'home', label: '대시보드', icon: 'home' } as Menu, ...TOP_MENU, ...MENU_GROUPS.flatMap((g) => g.items), ...SUB_MENU];
 
 /** 상단바에 보여줄 현재 메뉴 이름 (가장 길게 맞는 경로) */
 function currentMenuLabel(pathname: string, workspaceId: string) {
@@ -102,7 +102,7 @@ export default function WorkspaceLayout() {
     <div className="flex h-screen overflow-hidden text-[var(--text)]">
       <aside className="tg-sidebar">
         {/* 로고 */}
-        <Link to="/workspaces" className="flex items-center gap-[9px] px-1 no-underline">
+        <Link to={`/workspaces/${workspaceId}/home`} className="flex items-center gap-[9px] px-1 no-underline">
           <img src={logoSrc} alt="ToGather 로고" className="h-[30px] w-auto" />
           <span className="text-xl font-bold tracking-[-0.02em] text-[var(--text)]">
             <span className="text-[var(--primary)]">To</span>Gather

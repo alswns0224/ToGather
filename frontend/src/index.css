@@ -1654,3 +1654,74 @@ hr {
     grid-template-columns: 1fr;
   }
 }
+
+/* 홈 대시보드 (팀원 UI 시안) */
+.home-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px !important;
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.home-kpi:hover {
+  transform: translateY(-1px);
+  border-color: var(--primary);
+}
+
+.home-kpi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.home-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px !important;
+}
+
+.home-task,
+.home-recent {
+  display: block;
+  padding: 16px 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface);
+  text-decoration: none;
+}
+
+.home-task:hover,
+.home-recent:hover {
+  border-color: var(--primary);
+}
+
+.home-conn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+@media (max-width: 1100px) {
+  .home-board {
+    grid-template-columns: 1fr;
+  }
+}
