@@ -19,6 +19,7 @@ import com.togather.common.enums.SuggestionStatus;
 import com.togather.common.enums.SuggestionType;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
+import com.togather.content.calendar.dto.CalendarEventRequest;
 import com.togather.content.calendar.dto.PersonalEventRequest;
 import com.togather.content.calendar.service.CalendarContentService;
 import com.togather.content.domain.ContentRef;
@@ -188,6 +189,28 @@ public class SuggestionService {
         }
         ContentRefDTO event = calendarContentService.createPersonalEvent(workspaceId, userId,
                 buildEventData(suggestion));
+        suggestion.approveAsEvent(event.contentRefId());
+        suggestionRepository.save(suggestion);
+        return event.contentRefId();
+    }
+
+    /**
+     * 일정 후보를 팀 캘린더에 등록하고 승인한다. 참여자를 비우면 승인한 사람만 참여자로 넣는다.
+     * 팀원 모두가 일정 화면에서 보게 된다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Long approveTeamSchedule(Long workspaceId, Long userId, Long suggestionId, List<Long> participantIds) {
+        Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
+        if (suggestion.getType() != SuggestionType.SCHEDULE) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        if (suggestion.getDetectedDatetime() == null) {
+            throw new BusinessException(ErrorCode.SUGGESTION_TIME_REQUIRED);
+        }
+        List<Long> participants = participantIds == null || participantIds.isEmpty() ? List.of(userId) : participantIds;
+        ContentRefDTO event = calendarContentService.createContent(workspaceId, userId,
+                new CalendarEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), null, participants,
+                        "AI 업무 보조에서 찾은 일정입니다."));
         suggestion.approveAsEvent(event.contentRefId());
         suggestionRepository.save(suggestion);
         return event.contentRefId();

@@ -78,6 +78,20 @@ public class SuggestionController {
                 suggestionService.approveSchedule(workspaceId, userId, suggestionId)));
     }
 
+    /** 일정 승인 → 팀 캘린더 등록. 본문의 participantIds가 없으면 승인한 사람만 참여한다. 결과: 일정의 contentRefId */
+    @PostMapping("/suggestions/{suggestionId}/approve-team-schedule")
+    public ApiResponse<Map<String, Long>> approveTeamSchedule(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                              @PathVariable Long suggestionId,
+                                                              @RequestBody(required = false) TeamScheduleApproveRequest request) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(Map.of("contentRefId", suggestionService.approveTeamSchedule(workspaceId, userId,
+                suggestionId, request == null ? null : request.participantIds())));
+    }
+
+    /** 팀 일정으로 승인할 때 참여자 (선택) */
+    public record TeamScheduleApproveRequest(List<Long> participantIds) {
+    }
+
     /** 할 일 승인 → 개인 할 일 등록 */
     @PostMapping("/suggestions/{suggestionId}/approve-task")
     public ApiResponse<Map<String, Long>> approveTask(@LoginUser Long userId, @PathVariable Long workspaceId,

@@ -11,7 +11,7 @@ import { getPages } from '../notion/api';
 import { getChannels } from '../slack/api';
 import { getPendingAnalyses } from '../analysis/api';
 import { getMeetings } from '../meeting/api';
-import { getSuggestions } from '../assistant/api';
+import { candidateWhen, getSuggestions } from '../assistant/api';
 import { getIntegrations, PROVIDER_LABELS, type ConnectionStatus } from '../integration/api';
 import { formatDate, formatDateTime } from '../../utils/date';
 
@@ -93,7 +93,7 @@ export default function HomePage() {
       .map((s) => ({
         key: `s-${s.suggestionId}`,
         title: s.title,
-        sub: s.detectedDatetime ? formatDateTime(s.detectedDatetime) : '시간 미정',
+        sub: candidateWhen(s.detectedDatetime, { date: formatDate, dateTime: formatDateTime }),
         tag: `${s.sourceProvider === 'GMAIL' ? 'Gmail' : 'Slack'}${s.sourceAuthor ? ` · ${s.sourceAuthor}` : ''}`,
         to: `${base}/assistant`,
       })),

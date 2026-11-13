@@ -5,6 +5,7 @@ import {
   approveSchedule,
   approveTask,
   approveTeamTask,
+  approveTeamSchedule,
   completePersonalTask,
   createPersonalTask,
   deletePersonalTask,
@@ -16,6 +17,8 @@ import {
   updatePersonalTask,
   type PersonalTaskResponse,
   updateSuggestion,
+  candidateWhen,
+  isDateOnly,
   type SuggestionDTO,
 } from './api';
 import { ApiError } from '../../api/client';
@@ -187,7 +190,9 @@ export default function AssistantPage() {
                           ? { text: '내 할 일에 추가했어요.', to: null, tab: 'TODO' }
                           : where === 'TEAM'
                             ? { text: '팀 Task로 등록했어요. 팀원 모두 Task 목록에서 볼 수 있어요.', to: `/workspaces/${workspaceId}/tasks/${id}` }
-                            : { text: '내 Google Calendar에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` },
+                            : where === 'TEAM_CALENDAR'
+                              ? { text: '팀 캘린더에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` }
+                              : { text: '내 Google Calendar에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` },
                       );
                     }}
                   />
@@ -248,9 +253,7 @@ function SuggestionCard({
 }) {
   const when =
     s.type === 'SCHEDULE'
-      ? s.detectedDatetime
-        ? formatDateTime(s.detectedDatetime)
-        : '시간 미정'
+      ? candidateWhen(s.detectedDatetime, { date: formatDate, dateTime: formatDateTime })
       : s.dueDate
         ? `마감 ${formatDate(s.dueDate)}`
         : '마감 미정';
@@ -285,12 +288,14 @@ function SuggestionReview({
   suggestion: SuggestionDTO;
   members: MemberResponse[];
   onChanged: () => void;
-  onApproved: (where: 'PERSONAL' | 'TEAM' | 'CALENDAR', id: number) => void;
+  onApproved: (where: 'PERSONAL' | 'TEAM' | 'CALENDAR' | 'TEAM_CALENDAR', id: number) => void;
 }) {
   const me = useLoginUser();
   /** 할 일 후보: 나만 보는 개인 할 일 / 팀원 모두 보는 팀 Task */
   const [target, setTarget] = useState<'PERSONAL' | 'TEAM'>('PERSONAL');
   const [assigneeId, setAssigneeId] = useState<number>(me.userId);
+  /** 일정 후보: 내 Google Calendar / 팀 캘린더 */
+  const [participantIds, setParticipantIds] = useState<number[]>([me.userId]);
   const [form, setForm] = useState({
     title: suggestion.title,
     detectedDatetime: suggestion.detectedDatetime,
@@ -326,7 +331,10 @@ function SuggestionReview({
     e.preventDefault();
     void run(async () => {
       if (dirty) await updateSuggestion(workspaceId, suggestion.suggestionId, form);
-      if (isSchedule) {
+      if (isSchedule && target === 'TEAM') {
+        const r = await approveTeamSchedule(workspaceId, suggestion.suggestionId, participantIds);
+        onApproved('TEAM_CALENDAR', r.contentRefId);
+      } else if (isSchedule) {
         const r = await approveSchedule(workspaceId, suggestion.suggestionId);
         onApproved('CALENDAR', r.contentRefId);
       } else if (target === 'TEAM') {
@@ -369,15 +377,20 @@ function SuggestionReview({
         />
       </label>
       {isSchedule ? (
-        <label className="assistant-field">
-          <span>날짜 / 시간</span>
-          <input
-            type="datetime-local"
-            className="input"
-            value={form.detectedDatetime?.slice(0, 16) ?? ''}
-            onChange={(e) => setForm({ ...form, detectedDatetime: e.target.value ? `${e.target.value}:00` : null })}
-          />
-        </label>
+        <>
+          <label className="assistant-field">
+            <span>날짜 / 시간</span>
+            <input
+              type="datetime-local"
+              className="input"
+              value={form.detectedDatetime?.slice(0, 16) ?? ''}
+              onChange={(e) => setForm({ ...form, detectedDatetime: e.target.value ? `${e.target.value}:00` : null })}
+            />
+          </label>
+          {isDateOnly(form.detectedDatetime) && (
+            <div className="pl-[122px] text-xs text-[var(--warning)]">메일에 시간이 없어 날짜만 채웠어요. 시간을 정해 주세요.</div>
+          )}
+        </>
       ) : (
         <label className="assistant-field">
           <span>마감일</span>
@@ -392,11 +405,13 @@ function SuggestionReview({
       <div className="assistant-field">
         <span>등록 위치</span>
         {isSchedule ? (
-          <div className="input flex items-center gap-2">
-            <span className="inline-flex h-4 w-4">
-              <ServiceLogo service="gcal" />
-            </span>
-            Google Calendar · 내 일정
+          <div className="segmented assistant-target">
+            <button type="button" className={target === 'PERSONAL' ? 'active' : ''} onClick={() => setTarget('PERSONAL')}>
+              개인 일정 (내 캘린더)
+            </button>
+            <button type="button" className={target === 'TEAM' ? 'active' : ''} onClick={() => setTarget('TEAM')}>
+              팀 일정 (팀 캘린더)
+            </button>
           </div>
         ) : (
           <div className="segmented assistant-target">
@@ -409,6 +424,30 @@ function SuggestionReview({
           </div>
         )}
       </div>
+      {isSchedule && target === 'TEAM' && (
+        <div className="assistant-field">
+          <span>참여자</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(members.length ? members : [{ userId: me.userId, name: me.name } as MemberResponse]).map((m) => {
+              const on = participantIds.includes(m.userId);
+              return (
+                <button
+                  key={m.userId}
+                  type="button"
+                  className={`badge cursor-pointer border-0 ${on ? 'badge-primary' : ''}`}
+                  onClick={() =>
+                    setParticipantIds(on ? participantIds.filter((id) => id !== m.userId) : [...participantIds, m.userId])
+                  }
+                >
+                  {on ? '✓ ' : ''}
+                  {m.name}
+                  {m.userId === me.userId ? ' (나)' : ''}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {!isSchedule && target === 'TEAM' && (
         <label className="assistant-field">
           <span>담당자</span>
@@ -439,12 +478,22 @@ function SuggestionReview({
           disabled={busy || !form.title.trim() || (isSchedule && !form.detectedDatetime)}
           title={isSchedule && !form.detectedDatetime ? '날짜와 시간을 먼저 정해 주세요' : undefined}
         >
-          {busy ? '처리 중...' : isSchedule ? '승인하고 일정 등록' : target === 'TEAM' ? '승인하고 팀 Task 등록' : '승인하고 내 할 일 등록'}
+          {busy
+            ? '처리 중...'
+            : isSchedule
+              ? target === 'TEAM'
+                ? '승인하고 팀 일정 등록'
+                : '승인하고 내 일정 등록'
+              : target === 'TEAM'
+                ? '승인하고 팀 Task 등록'
+                : '승인하고 내 할 일 등록'}
         </button>
       </div>
       <div className="text-center text-xs text-[var(--muted)]">
         {isSchedule
-          ? '📅 승인한 일정은 캘린더에서 확인할 수 있어요.'
+          ? target === 'TEAM'
+            ? '📅 팀 일정은 팀 캘린더에 등록되고, 일정 화면에서 팀원 모두가 볼 수 있어요.'
+            : '📅 개인 일정은 내 Google Calendar에 등록돼요.'
           : target === 'TEAM'
             ? '☑ 팀 Task는 Task 목록에서 팀원 모두가 볼 수 있어요.'
             : '☑ 내 할 일은 "내 할 일" 탭에서 나만 볼 수 있어요.'}
