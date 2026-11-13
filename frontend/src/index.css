@@ -1053,3 +1053,27 @@ hr {
     display: none;
   }
 }
+
+/* 밑줄 탭 (시안의 AI 업무 보조 · 회의 탭) */
+.tg-underline-tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tg-underline-tabs > button {
+  padding: 10px 4px;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tg-underline-tabs > button.active {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+}
