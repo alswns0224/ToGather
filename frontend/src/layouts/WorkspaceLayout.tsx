@@ -6,19 +6,38 @@ import { useAsync } from '../hooks/useAsync';
 import { useLoginUser } from '../components/RequireAuth';
 import { ErrorBox, Loading } from '../components/Status';
 import ThemeToggle from '../components/ThemeToggle';
+import { useTheme } from '../hooks/useTheme';
 import NavIcon, { type IconName } from './NavIcon';
 
 /** also: 이 경로로 시작하는 하위 화면에서도 메뉴를 켠다 (예: 논의 정리 상세 slack/analysis/7) */
-const MENU: { to: string; label: string; icon: IconName; also?: string }[] = [
+const TOP_MENU: { to: string; label: string; icon: IconName; also?: string }[] = [
   { to: 'search', label: '통합 검색', icon: 'search' },
-  { to: 'slack', label: 'Slack', icon: 'chat' },
-  { to: 'slack/analyses', label: '논의 정리', icon: 'sparkle', also: 'slack/analysis/' },
-  { to: 'calendar', label: '일정', icon: 'calendar' },
-  { to: 'meetings', label: '회의', icon: 'meeting' },
-  { to: 'tasks', label: '작업 (Task)', icon: 'tasks' },
-  { to: 'drive', label: '자료 (Drive)', icon: 'folder' },
-  { to: 'notion', label: '문서 (Notion)', icon: 'document' },
-  { to: 'assistant', label: 'AI 업무 보조', icon: 'sparkle' },
+];
+
+const MENU_GROUPS: { title: string; items: { to: string; label: string; icon: IconName; also?: string }[] }[] = [
+  {
+    title: '연결된 자료',
+    items: [
+      { to: 'slack', label: 'Slack', icon: 'chat' },
+      { to: 'notion', label: 'Notion', icon: 'document' },
+      { to: 'drive', label: 'Google Drive', icon: 'folder' },
+    ],
+  },
+  {
+    title: '팀의 작업',
+    items: [
+      { to: 'slack/analyses', label: '논의 정리', icon: 'sparkle', also: 'slack/analysis/' },
+      { to: 'tasks', label: 'Task', icon: 'tasks' },
+      { to: 'assistant', label: 'AI 업무 보조', icon: 'sparkle' },
+    ],
+  },
+  {
+    title: '일정과 회의',
+    items: [
+      { to: 'calendar', label: '일정', icon: 'calendar' },
+      { to: 'meetings', label: '회의', icon: 'meeting' },
+    ],
+  },
 ];
 
 const SUB_MENU: { to: string; label: string; icon: IconName }[] = [
@@ -29,7 +48,7 @@ const SUB_MENU: { to: string; label: string; icon: IconName }[] = [
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `group flex w-full items-center gap-3 rounded-lg px-3 py-[7px] text-sm font-medium no-underline transition-all ${
     isActive
-      ? 'bg-blue-600 text-white shadow-sm shadow-blue-200 dark:shadow-none'
+      ? 'bg-[image:var(--brand-grad)] text-white shadow-sm'
       : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white'
   }`;
 
@@ -70,6 +89,8 @@ function MenuLink({
 export default function WorkspaceLayout() {
   const { workspaceId = '' } = useParams();
   const user = useLoginUser();
+  const { theme, palette } = useTheme();
+  const logoSrc = palette === 'indigo' ? '/togather-logo-mark.png' : theme === 'dark' ? '/togather-logo-white.png' : '/togather-logo-carrot.png';
   const navigate = useNavigate();
   // 멤버가 아니면 403이 와서 여기서 막힌다.
   const workspace = useAsync(() => getWorkspace(workspaceId), [workspaceId]);
@@ -82,15 +103,11 @@ export default function WorkspaceLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-100">
-      <aside className="flex h-full w-[220px] flex-shrink-0 select-none flex-col border-r border-slate-200 bg-[#F8F9FB] dark:border-white/10 dark:bg-[#0F111A]">
+      <aside className="flex h-full w-[220px] flex-shrink-0 select-none flex-col border-r border-slate-200 bg-[var(--surface)] dark:border-white/10">
         {/* 로고 */}
         <div className="flex items-center justify-between border-b border-slate-200/80 px-4 pt-[14px] pb-3 dark:border-white/10">
           <Link to="/workspaces" className="flex items-center gap-2 no-underline">
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 shadow-sm shadow-blue-300 dark:shadow-none">
-              <svg className="h-3.5 w-3.5 text-white" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <path d="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2ZM5 8.5l1.5-2 2 2 2.5-3.5 1 .75-3.5 5-1.75-1.75L5 8.5Z" />
-              </svg>
-            </span>
+<img src={logoSrc} alt="ToGather" className="h-7 w-auto flex-shrink-0" />
             <span className="text-[16px] font-bold tracking-tight text-slate-900 dark:text-white">ToGather</span>
           </Link>
           <ThemeToggle />
@@ -117,17 +134,33 @@ export default function WorkspaceLayout() {
           </Link>
         </div>
 
-        {/* 메뉴 */}
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
-          {MENU.map((m) => (
+        {/* 상단 고정: 통합 검색 */}
+        <div className="px-3 pt-2">
+          {TOP_MENU.map((m) => (
             <MenuLink key={m.to} workspaceId={workspaceId} {...m} />
           ))}
-          <div className="mt-2 space-y-0.5 border-t border-slate-200/80 pt-3 dark:border-white/10">
-            {SUB_MENU.map((m) => (
-              <MenuLink key={m.to} workspaceId={workspaceId} {...m} />
-            ))}
-          </div>
+        </div>
+
+        {/* 그룹 메뉴: 팀의 작업 / 일정과 회의 / 연결된 자료 */}
+        <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+          {MENU_GROUPS.map((group) => (
+            <div key={group.title} className="space-y-0.5">
+              <div className="px-3 pb-1 text-[11px] font-bold tracking-wide text-slate-400 dark:text-slate-500">
+                {group.title}
+              </div>
+              {group.items.map((m) => (
+                <MenuLink key={m.to} workspaceId={workspaceId} {...m} />
+              ))}
+            </div>
+          ))}
         </nav>
+
+        {/* 하단 고정: 팀원 · 연동 관리 */}
+        <div className="space-y-0.5 border-t border-slate-200/80 px-3 py-2 dark:border-white/10">
+          {SUB_MENU.map((m) => (
+            <MenuLink key={m.to} workspaceId={workspaceId} {...m} />
+          ))}
+        </div>
 
         {/* 사용자 */}
         <div className="border-t border-slate-200 px-3 pt-3 pb-4 dark:border-white/10">
