@@ -6,6 +6,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { useTheme } from '../../hooks/useTheme';
 import { ErrorBox, Loading } from '../../components/Status';
 import ThemeToggle from '../../components/ThemeToggle';
+import ServiceLogo from '../../components/ServiceLogo';
 import { BTN_SUB, INPUT, MUTED } from '../../components/ui';
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -104,7 +105,12 @@ export default function LoginPage() {
 
             <div className="grid grid-cols-1 items-center gap-2.5 md:grid-cols-[1fr_auto_0.9fr_auto_1.2fr]">
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 shadow-xs">
-                <div className="mb-1.5 text-xs font-bold text-[var(--text)]">Slack</div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-[var(--text)]">
+                  <span className="inline-flex h-4 w-4">
+                    <ServiceLogo service="slack" />
+                  </span>
+                  Slack
+                </div>
                 <div className="mb-2 text-[13px] font-bold text-[var(--text)]">팀 대화</div>
                 <div className="rounded-lg bg-[var(--surface-2)] px-2.5 py-2 text-xs text-[var(--muted)]">
                   발표자료는 금요일까지 정리해요.
@@ -120,7 +126,12 @@ export default function LoginPage() {
                   borderColor: isIndigo ? (isDark ? '#334166' : '#c7d2fe') : isDark ? '#4a3d24' : '#f3e4a6',
                 }}
               >
-                <div className="mb-2.5 text-[13px] font-bold text-[var(--text)]">✓ 결정사항</div>
+                <div className="mb-2.5 flex items-center gap-1.5 text-[13px] font-bold text-[var(--text)]">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--primary)] text-[11px] text-white">
+                    ✓
+                  </span>
+                  결정사항
+                </div>
                 <div className="rounded-lg bg-[var(--surface)] px-2.5 py-2 text-xs font-semibold text-[var(--text)]">
                   발표자료 최종 정리
                 </div>
@@ -136,6 +147,13 @@ export default function LoginPage() {
                   </span>
                 </div>
                 <div className="mb-2 text-[13px] font-bold text-[var(--text)]">중간 발표자료 정리</div>
+                <div className="mb-2 flex gap-1">
+                  {['정', '백', '이'].map((n) => (
+                    <span key={n} className="tg-avatar">
+                      {n}
+                    </span>
+                  ))}
+                </div>
                 <div className="mb-2 flex items-center gap-2">
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
                     <div className="h-full w-1/2 rounded-full" style={{ background: 'var(--brand-grad)' }} />
@@ -178,6 +196,12 @@ export default function LoginPage() {
                   onClick={startGoogle}
                   disabled={!config.data.googleEnabled || redirecting}
                 >
+                  <svg className="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                  </svg>
                   <span>{redirecting ? 'Google로 이동하는 중...' : 'Google 계정으로 계속하기'}</span>
                 </button>
                 <p className={`text-center text-xs ${MUTED}`}>
@@ -187,7 +211,7 @@ export default function LoginPage() {
                 </p>
 
                 {config.data.devLoginEnabled && (
-                  <details className="border-t border-dashed border-[var(--border)] pt-3">
+                  <details className="border-0 border-t border-dashed border-[var(--border)] pt-3">
                     <summary className={`cursor-pointer text-xs font-semibold ${MUTED}`}>개발용 로그인 (선택)</summary>
                     <form className="mt-3 flex flex-col gap-2" onSubmit={submitDev}>
                       <input
