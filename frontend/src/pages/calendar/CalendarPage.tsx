@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { createEvent, deleteEvent, getEvents, updateEvent, type CalendarEvent, type CalendarEventForm } from './api';
 import { getMembers, type MemberResponse } from '../workspace/api';
+import { getMyTodoList, type PersonalTaskResponse } from '../assistant/api';
 import { useAsync } from '../../hooks/useAsync';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { ApiError } from '../../api/client';
@@ -22,7 +23,7 @@ import {
 } from '../../utils/date';
 
 type View = 'month' | 'week';
-type Filter = 'ALL' | 'TEAM' | 'PERSONAL';
+type Filter = 'ALL' | 'TEAM' | 'PERSONAL' | 'TODO';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 function visibleRange(view: View, anchor: Date): { start: Date; days: number } {
@@ -53,6 +54,8 @@ export default function CalendarPage() {
   const to = toLocalIso(addDays(start, days));
   const events = useAsync(() => getEvents(workspaceId, from, to), [workspaceId, from, to]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
+  // 내 할 일(개인 할 일)은 Google Calendar 일정이 아니라 ToGather에만 있으므로 마감일 칸에 따로 보여준다.
+  const todos = useAsync(() => getMyTodoList(workspaceId), [workspaceId]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null);
 
@@ -65,8 +68,20 @@ export default function CalendarPage() {
     setAnchor(view === 'week' ? addDays(anchor, dir * 7) : new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
 
   const shown = (events.data ?? []).filter(
-    (e) => filter === 'ALL' || (filter === 'PERSONAL' ? e.personal : !e.personal),
+    (e) => filter === 'ALL' || (filter === 'PERSONAL' ? e.personal : filter === 'TEAM' ? !e.personal : false),
   );
+
+  /** 마감일 → 끝나지 않은 내 할 일 */
+  const todosByDay = useMemo(() => {
+    const map = new Map<string, PersonalTaskResponse[]>();
+    if (filter !== 'ALL' && filter !== 'TODO') return map;
+    for (const t of todos.data?.personalTasks ?? []) {
+      if (t.status === 'DONE' || !t.dueDate) continue;
+      const key = fromLocalIso(`${t.dueDate}T00:00`).toDateString();
+      map.set(key, [...(map.get(key) ?? []), t]);
+    }
+    return map;
+  }, [todos.data, filter]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -84,6 +99,7 @@ export default function CalendarPage() {
   }, [events.data, filter]);
 
   const dayEvents = byDay.get(selectedDay.toDateString()) ?? [];
+  const dayTodos = todosByDay.get(selectedDay.toDateString()) ?? [];
   const selected = (events.data ?? []).find((e) => e.contentRefId === selectedId) ?? dayEvents[0] ?? null;
 
   const notConnected = events.error instanceof ApiError && events.error.code === 'CONNECTION_NOT_FOUND';
@@ -151,6 +167,7 @@ export default function CalendarPage() {
                     ['ALL', '전체'],
                     ['TEAM', '● 팀 일정'],
                     ['PERSONAL', '● 개인 일정'],
+                    ['TODO', '☑ 할 일'],
                   ] as const
                 ).map(([v, label]) => (
                   <button
@@ -181,6 +198,8 @@ export default function CalendarPage() {
             ))}
             {Array.from({ length: days }, (_, i) => addDays(start, i)).map((day) => {
               const list = byDay.get(day.toDateString()) ?? [];
+              const dayTodoList = todosByDay.get(day.toDateString()) ?? [];
+              const room = Math.max(0, 3 - list.length);
               const outside = view === 'month' && day.getMonth() !== anchor.getMonth();
               const isSelected = sameDay(day, selectedDay);
               const dow = day.getDay();
@@ -214,7 +233,16 @@ export default function CalendarPage() {
                       {e.title ?? '(제목 없음)'}
                     </button>
                   ))}
-                  {list.length > 3 && <span className="text-[11px] text-[var(--muted)]">+{list.length - 3}개 더</span>}
+                  {dayTodoList.slice(0, room).map((t) => (
+                    <span key={`todo-${t.personalTaskId}`} className="cal-chip todo" title={`할 일 · ${t.title}`}>
+                      ☑ {t.title}
+                    </span>
+                  ))}
+                  {list.length + dayTodoList.length > Math.min(3, list.length) + Math.min(room, dayTodoList.length) && (
+                    <span className="text-[11px] text-[var(--muted)]">
+                      +{list.length + dayTodoList.length - Math.min(3, list.length) - Math.min(room, dayTodoList.length)}개 더
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -224,10 +252,24 @@ export default function CalendarPage() {
         <div className="card cal-side">
           <div className="flex items-center justify-between gap-2">
             <strong className="text-xl font-extrabold">{dayTitle(selectedDay)}</strong>
-            <span className="badge badge-primary">일정 {dayEvents.length}개</span>
+            <span className="badge badge-primary">
+              일정 {dayEvents.length}개{dayTodos.length > 0 && ` · 할 일 ${dayTodos.length}개`}
+            </span>
           </div>
+          {dayTodos.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {dayTodos.map((t) => (
+                <Link key={t.personalTaskId} to={`/workspaces/${workspaceId}/assistant`} className="cal-day-item todo no-underline">
+                  <span className="cal-dot todo" />
+                  <strong className="whitespace-nowrap">마감</strong>
+                  <span className="truncate">☑ {t.title}</span>
+                  <span className="ml-auto text-xs text-[var(--muted)]">내 할 일</span>
+                </Link>
+              ))}
+            </div>
+          )}
           {dayEvents.length === 0 ? (
-            <div className="text-[13px] text-[var(--muted)]">이 날은 일정이 없어요.</div>
+            dayTodos.length === 0 && <div className="text-[13px] text-[var(--muted)]">이 날은 일정이 없어요.</div>
           ) : (
             <div className="flex flex-col gap-2">
               {dayEvents.map((e) => (
