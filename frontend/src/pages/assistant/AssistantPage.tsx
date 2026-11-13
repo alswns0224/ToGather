@@ -237,6 +237,14 @@ export default function AssistantPage() {
   );
 }
 
+/** "2026-12-25T00:00(:00)" → 1시간 뒤 "2026-12-25T01:00" (datetime-local 값) */
+function plusHour(datetime: string) {
+  const d = new Date(datetime.slice(0, 16));
+  d.setHours(d.getHours() + 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function sourceName(s: SuggestionDTO) {
   return s.sourceProvider === 'GMAIL' ? 'Gmail' : 'Slack';
 }
@@ -296,6 +304,8 @@ function SuggestionReview({
   const [assigneeId, setAssigneeId] = useState<number>(me.userId);
   /** 일정 후보: 내 Google Calendar / 팀 캘린더 */
   const [participantIds, setParticipantIds] = useState<number[]>([me.userId]);
+  /** 끝 시각: 비워 두면 시작 1시간 뒤 */
+  const [endAt, setEndAt] = useState<string>('');
   const [form, setForm] = useState({
     title: suggestion.title,
     detectedDatetime: suggestion.detectedDatetime,
@@ -303,6 +313,8 @@ function SuggestionReview({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const endValue = endAt || (form.detectedDatetime ? plusHour(form.detectedDatetime) : '');
+  const endInvalid = !!form.detectedDatetime && !!endValue && endValue <= form.detectedDatetime.slice(0, 16);
   const isSchedule = suggestion.type === 'SCHEDULE';
   const dirty =
     form.title !== suggestion.title ||
@@ -332,10 +344,10 @@ function SuggestionReview({
     void run(async () => {
       if (dirty) await updateSuggestion(workspaceId, suggestion.suggestionId, form);
       if (isSchedule && target === 'TEAM') {
-        const r = await approveTeamSchedule(workspaceId, suggestion.suggestionId, participantIds);
+        const r = await approveTeamSchedule(workspaceId, suggestion.suggestionId, participantIds, `${endValue}:00`);
         onApproved('TEAM_CALENDAR', r.contentRefId);
       } else if (isSchedule) {
-        const r = await approveSchedule(workspaceId, suggestion.suggestionId);
+        const r = await approveSchedule(workspaceId, suggestion.suggestionId, `${endValue}:00`);
         onApproved('CALENDAR', r.contentRefId);
       } else if (target === 'TEAM') {
         const r = await approveTeamTask(workspaceId, suggestion.suggestionId, assigneeId);
@@ -379,7 +391,7 @@ function SuggestionReview({
       {isSchedule ? (
         <>
           <label className="assistant-field">
-            <span>날짜 / 시간</span>
+            <span>시작</span>
             <input
               type="datetime-local"
               className="input"
@@ -389,6 +401,20 @@ function SuggestionReview({
           </label>
           {isDateOnly(form.detectedDatetime) && (
             <div className="pl-[122px] text-xs text-[var(--warning)]">메일에 시간이 없어 날짜만 채웠어요. 시간을 정해 주세요.</div>
+          )}
+          <label className="assistant-field">
+            <span>종료</span>
+            <input
+              type="datetime-local"
+              className="input"
+              value={endValue}
+              min={form.detectedDatetime?.slice(0, 16)}
+              onChange={(e) => setEndAt(e.target.value)}
+              disabled={!form.detectedDatetime}
+            />
+          </label>
+          {endInvalid && (
+            <div className="pl-[122px] text-xs text-[var(--danger)]">종료 시각은 시작 시각보다 뒤여야 해요.</div>
           )}
         </>
       ) : (
@@ -475,7 +501,7 @@ function SuggestionReview({
         </button>
         <button
           className="btn btn-primary !h-12 flex-1"
-          disabled={busy || !form.title.trim() || (isSchedule && !form.detectedDatetime)}
+          disabled={busy || !form.title.trim() || (isSchedule && (!form.detectedDatetime || endInvalid))}
           title={isSchedule && !form.detectedDatetime ? '날짜와 시간을 먼저 정해 주세요' : undefined}
         >
           {busy

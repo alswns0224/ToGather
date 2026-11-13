@@ -52,15 +52,15 @@ export const updateSuggestion = (
   body: { title: string; detectedDatetime: string | null; dueDate: string | null },
 ) => http.patch<SuggestionDTO>(base(workspaceId, `/suggestions/${id}`), body);
 
-export const approveSchedule = (workspaceId: string, id: number) =>
-  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-schedule`));
+export const approveSchedule = (workspaceId: string, id: number, endAt: string | null = null) =>
+  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-schedule`), { endAt });
 
 export const approveTask = (workspaceId: string, id: number) =>
   http.post<{ personalTaskId: number }>(base(workspaceId, `/suggestions/${id}/approve-task`));
 
 /** 일정 후보를 팀 캘린더에 등록 (참여자를 비우면 승인한 사람만) */
-export const approveTeamSchedule = (workspaceId: string, id: number, participantIds: number[]) =>
-  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-team-schedule`), { participantIds });
+export const approveTeamSchedule = (workspaceId: string, id: number, participantIds: number[], endAt: string | null = null) =>
+  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-team-schedule`), { participantIds, endAt });
 
 /** 할 일 후보를 팀 Task로 승인 (담당자를 비우면 승인한 사람) */
 export const approveTeamTask = (workspaceId: string, id: number, assigneeId: number | null) =>

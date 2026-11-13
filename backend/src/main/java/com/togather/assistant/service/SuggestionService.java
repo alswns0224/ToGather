@@ -180,6 +180,12 @@ public class SuggestionService {
     /** 일정 후보를 개인 캘린더에 등록하고 승인한다. 시간이 미정이면 먼저 일시를 정해야 한다. */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Long approveSchedule(Long workspaceId, Long userId, Long suggestionId) {
+        return approveSchedule(workspaceId, userId, suggestionId, null);
+    }
+
+    /** endAt이 없으면 1시간짜리 일정으로 등록한다. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Long approveSchedule(Long workspaceId, Long userId, Long suggestionId, LocalDateTime endAt) {
         Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
         if (suggestion.getType() != SuggestionType.SCHEDULE) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -188,7 +194,7 @@ public class SuggestionService {
             throw new BusinessException(ErrorCode.SUGGESTION_TIME_REQUIRED);
         }
         ContentRefDTO event = calendarContentService.createPersonalEvent(workspaceId, userId,
-                buildEventData(suggestion));
+                buildEventData(suggestion, endAt));
         suggestion.approveAsEvent(event.contentRefId());
         suggestionRepository.save(suggestion);
         return event.contentRefId();
@@ -199,7 +205,8 @@ public class SuggestionService {
      * 팀원 모두가 일정 화면에서 보게 된다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public Long approveTeamSchedule(Long workspaceId, Long userId, Long suggestionId, List<Long> participantIds) {
+    public Long approveTeamSchedule(Long workspaceId, Long userId, Long suggestionId, List<Long> participantIds,
+                                    LocalDateTime endAt) {
         Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
         if (suggestion.getType() != SuggestionType.SCHEDULE) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -209,7 +216,7 @@ public class SuggestionService {
         }
         List<Long> participants = participantIds == null || participantIds.isEmpty() ? List.of(userId) : participantIds;
         ContentRefDTO event = calendarContentService.createContent(workspaceId, userId,
-                new CalendarEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), null, participants,
+                new CalendarEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), endAt, participants,
                         "AI 업무 보조에서 찾은 일정입니다."));
         suggestion.approveAsEvent(event.contentRefId());
         suggestionRepository.save(suggestion);
@@ -358,9 +365,9 @@ public class SuggestionService {
         return title == null ? "" : title.toLowerCase().replaceAll("[\\s\\p{Punct}]", "");
     }
 
-    /** 명세서 buildEventData: 일정은 1시간으로 등록한다. */
-    private static PersonalEventRequest buildEventData(Suggestion suggestion) {
-        return new PersonalEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), null);
+    /** 명세서 buildEventData: 끝 시각을 정하지 않으면 1시간으로 등록한다. */
+    private static PersonalEventRequest buildEventData(Suggestion suggestion, LocalDateTime endAt) {
+        return new PersonalEventRequest(suggestion.getTitle(), suggestion.getDetectedDatetime(), endAt);
     }
 
     private List<Suggestion> saveNew(Long userId, List<Suggestion> suggestions) {
