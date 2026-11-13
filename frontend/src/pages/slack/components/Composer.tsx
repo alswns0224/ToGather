@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../../../api/client';
+import { BTN_AI, BTN_SUB } from '../../../components/ui';
 
 /**
  * 메시지 입력창. 전송에 실패하면 입력 내용을 그대로 두고 다시 보낼 수 있게 한다. (UI-04)
@@ -12,8 +13,11 @@ export default function Composer({
   submitLabel = '전송',
   onSubmit,
   onCancel,
+  compact = false,
 }: {
   placeholder: string;
+  /** 스레드 답글처럼 한 줄 입력 + 전송 버튼만 */
+  compact?: boolean;
   initialText?: string;
   submitLabel?: string;
   onSubmit: (text: string) => Promise<void>;
@@ -68,26 +72,31 @@ export default function Composer({
           )}
         </div>
       )}
-      <textarea
-        className="input"
-        placeholder={placeholder}
-        value={text}
-        maxLength={4000}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        disabled={sending}
-      />
-      <div className="row">
-        <span className="small muted">Enter 전송 · Shift+Enter 줄바꿈</span>
-        <span className="spacer" />
-        {onCancel && (
-          <button type="button" className="btn btn-small" onClick={onCancel} disabled={sending}>
-            취소
+      <div className={`slack-composer-box${compact ? ' compact' : ''}`}>
+        <textarea
+          placeholder={placeholder}
+          value={text}
+          rows={compact ? 1 : 2}
+          maxLength={4000}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          disabled={sending}
+        />
+        <div className="slack-composer-bar">
+          {!compact && <span className="small muted">Enter 전송 · Shift+Enter 줄바꿈</span>}
+          <span className="spacer" />
+          {onCancel && (
+            <button type="button" className={`${BTN_SUB} !h-[30px] !px-3 !text-xs`} onClick={onCancel} disabled={sending}>
+              취소
+            </button>
+          )}
+          <button
+            className={`${compact ? BTN_SUB : BTN_AI} !h-[30px] !px-3 !text-xs`}
+            disabled={sending || !text.trim()}
+          >
+            {sending ? '보내는 중...' : submitLabel}
           </button>
-        )}
-        <button className="btn btn-primary btn-small" disabled={sending || !text.trim()}>
-          {sending ? '보내는 중...' : submitLabel}
-        </button>
+        </div>
       </div>
     </form>
   );

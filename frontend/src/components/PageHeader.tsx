@@ -1,26 +1,32 @@
 import type { ReactNode } from 'react';
-import { EYEBROW, MUTED } from './ui';
+import { MUTED } from './ui';
 
-/** 화면 머리: 작은 영문 라벨 + 제목 + 설명 + 오른쪽 버튼 (docs/ui-prototype 시안) */
+/**
+ * 화면 머리: (아이콘) 제목 + 설명, 오른쪽에 상태·버튼 (팀원 UI 시안 togather_ui.html)
+ * eyebrow는 예전 화면과의 호환을 위해 받지만 시안에 없어 그리지 않는다.
+ */
 export default function PageHeader({
-  eyebrow,
+  icon,
   title,
   description,
   actions,
 }: {
   eyebrow?: string;
+  icon?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
-        {eyebrow && <span className={EYEBROW}>{eyebrow}</span>}
-        <h1 className={`${eyebrow ? 'mt-2' : ''} !text-2xl`}>{title}</h1>
-        {description && <p className={`m-0 mt-1 text-xs ${MUTED}`}>{description}</p>}
+        <h1 className="!m-0 flex items-center gap-[9px] !text-2xl !font-extrabold">
+          {icon && <span className="inline-flex h-6 w-6 flex-shrink-0">{icon}</span>}
+          <span>{title}</span>
+        </h1>
+        {description && <p className={`m-0 mt-1 text-[13px] ${MUTED}`}>{description}</p>}
       </div>
-      {actions && <div className="flex flex-shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2.5">{actions}</div>}
     </div>
   );
 }
