@@ -65,3 +65,20 @@ export const connectUrl = (workspaceId: string, provider: Provider) =>
 
 export const reauthUrl = (workspaceId: string, connectionId: number) =>
   `/api/workspaces/${workspaceId}/integrations/connections/${connectionId}/reauth`;
+
+export interface SyncStatus {
+  provider: Provider;
+  targetId: string;
+  lastSyncedAt: string | null;
+  lastAttemptAt: string | null;
+  failed: boolean;
+  lastError: string | null;
+}
+
+/** 서비스별 마지막 동기화 상태 (대상마다 한 건) */
+export const getSyncStatuses = (workspaceId: string, provider: Provider) =>
+  http.get<SyncStatus[]>(ws(workspaceId, `/sync/${provider}`));
+
+/** 지금 동기화 (1분 안에 이미 했으면 서버가 건너뛴다) */
+export const syncNow = (workspaceId: string, provider: Provider) =>
+  http.post<SyncStatus[]>(ws(workspaceId, `/sync/${provider}`));

@@ -417,11 +417,14 @@ textarea.input {
 }
 
 .btn-danger {
+  background: var(--danger-soft);
+  border-color: transparent;
   color: var(--danger);
 }
 
 .btn-danger:hover:not(:disabled) {
   background: var(--danger-soft);
+  filter: brightness(0.95);
 }
 
 .link-button {
@@ -1008,4 +1011,45 @@ hr {
 
 .search-example:hover {
   border-color: var(--primary);
+}
+
+/* 연동 관리 서비스 카드 */
+.integ-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px !important;
+}
+
+/* 팀원 표 (시안의 tbl-head · tbl-row) */
+.members-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 110px 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.members-row:last-child {
+  border-bottom: none;
+}
+
+.members-head {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .members-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .members-row > :nth-child(2),
+  .members-row > :nth-child(3) {
+    display: none;
+  }
 }
