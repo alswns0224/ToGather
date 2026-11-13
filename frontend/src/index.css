@@ -1725,22 +1725,3 @@ hr {
     grid-template-columns: 1fr;
   }
 }
-
-/* 내 할 일(개인 할 일) 마감 표시 */
-.cal-chip.todo {
-  background: var(--success-soft);
-  color: var(--success);
-  cursor: default;
-}
-
-.cal-dot.todo {
-  background: var(--success);
-}
-
-.cal-day-item.todo {
-  color: var(--text);
-}
-
-.cal-filter-todo::first-letter {
-  color: var(--success);
-}
