@@ -95,6 +95,20 @@ public class DriveContentService {
     }
 
     /**
+     * 업로드할 폴더 고르기용: 연동한 폴더 ID와 이름. (연동 관리에서 폴더를 고를 때 저장한 이름)
+     */
+    public List<DriveFolderResponse> getFolderNames(Long workspaceId, Long userId) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return integrationService.getConnectionTargetNames(workspaceId, PROVIDER).entrySet().stream()
+            .map(e -> new DriveFolderResponse(e.getKey(), e.getValue()))
+            .toList();
+    }
+
+    /** @param name 폴더 이름 (모르면 null) */
+    public record DriveFolderResponse(String folderId, String name) {
+    }
+
+    /**
      * 2. Google Drive 파일 목록 조회.
      *
      * folderId가 없으면 연동된 모든 폴더 조회.
@@ -163,7 +177,7 @@ public class DriveContentService {
                 )
                 .toList();
 
-        return contentRefService.toDtos(files);
+        return contentRefService.toDtos(files).stream().map(DriveContentService::withoutBody).toList();
     }
 
     /**
@@ -182,9 +196,9 @@ public class DriveContentService {
             false
         );
 
-        return contentRefService.getContentRef(
+        return withoutBody(contentRefService.getContentRef(
             file.getContentRefId()
-        );
+        ));
     }
 
     /**
@@ -234,7 +248,21 @@ public class DriveContentService {
 
         return contentRefService.toDtos(
             deletedFiles
-        );
+        ).stream().map(DriveContentService::withoutBody).toList();
+    }
+
+    /**
+     * 검색용으로 저장한 파일 본문은 화면에 보내지 않는다. (파일마다 수만 자가 될 수 있다)
+     * 화면은 "파일 유형"·"설명"만 쓴다.
+     */
+    static ContentRefDTO withoutBody(ContentRefDTO dto) {
+        String content = dto.content();
+        if (content == null || !content.contains(DriveSyncAdapter.BODY_MARKER)) {
+            return dto;
+        }
+        return new ContentRefDTO(dto.contentRefId(), dto.provider(), dto.contentType(), dto.externalId(), dto.title(),
+            content.substring(0, content.indexOf(DriveSyncAdapter.BODY_MARKER)), dto.deepLink(), dto.fileFormat(),
+            dto.lastModifiedAt(), dto.messageCount(), dto.syncFailed());
     }
 
     /**

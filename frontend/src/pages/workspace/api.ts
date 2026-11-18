@@ -1,6 +1,7 @@
 import { http, ws } from '../../api/client';
 
-export type WorkspaceRole = 'OWNER' | 'MEMBER';
+/** OWNER 팀장(한 명) · ADMIN 관리자 · MEMBER 팀원 */
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
 export interface WorkspaceResponse {
   workspaceId: number;
@@ -49,6 +50,12 @@ export const deleteWorkspace = (id: string | number) => http.delete<void>(ws(id)
 export const getMembers = (id: string | number) => http.get<MemberResponse[]>(ws(id, '/members'));
 export const removeMember = (id: string | number, userId: number) =>
   http.delete<MemberResponse[]>(ws(id, `/members/${userId}`));
+/** 관리자 임명(ADMIN) · 해제(MEMBER) — 팀장만 */
+export const changeMemberRole = (id: string | number, userId: number, role: WorkspaceRole) =>
+  http.patch<MemberResponse[]>(ws(id, `/members/${userId}/role`), { role });
+/** 팀장 넘기기: 대상은 팀장, 나는 팀원이 된다 */
+export const transferOwner = (id: string | number, userId: number) =>
+  http.post<MemberResponse[]>(ws(id, `/members/${userId}/transfer-owner`));
 
 export const createInviteLink = (id: string | number) => http.post<InviteLinkResponse>(ws(id, '/invite-links'));
 export const getActiveInviteLink = (id: string | number) =>

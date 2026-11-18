@@ -79,6 +79,6 @@ export interface SyncStatus {
 export const getSyncStatuses = (workspaceId: string, provider: Provider) =>
   http.get<SyncStatus[]>(ws(workspaceId, `/sync/${provider}`));
 
-/** 지금 동기화 (1분 안에 이미 했으면 서버가 건너뛴다) */
+/** 수동 동기화 버튼: 1분 간격 제한 없이 바로 동기화 */
 export const syncNow = (workspaceId: string, provider: Provider) =>
-  http.post<SyncStatus[]>(ws(workspaceId, `/sync/${provider}`));
+  http.post<SyncStatus[]>(ws(workspaceId, `/sync/${provider}?force=true`));

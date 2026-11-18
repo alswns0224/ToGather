@@ -112,9 +112,11 @@ public class GeminiClient {
     // ===================== 내부 =====================
 
     private String generateText(String prompt, boolean json) {
+        // 생각(thinking)을 낮게: 기본값이면 짧은 대화도 40초 가까이 걸려 시간 초과가 난다. (낮추면 15초 안팎)
+        Map<String, Object> thinking = Map.of("thinkingLevel", "low");
         Map<String, Object> generationConfig = json
-                ? Map.of("responseMimeType", "application/json", "temperature", 0.2)
-                : Map.of("temperature", 0.4);
+                ? Map.of("responseMimeType", "application/json", "temperature", 0.2, "thinkingConfig", thinking)
+                : Map.of("temperature", 0.4, "thinkingConfig", thinking);
         Map<String, Object> body = Map.of(
                 "contents", List.of(Map.of("role", "user", "parts", List.of(Map.of("text", prompt)))),
                 "generationConfig", generationConfig);

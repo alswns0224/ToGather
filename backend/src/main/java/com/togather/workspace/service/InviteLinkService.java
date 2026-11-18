@@ -53,6 +53,22 @@ public class InviteLinkService {
                 .orElse(null);
     }
 
+    /**
+     * 팀원을 내보낸 뒤 호출한다. 기존 초대 링크를 모두 지워서, 내보낸 사람이 갖고 있던 링크로 다시 들어오지 못하게 한다.
+     * 쓰던 링크가 있었으면 새 링크를 바로 만들어 둔다. (팀장 확인은 호출한 쪽에서 한다)
+     */
+    @Transactional
+    public void renewInviteLinks(Long workspaceId) {
+        boolean hadActive = inviteLinkRepository
+                .findFirstByWorkspaceIdAndExpiresAtAfterOrderByExpiresAtDesc(workspaceId, LocalDateTime.now())
+                .isPresent();
+        inviteLinkRepository.deleteAllByWorkspaceId(workspaceId);
+        if (hadActive) {
+            inviteLinkRepository.save(
+                    new InviteLink(OAuthStateStore.randomToken(), workspaceId, LocalDateTime.now().plus(LINK_TTL)));
+        }
+    }
+
     /** 초대 링크 유효성과 참여 여부를 확인한다. */
     public InviteInfoResponse getInviteInfo(String token, Long userId) {
         InviteLink link = findValidLink(token);

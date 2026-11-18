@@ -12,7 +12,9 @@ import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.notion.client.NotionApiClient;
 import com.togather.content.notion.client.NotionApiClient.NotionDatabase;
 import com.togather.content.notion.client.NotionApiClient.NotionPage;
+import com.togather.content.notion.dto.NotionBlocksSaveRequest;
 import com.togather.content.notion.dto.NotionDatabaseResponse;
+import com.togather.content.notion.dto.NotionEditorResponse;
 import com.togather.content.notion.dto.NotionPageDetailResponse;
 import com.togather.content.notion.dto.NotionPageRequest;
 import com.togather.content.notion.dto.NotionPageResponse;
@@ -55,6 +57,7 @@ public class NotionContentService {
     private final NotionApiClient notionApiClient;
     private final NotionSyncAdapter notionSyncAdapter;
     private final WorkspaceEventService workspaceEventService;
+    private final NotionBlockEditor notionBlockEditor;
 
     private final Map<String, CachedDatabase> databases = new ConcurrentHashMap<>();
 
@@ -151,10 +154,62 @@ public class NotionContentService {
         return saveOrFail(workspaceId, token, page, body != null ? body : ref.getContent(), ref.getChannelId());
     }
 
-    /** 휴지통으로 옮기고 원본 삭제로 표시한다. 연결된 Task·분석에서는 보관된 사본을 볼 수 있다. (UC-05-04) */
+    /** 블록 단위 편집기 열기: 최신 제목과 블록 목록 (이미지·표가 있는 문서도 고칠 수 있게) */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public NotionEditorResponse getEditor(Long workspaceId, Long userId, Long contentRefId) {
+        ContentRef ref = editableRef(workspaceId, contentRefId);
+        String token = token(workspaceId, ref.getChannelId(), userId);
+        NotionPage page = notionApiClient.getPage(token, ref.getOriginId());
+        return new NotionEditorResponse(page.title(), notionBlockEditor.read(token, ref.getOriginId()));
+    }
+
+    /** 블록 단위 편집 저장. 고친 블록만 Notion에 반영하고, 반영된 본문을 다시 읽어 저장한다. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ContentRefDTO saveBlocks(Long workspaceId, Long userId, Long contentRefId, NotionBlocksSaveRequest request) {
+        ContentRef ref = editableRef(workspaceId, contentRefId);
+        String token = token(workspaceId, ref.getChannelId(), userId);
+        if (request.title() != null) {
+            notionApiClient.updatePage(token, ref.getOriginId(), titleProperty(token, ref), request.title(), null);
+        }
+        notionBlockEditor.save(token, ref.getOriginId(), request.items());
+        NotionPage page = notionApiClient.getPage(token, ref.getOriginId());
+        return saveOrFail(workspaceId, token, page, notionApiClient.getPageText(token, page.id()), ref.getChannelId());
+    }
+
+    /** 이미지 파일을 Notion에 올린다. 돌려준 ID를 1시간 안에 saveBlocks의 이미지 칸에 넣어야 붙는다. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public String uploadImage(Long workspaceId, Long userId, Long contentRefId, String filename, String contentType,
+                              byte[] bytes) {
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        ContentRef ref = editableRef(workspaceId, contentRefId);
+        String token = token(workspaceId, ref.getChannelId(), userId);
+        return notionApiClient.uploadFile(token, filename == null || filename.isBlank() ? "image" : filename,
+                contentType, bytes);
+    }
+
+    private ContentRef editableRef(Long workspaceId, Long contentRefId) {
+        ContentRef ref = getPageRef(workspaceId, contentRefId);
+        if (ref.isOriginDeleted()) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return ref;
+    }
+
+    /**
+     * 휴지통으로 옮기고 원본 삭제로 표시한다. 연결된 Task·분석에서는 보관된 사본을 볼 수 있다. (UC-05-04)
+     * 이미 Notion에서 삭제된 문서면 ToGather에 남은 보관본을 지운다. (팀 작업 연결·검색 색인도 함께 지워지고,
+     * 이 문서로 만든 논의 정리는 남되 문서 연결만 끊긴다)
+     */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public boolean deleteContent(Long workspaceId, Long userId, Long contentRefId) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
+        if (ref.isOriginDeleted()) {
+            contentRefRepository.delete(ref);
+            notifyChanged(workspaceId, ref.getChannelId());
+            return true;
+        }
         String token = token(workspaceId, ref.getChannelId(), userId);
         notionApiClient.archivePage(token, ref.getOriginId());
         contentRefService.markOriginDeleted(contentRefId);

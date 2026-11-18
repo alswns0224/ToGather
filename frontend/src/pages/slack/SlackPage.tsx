@@ -55,7 +55,7 @@ export default function SlackPage() {
     setSyncing(true);
     setSyncError(null);
     try {
-      await syncSlack(workspaceId);
+      await syncSlack(workspaceId, true);
     } catch (e) {
       setSyncError((e as Error).message);
     } finally {

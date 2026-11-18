@@ -27,8 +27,17 @@ public class WorkspaceAccessCheckerImpl implements WorkspaceAccessChecker {
     public void checkOwner(Long workspaceId, Long userId) {
         WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_ACCESS_DENIED));
-        if (!member.isOwner()) {
+        if (!member.isAdmin()) {
             throw new BusinessException(ErrorCode.WORKSPACE_OWNER_REQUIRED);
+        }
+    }
+
+    @Override
+    public void checkMainOwner(Long workspaceId, Long userId) {
+        WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_ACCESS_DENIED));
+        if (!member.isOwner()) {
+            throw new BusinessException(ErrorCode.MAIN_OWNER_REQUIRED);
         }
     }
 }

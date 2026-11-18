@@ -37,7 +37,18 @@ public class WorkspaceMember extends BaseTimeEntity {
         this.role = role;
     }
 
+    /** 팀장(한 명) */
     public boolean isOwner() {
         return role == WorkspaceRole.OWNER;
+    }
+
+    /** 팀장 또는 관리자 */
+    public boolean isAdmin() {
+        return role == WorkspaceRole.OWNER || role == WorkspaceRole.ADMIN;
+    }
+
+    /** 팀장(OWNER) · 관리자(ADMIN) · 팀원(MEMBER)으로 바꾼다. */
+    public void changeRole(WorkspaceRole role) {
+        this.role = role;
     }
 }

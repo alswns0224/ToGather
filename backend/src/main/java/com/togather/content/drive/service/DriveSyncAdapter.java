@@ -7,6 +7,7 @@ import com.togather.common.exception.ErrorCode;
 
 import com.togather.content.domain.ContentRef;
 import com.togather.content.domain.ContentRef.DriveFileState;
+import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveChange;
 import com.togather.content.drive.client.DriveApiClient.DriveFile;
@@ -59,9 +60,16 @@ public class DriveSyncAdapter implements SyncAdapter {
     private static final Provider PROVIDER =
         Provider.GOOGLE_DRIVE;
 
-    // ContentRef.content의 기본 DB 문자열 길이를 고려
+    // 파일 정보(유형·설명) 부분의 최대 길이 (본문은 DriveTextExtractor.MAX_CHARS까지 따로 붙는다)
     private static final int MAX_CONTENT_LENGTH = 240;
 
+    /** 저장 내용에서 추출한 본문이 시작되는 표시. 이 표시가 없으면 아직 본문을 읽지 않은 파일이다. */
+    static final String BODY_MARKER = "\n\n본문:\n";
+    /** 한 번 동기화할 때 예전 파일 본문을 새로 읽는 최대 개수 (파일 다운로드가 몰리지 않게) */
+    private static final int MAX_BACKFILL_PER_SYNC = 5;
+
+    private final DriveTextExtractor driveTextExtractor;
+    private final com.togather.search.repository.ContentEmbeddingRepository contentEmbeddingRepository;
     private final DriveApiClient driveApiClient;
     private final ContentRefService contentRefService;
     private final ContentRefRepository contentRefRepository;
@@ -245,6 +253,7 @@ public class DriveSyncAdapter implements SyncAdapter {
             saveFile(
                 workspaceId,
                 folderId,
+                token,
                 file,
                 startedAt
             );
@@ -407,6 +416,7 @@ public class DriveSyncAdapter implements SyncAdapter {
                 saveFile(
                     workspaceId,
                     folderId,
+                    token,
                     file,
                     startedAt
                 );
@@ -425,6 +435,9 @@ public class DriveSyncAdapter implements SyncAdapter {
                 reconciled++;
             }
         }
+
+        // 본문 추출 기능 전에 저장된 파일은 내용이 바뀌지 않으면 다시 저장되지 않으므로, 조금씩 본문을 채운다.
+        saved += backfillBodies(workspaceId, folderId, token, startedAt);
 
         log.info(
             "Drive incremental sync completed: "
@@ -469,6 +482,7 @@ public class DriveSyncAdapter implements SyncAdapter {
     private void saveFile(
         Long workspaceId,
         String folderId,
+        String token,
         DriveFile file,
         LocalDateTime startedAt
     ) {
@@ -513,6 +527,10 @@ public class DriveSyncAdapter implements SyncAdapter {
             )
                 : content.toString();
 
+        // 통합 검색이 내용으로도 찾을 수 있게 본문 글을 붙인다.
+        // 수정되지 않은 파일이면 저장해 둔 본문을 그대로 쓴다. (매번 다시 받지 않도록)
+        storedContent += BODY_MARKER + bodyText(workspaceId, token, file, mimeType);
+
         // 3. 생성 및 수정 시각
         LocalDateTime createdAt =
             file.createdAt() != null
@@ -542,8 +560,13 @@ public class DriveSyncAdapter implements SyncAdapter {
                 + file.id()
                 + "/view";
 
+        String before = contentRefRepository
+            .findByWorkspaceIdAndProviderAndOriginId(workspaceId, PROVIDER, file.id())
+            .map(ContentRef::getContent)
+            .orElse(null);
+
         // 6. 공통 콘텐츠 저장 서비스 호출
-        contentRefService.upsert(
+        ContentRefDTO saved = contentRefService.upsert(
             new ContentRefUpsert(
                 workspaceId,
                 null,
@@ -561,6 +584,50 @@ public class DriveSyncAdapter implements SyncAdapter {
                 null
             )
         );
+
+        // 본문이 새로 붙거나 바뀌었는데 수정 시각이 그대로면(예: 예전 파일·ToGather에서 올린 파일) 검색 색인이
+        // 다시 만들어지지 않으므로, 색인 기록을 지워 새 본문으로 다시 색인하게 한다.
+        if (before != null && !before.equals(storedContent)) {
+            contentEmbeddingRepository.deleteById(saved.contentRefId());
+        }
+    }
+
+    /**
+     * 검색용 본문 글. 이미 읽은 적이 있고 파일이 그 뒤로 수정되지 않았으면 저장해 둔 본문을 쓴다.
+     */
+    private String bodyText(Long workspaceId, String token, DriveFile file, String mimeType) {
+        if (!DriveTextExtractor.isSupported(mimeType)) {
+            return "";
+        }
+        java.util.Optional<ContentRef> existing =
+            contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, PROVIDER, file.id());
+        if (existing.isPresent() && existing.get().getContent() != null
+            && existing.get().getContent().contains(BODY_MARKER)
+            && java.util.Objects.equals(existing.get().getLastModifiedAt(), file.modifiedAt())) {
+            String stored = existing.get().getContent();
+            return stored.substring(stored.indexOf(BODY_MARKER) + BODY_MARKER.length());
+        }
+        return driveTextExtractor.extract(token, file.id(), mimeType);
+    }
+
+    /** 아직 본문을 읽지 않은 파일(본문 표시가 없는 것)을 최대 MAX_BACKFILL_PER_SYNC개 다시 저장한다. */
+    private int backfillBodies(Long workspaceId, String folderId, String token, LocalDateTime startedAt) {
+        int done = 0;
+        for (ContentRef ref : getTrackedFiles(workspaceId, folderId)) {
+            if (done >= MAX_BACKFILL_PER_SYNC) {
+                break;
+            }
+            if (ref.isOriginDeleted() || ref.isDriveTrashed()
+                || (ref.getContent() != null && ref.getContent().contains(BODY_MARKER))) {
+                continue;
+            }
+            DriveFile file = lookupFile(token, ref.getOriginId());
+            if (file != null && file.isDirectChildOf(folderId)) {
+                saveFile(workspaceId, folderId, token, file, startedAt);
+                done++;
+            }
+        }
+        return done;
     }
 
     // =====================================================

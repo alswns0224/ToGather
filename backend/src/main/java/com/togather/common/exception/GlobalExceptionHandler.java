@@ -48,6 +48,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class})
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception e) {
+        // 원인을 알 수 있게 짧게 남긴다. (요청 본문 전체는 남기지 않는다)
+        String cause = e instanceof HttpMessageNotReadableException r && r.getMostSpecificCause() != null
+                ? r.getMostSpecificCause().getClass().getSimpleName() : e.getClass().getSimpleName();
+        log.info("잘못된 요청: {}", cause);
         return invalidInput(ErrorCode.INVALID_INPUT.getMessage());
     }
 

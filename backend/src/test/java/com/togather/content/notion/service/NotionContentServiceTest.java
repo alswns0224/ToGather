@@ -115,6 +115,13 @@ class NotionContentServiceTest extends IntegrationTestSupport {
         verify(notionApiClient).archivePage(TOKEN, "p3");
         assertThat(notionContentService.getPages(workspaceId)).isEmpty();
         assertThat(notionContentService.getContentDetail(created.contentRefId()).isOriginDeleted()).isTrue();
+
+        // 이미 Notion에서 삭제된 문서를 한 번 더 삭제하면 보관본을 지운다. (Notion은 다시 부르지 않음)
+        notionContentService.deleteContent(workspaceId, userId, created.contentRefId());
+        verify(notionApiClient, org.mockito.Mockito.times(1)).archivePage(TOKEN, "p3");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> notionContentService.deleteContent(workspaceId, userId, created.contentRefId()))
+                .isInstanceOf(com.togather.common.exception.BusinessException.class);
     }
 
     @Test

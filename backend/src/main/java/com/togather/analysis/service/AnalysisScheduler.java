@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -23,6 +24,9 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+// 기본은 꺼짐: 사용자가 "논의 분석하기"를 누를 때만 분석한다. (요청하지 않은 분석이 검토 대기에 쌓이고 Gemini 한도를 쓰므로)
+// 켜려면 .env에 ANALYSIS_AUTO_ENABLED=true
+@ConditionalOnProperty(name = "togather.analysis.auto-enabled", havingValue = "true")
 public class AnalysisScheduler {
 
     static final int MAX_THREADS_PER_RUN = 5;

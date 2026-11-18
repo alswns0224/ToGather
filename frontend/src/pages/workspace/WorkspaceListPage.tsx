@@ -111,7 +111,7 @@ export default function WorkspaceListPage() {
         {data && data.length === 0 && !creating && (
           <div className={`${CARD} p-10 text-center`}>
             <p className={`m-0 text-sm ${MUTED}`}>
-              참여 중인 워크스페이스가 없습니다. 새로 만들거나 팀장에게 초대 링크를 받으세요.
+              참여 중인 워크스페이스가 없습니다. 새로 만들거나 팀장·관리자에게 초대 링크를 받으세요.
             </p>
           </div>
         )}
@@ -133,12 +133,12 @@ export default function WorkspaceListPage() {
                     </div>
                     <span
                       className={`rounded-full px-3 py-1 text-[11px] font-bold ${
-                        w.myRole === 'OWNER'
+                        w.myRole !== 'MEMBER'
                           ? 'border border-indigo-500/30 bg-indigo-500/15 text-indigo-500'
                           : `${SUB_CARD} !rounded-full`
                       }`}
                     >
-                      {w.myRole === 'OWNER' ? '👑 팀장' : '팀원'}
+                      {w.myRole === 'OWNER' ? '👑 팀장' : w.myRole === 'ADMIN' ? '관리자' : '팀원'}
                     </span>
                   </div>
                   <h3 className="m-0 text-xl font-bold transition-colors group-hover:text-indigo-500">{w.name}</h3>

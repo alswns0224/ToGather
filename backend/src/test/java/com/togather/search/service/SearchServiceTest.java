@@ -188,6 +188,43 @@ class SearchServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 파일_본문_깊숙이_있는_낱말도_찾고_그_주변을_미리보기로_보여준다() {
+        String longBody = "개요 ".repeat(2000) + "검색 결과는 유사도 0.7 이상만 보여준다. " + "부록 ".repeat(500);
+        ContentRefDTO spec = save(Provider.GOOGLE_DRIVE, ContentType.FILE, "file-2", "folder-1", null,
+                "설계명세서.pdf", "파일 유형: application/pdf\n\n본문:\n" + longBody, T0);
+        contentIndexService.indexPending();
+
+        Item item = find(searchService.search(workspaceId, userId, "유사도", null, 10).items(), spec.contentRefId());
+
+        assertThat(item.score()).isGreaterThanOrEqualTo(SearchService.KEYWORD_SCORE);
+        assertThat(item.snippet()).contains("유사도 0.7").startsWith("…").doesNotContain("파일 유형");
+    }
+
+    @Test
+    void 낱말_찾기는_검색어의_퍼센트와_밑줄을_글자_그대로_찾는다() {
+        save(Provider.NOTION, ContentType.PAGE, "page-9", "db-1", null, "진척률", "진척률 50% 달성", T0);
+        contentIndexService.indexPending();
+        vectorStore.docs.clear(); // 낱말 찾기만 확인한다.
+
+        assertThat(searchService.search(workspaceId, userId, "50%", null, 10).items())
+                .extracting(Item::title).containsExactly("진척률");
+        assertThat(searchService.search(workspaceId, userId, "a_b", null, 10).items()).isEmpty();
+    }
+
+    @Test
+    void ㅎㅇ처럼_아주_짧은_메시지는_문맥_검색에_나오지_않는다() {
+        ContentRefDTO hi = save(Provider.SLACK, ContentType.MESSAGE, "C1:100.3", "C1", null, "#general", "ㅎㅇ",
+                T0.plusMinutes(2));
+        contentIndexService.indexPending();
+
+        assertThat(searchService.search(workspaceId, userId, "발표", null, 10).items())
+                .extracting(Item::contentRefId).doesNotContain(hi.contentRefId());
+        // 검색어가 그대로 들어 있으면 낱말 찾기로는 나온다.
+        assertThat(searchService.search(workspaceId, userId, "ㅎㅇ", null, 10).items())
+                .extracting(Item::contentRefId).contains(hi.contentRefId());
+    }
+
+    @Test
     void 결과에_연결된_Task를_함께_보여준다() {
         contentIndexService.indexPending();
         Long taskId = jdbc.queryForObject("""

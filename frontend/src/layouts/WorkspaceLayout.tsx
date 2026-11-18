@@ -58,7 +58,7 @@ function currentMenuLabel(pathname: string, workspaceId: string) {
   return match?.label ?? '';
 }
 
-const ROLE_TEXT: Record<string, string> = { OWNER: 'OWNER', MEMBER: 'MEMBER' };
+const ROLE_TEXT: Record<string, string> = { OWNER: '팀장', ADMIN: '관리자', MEMBER: '팀원' };
 
 function MenuLink({ workspaceId, menu, count }: { workspaceId: string; menu: Menu; count?: number }) {
   const { pathname } = useLocation();
@@ -82,9 +82,9 @@ function MenuLink({ workspaceId, menu, count }: { workspaceId: string; menu: Men
 export default function WorkspaceLayout() {
   const { workspaceId = '' } = useParams();
   const user = useLoginUser();
-  const { theme, palette } = useTheme();
-  const logoSrc =
-    palette === 'indigo' ? '/togather-logo-mark.png' : theme === 'dark' ? '/togather-logo-white.png' : '/togather-logo-carrot.png';
+  const { palette } = useTheme();
+  // 주황 테마는 다크·라이트 모두 주황 로고
+  const logoSrc = palette === 'indigo' ? '/togather-logo-mark.png' : '/togather-logo-carrot.png';
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const menuLabel = currentMenuLabel(pathname, workspaceId);
