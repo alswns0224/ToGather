@@ -1,18 +1,13 @@
-// UI-01 로그인 (담당: A)
+// UI-01 로그인 (가로 3단계 흐름 카드 + 60:40 분할 + 파랑·보라 / 당근 오렌지 공통 지원)
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { devLogin, getAuthConfig, googleLoginUrl } from './api';
 import { useAsync } from '../../hooks/useAsync';
+import { useTheme } from '../../hooks/useTheme';
 import { ErrorBox, Loading } from '../../components/Status';
 import ThemeToggle from '../../components/ThemeToggle';
 import ServiceLogo from '../../components/ServiceLogo';
-import { BTN_AI, BTN_SUB, CARD, INPUT, MUTED } from '../../components/ui';
-
-const FLOW = [
-  { icon: '💬 📄 📁', title: '협업 도구 수집', desc: 'Slack · Notion · Google', hi: false },
-  { icon: '✨ 🧠', title: 'Gemini 논의 분석', desc: '결정 · 후속 작업 추출', hi: true },
-  { icon: '✅ 📅 📄', title: '검토 후 실행', desc: 'Task · 회의 · 문서', hi: false },
-];
+import { BTN_SUB, INPUT, MUTED } from '../../components/ui';
 
 const ERROR_MESSAGES: Record<string, string> = {
   access_denied: '로그인을 취소했습니다.',
@@ -28,10 +23,20 @@ export default function LoginPage() {
   const redirect = params.get('redirect') ?? '/workspaces';
   const errorCode = params.get('error');
   const config = useAsync(getAuthConfig, []);
+  const { theme, palette } = useTheme();
   const [redirecting, setRedirecting] = useState(false);
   const [dev, setDev] = useState({ email: '', name: '' });
   const [devError, setDevError] = useState<Error>();
   const [submitting, setSubmitting] = useState(false);
+
+  const isIndigo = palette === 'indigo';
+  const isDark = theme === 'dark';
+
+  const logoSrc = isIndigo
+    ? '/togather-logo-mark.png'
+    : isDark
+      ? '/togather-logo-white.png'
+      : '/togather-logo-carrot.png';
 
   const startGoogle = () => {
     setRedirecting(true);
@@ -53,141 +58,188 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-6 text-slate-900 dark:text-white">
-      <div className="fixed top-6 right-6 z-20">
+    <div
+      style={{ backgroundColor: 'var(--bg)', backgroundImage: 'var(--aurora)' }}
+      className="relative flex min-h-screen w-full items-center justify-center p-6"
+    >
+      <div className="fixed top-4 right-5 z-20">
         <ThemeToggle />
       </div>
 
-      <div className={`${CARD} grid w-full max-w-5xl grid-cols-1 overflow-hidden !shadow-2xl lg:grid-cols-12`}>
-        {/* 왼쪽 소개 */}
-        <div className="relative flex flex-col justify-between overflow-hidden bg-gradient-to-br from-indigo-950 via-[#0F1026] to-purple-950 p-10 text-white lg:col-span-7 lg:p-12">
-          <div>
-            <div className="mb-8 inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-indigo-200 backdrop-blur-md">
-              <span className="h-2 w-2 animate-ping rounded-full bg-emerald-400" />
-              <span>팀 프로젝트 통합 워크스페이스</span>
-            </div>
-            <h1 className="text-4xl leading-[1.15] font-bold tracking-tight lg:text-5xl">
-              모두,{' '}
-              <span className="bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
-                다 함께.
+      <div className="grid w-full max-w-6xl grid-cols-1 overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-xl lg:grid-cols-12">
+        <section
+          style={{
+            background: isDark ? (isIndigo ? '#111625' : '#181411') : isIndigo ? '#f5f8ff' : '#fdfaf4',
+          }}
+          className="order-2 relative flex items-center justify-center overflow-hidden border-t border-[var(--border-soft)] px-6 py-10 lg:order-1 lg:col-span-7 lg:border-t-0 lg:border-r lg:px-10 lg:py-12"
+        >
+          <div className="relative z-10 w-full max-w-xl space-y-6">
+            <div>
+              <span
+                className="inline-block rounded-full px-3.5 py-1 text-xs font-bold"
+                style={{
+                  background: isIndigo ? (isDark ? 'rgba(99,102,241,0.2)' : '#e0e7ff') : isDark ? 'rgba(132,204,22,0.18)' : '#e6edd6',
+                  color: isIndigo ? (isDark ? '#c7d2fe' : '#3730a3') : isDark ? '#bef264' : '#3f5228',
+                }}
+              >
+                팀을 위한 연결된 워크스페이스
               </span>
-            </h1>
-            <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-300">
-              Slack, Notion, Google Drive, Calendar, Gmail에 흩어진 대화 · 문서 · 파일 · 일정을 하나의 워크스페이스에서
-              연결합니다.
-            </p>
-          </div>
-
-          <div className="my-8 rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur-md">
-            <div className="mb-3 text-xs font-bold text-indigo-200">✨ ToGather 협업 흐름</div>
-            <div className="grid grid-cols-3 gap-2.5 text-center">
-              {FLOW.map((f) => (
-                <div
-                  key={f.title}
-                  className={`rounded-xl border p-3 ${f.hi ? 'border-indigo-400/40 bg-indigo-500/20' : 'border-white/10 bg-white/5'}`}
+              <h1 className="mt-3.5 text-4xl leading-[1.18] font-extrabold tracking-tight text-[var(--text)] lg:text-5xl">
+                모여서,{' '}
+                <span
+                  style={{
+                    background: 'var(--brand-grad)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                  }}
                 >
-                  <div className="mb-1 text-base">{f.icon}</div>
-                  <p className={`m-0 text-[11px] font-bold ${f.hi ? 'text-indigo-200' : 'text-white'}`}>{f.title}</p>
-                  <p className="m-0 mt-0.5 text-[10px] text-slate-400">{f.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>연동 서비스</span>
-            <div className="flex items-center gap-1.5">
-              {(['slack', 'notion', 'drive', 'gcal', 'gmail'] as const).map((svc) => (
-                <span key={svc} className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-lg bg-white">
-                  <ServiceLogo service={svc} />
+                  다 함께.
                 </span>
-              ))}
+              </h1>
+              <p className="mt-3 text-[15px] leading-relaxed text-[var(--muted)]">
+                대화·자료·일정을 연결하고,
+                <br />
+                우리 팀이 해야 할 일을 함께 정리하세요.
+              </p>
             </div>
-          </div>
-        </div>
 
-        {/* 오른쪽 로그인 */}
-        <div className="flex flex-col justify-between p-10 lg:col-span-5 lg:p-12">
-          <div>
-            <div className="mb-8 flex items-center gap-3">
-              <div className={`${BTN_AI} !h-11 !w-11 !rounded-2xl !p-0 text-xl`}>T</div>
-              <div>
-                <h2 className="m-0 text-2xl font-bold">ToGather</h2>
-                <p className={`m-0 text-xs ${MUTED}`}>흩어진 대화·문서·파일·일정을 하나의 워크스페이스에서</p>
+            <div className="grid grid-cols-1 items-center gap-2.5 md:grid-cols-[1fr_auto_0.9fr_auto_1.2fr]">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 shadow-xs">
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-[var(--text)]">
+                  <span className="inline-flex h-4 w-4">
+                    <ServiceLogo service="slack" />
+                  </span>
+                  Slack
+                </div>
+                <div className="mb-2 text-[13px] font-bold text-[var(--text)]">팀 대화</div>
+                <div className="rounded-lg bg-[var(--surface-2)] px-2.5 py-2 text-xs text-[var(--muted)]">
+                  발표자료는 금요일까지 정리해요.
+                </div>
+              </div>
+
+              <div className="text-center text-base font-bold text-[var(--muted)]">→</div>
+
+              <div
+                className="rounded-2xl border p-3.5 shadow-xs"
+                style={{
+                  background: isIndigo ? (isDark ? '#1c2338' : '#eef2ff') : isDark ? '#282218' : '#fef8dc',
+                  borderColor: isIndigo ? (isDark ? '#334166' : '#c7d2fe') : isDark ? '#4a3d24' : '#f3e4a6',
+                }}
+              >
+                <div className="mb-2.5 flex items-center gap-1.5 text-[13px] font-bold text-[var(--text)]">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--primary)] text-[11px] text-white">
+                    ✓
+                  </span>
+                  결정사항
+                </div>
+                <div className="rounded-lg bg-[var(--surface)] px-2.5 py-2 text-xs font-semibold text-[var(--text)]">
+                  발표자료 최종 정리
+                </div>
+              </div>
+
+              <div className="text-center text-base font-bold text-[var(--muted)]">→</div>
+
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3.5 shadow-xs">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs font-bold text-[var(--text)]">☑ 팀 작업</span>
+                  <span className="rounded-full bg-[var(--success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--success)]">
+                    진행 중
+                  </span>
+                </div>
+                <div className="mb-2 text-[13px] font-bold text-[var(--text)]">중간 발표자료 정리</div>
+                <div className="mb-2 flex gap-1">
+                  {['정', '백', '이'].map((n) => (
+                    <span key={n} className="tg-avatar">
+                      {n}
+                    </span>
+                  ))}
+                </div>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                    <div className="h-full w-1/2 rounded-full" style={{ background: 'var(--brand-grad)' }} />
+                  </div>
+                  <span className="text-[11px] font-bold text-[var(--muted)]">50%</span>
+                </div>
+                <div className="rounded-lg bg-[var(--surface-2)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)]">
+                  📄 발표자료.pdf
+                </div>
               </div>
             </div>
+          </div>
+        </section>
 
-            <h3 className="m-0 mb-1.5 text-xl font-bold">시작하기</h3>
-            <p className={`mb-6 text-xs leading-relaxed ${MUTED}`}>
-              별도 가입 없이 Google 계정 하나로 워크스페이스에 접속합니다.
-            </p>
+        <section className="order-1 flex items-center justify-center bg-[var(--surface)] px-6 py-10 lg:order-2 lg:col-span-5 lg:px-10">
+          <div className="w-full max-w-xs space-y-4">
+            <div className="flex items-center gap-2.5">
+              <img src={logoSrc} alt="ToGather 로고" className="h-9 w-auto" />
+              <span className="text-2xl font-extrabold tracking-tight text-[var(--text)]">ToGather</span>
+            </div>
+
+            <div>
+              <h2 className="m-0 text-xl font-extrabold text-[var(--text)]">ToGather 시작하기</h2>
+              <p className={`mt-1 text-sm ${MUTED}`}>Google 계정으로 간편하게 시작하세요.</p>
+            </div>
 
             {errorCode && (
-              <div className="mb-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-500">
-                <p className="m-0 text-xs font-bold">⚠️ 로그인하지 못했습니다</p>
-                <p className="m-0 mt-1 text-[11px] leading-relaxed">
-                  {ERROR_MESSAGES[errorCode] ?? `로그인에 실패했습니다. (${errorCode})`}
-                </p>
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-500">
+                {ERROR_MESSAGES[errorCode] ?? `로그인에 실패했습니다. (${errorCode})`}
               </div>
             )}
-
             {config.loading && <Loading />}
             {config.error && <ErrorBox error={config.error} onRetry={config.reload} />}
 
             {config.data && (
               <>
-                {redirecting && (
-                  <div className="mb-5 rounded-2xl border border-violet-500/35 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/5 p-5 text-center">
-                    <div className="mx-auto mb-2.5 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-                    <p className="m-0 text-xs font-bold">Google로 이동하는 중...</p>
-                  </div>
-                )}
                 <button
-                  className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-2xl border-0 bg-slate-900 px-5 py-4 text-sm font-bold text-white shadow-lg transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                  type="button"
+                  className="flex h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 text-[15px] font-bold text-[var(--text)] shadow-xs transition hover:-translate-y-0.5 hover:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={startGoogle}
                   disabled={!config.data.googleEnabled || redirecting}
                 >
-                  {errorCode ? 'Google 계정으로 다시 시도' : 'Google 계정으로 계속하기'}
+                  <svg className="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                  </svg>
+                  <span>{redirecting ? 'Google로 이동하는 중...' : 'Google 계정으로 계속하기'}</span>
                 </button>
-                {!config.data.googleEnabled && (
-                  <p className={`mt-2 text-xs ${MUTED}`}>
-                    서버에 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET이 설정되지 않았습니다.
-                  </p>
-                )}
+                <p className={`text-center text-xs ${MUTED}`}>
+                  {config.data.googleEnabled
+                    ? '별도 가입 없이 바로 시작할 수 있어요.'
+                    : '서버에 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET이 설정되지 않았습니다.'}
+                </p>
 
                 {config.data.devLoginEnabled && (
-                  <form
-                    className="mt-6 flex flex-col gap-2 border-0 border-t border-dashed border-slate-200 pt-6 dark:border-white/10"
-                    onSubmit={submitDev}
-                  >
-                    <p className={`m-0 text-[11px] font-bold ${MUTED}`}>
-                      개발용 로그인 (DEV_LOGIN_ENABLED=true일 때만 보입니다)
-                    </p>
-                    <input
-                      className={INPUT}
-                      type="email"
-                      placeholder="이메일"
-                      required
-                      value={dev.email}
-                      onChange={(e) => setDev({ ...dev, email: e.target.value })}
-                    />
-                    <input
-                      className={INPUT}
-                      placeholder="이름"
-                      required
-                      value={dev.name}
-                      onChange={(e) => setDev({ ...dev, name: e.target.value })}
-                    />
-                    {devError && <ErrorBox error={devError} />}
-                    <button className={`${BTN_SUB} py-2.5`} disabled={submitting}>
-                      {submitting ? '로그인 중...' : '개발용 로그인'}
-                    </button>
-                  </form>
+                  <details className="border-0 border-t border-dashed border-[var(--border)] pt-3">
+                    <summary className={`cursor-pointer text-xs font-semibold ${MUTED}`}>개발용 로그인 (선택)</summary>
+                    <form className="mt-3 flex flex-col gap-2" onSubmit={submitDev}>
+                      <input
+                        className={INPUT}
+                        type="email"
+                        placeholder="이메일"
+                        required
+                        value={dev.email}
+                        onChange={(e) => setDev({ ...dev, email: e.target.value })}
+                      />
+                      <input
+                        className={INPUT}
+                        placeholder="이름"
+                        required
+                        value={dev.name}
+                        onChange={(e) => setDev({ ...dev, name: e.target.value })}
+                      />
+                      {devError && <ErrorBox error={devError} />}
+                      <button className={`${BTN_SUB} py-2.5`} disabled={submitting}>
+                        {submitting ? '로그인 중...' : '개발용 로그인'}
+                      </button>
+                    </form>
+                  </details>
                 )}
               </>
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import NotionPage from './pages/notion/NotionPage';
 import DrivePage from './pages/drive/DrivePage';
 import CalendarPage from './pages/calendar/CalendarPage';
 import AnalysisPage from './pages/analysis/AnalysisPage';
+import HomePage from './pages/home/HomePage';
 import AnalysisListPage from './pages/analysis/AnalysisListPage';
 import TaskListPage from './pages/task/TaskListPage';
 import TaskContextPage from './pages/task/TaskContextPage';
@@ -46,7 +47,8 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <Navigate to="tasks" replace /> },
+      { index: true, element: <Navigate to="home" replace /> },
+      { path: 'home', element: <HomePage /> },
       { path: 'tasks', element: <TaskListPage /> },
       { path: 'tasks/:taskId', element: <TaskContextPage /> },
       { path: 'slack', element: <SlackPage /> },

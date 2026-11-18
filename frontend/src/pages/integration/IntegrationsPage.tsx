@@ -1,4 +1,4 @@
-// UI-03 외부 협업 서비스 연동 관리 (담당: A)
+// UI-03 외부 협업 서비스 연동 관리 (담당: A) — 팀원 UI 시안(togather_ui.html)의 2열 서비스 카드
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
@@ -7,29 +7,29 @@ import {
   disconnect,
   getAvailableTargets,
   getIntegrations,
+  getSyncStatuses,
   reauthUrl,
   selectTargets,
   skipTargets,
+  syncNow,
   type ConnectionStatus,
   type ConnectionStatusDTO,
+  type IntegrationStatusResponse,
   type TargetItem,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
+import PageHeader from '../../components/PageHeader';
 import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
-import { BTN_DANGER, BTN_PRIMARY, BTN_SUB, CARD, EYEBROW, SUB_CARD } from '../../components/ui';
+import NavIcon from '../../layouts/NavIcon';
+import { formatDateTime } from '../../utils/date';
 
-const STATUS_LABELS: Record<ConnectionStatus, { text: string; className: string }> = {
-  CONNECTED: { text: '● 연결됨', className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
-  TARGET_NOT_SELECTED: { text: '◎ 대상 선택 필요', className: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
-  REAUTH_REQUIRED: { text: '⚠️ 재인증 필요', className: 'animate-pulse bg-amber-500/20 text-amber-600 dark:text-amber-400' },
-  DISCONNECTED: { text: '○ 연결 안 됨', className: 'bg-slate-500/15 text-slate-500 dark:text-slate-400' },
+const STATUS_BADGE: Record<ConnectionStatus, { text: string; className: string }> = {
+  CONNECTED: { text: '연결됨', className: 'badge-success' },
+  TARGET_NOT_SELECTED: { text: '대상 선택 필요', className: 'badge-primary' },
+  REAUTH_REQUIRED: { text: '재인증 필요', className: 'badge-warning' },
+  DISCONNECTED: { text: '연결 전', className: '' },
 };
-
-function StatusPill({ status }: { status: ConnectionStatus }) {
-  const s = STATUS_LABELS[status];
-  return <span className={`whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold ${s.className}`}>{s.text}</span>;
-}
 
 const ERROR_MESSAGES: Record<string, string> = {
   CANCELED: '인증을 취소했습니다.',
@@ -73,16 +73,12 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <section className="space-y-6">
-      <div>
-        <span className={EYEBROW}>
-          OAUTH 2.0 INTEGRATIONS
-        </span>
-        <h1 className="mt-2 text-2xl font-bold">연동 관리</h1>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Slack · Notion · Drive는 팀에서 한 명이 연결하면 모두가 사용합니다. Gmail · Calendar는 각자 연결합니다.
-        </p>
-      </div>
+    <section className="stack">
+      <PageHeader
+        icon={<NavIcon name="integrations" className="h-[22px] w-[22px] text-[var(--primary)]" />}
+        title="외부 서비스 연동 관리"
+        description="수집 대상을 고르고, 수동 동기화·재인증·연결 해제를 할 수 있어요. Slack · Notion · Drive는 팀 공용, Gmail · Calendar는 각자 연결해요."
+      />
 
       {connectedProvider && !errorCode && (
         <div className="alert alert-success">
@@ -105,98 +101,16 @@ export default function IntegrationsPage() {
       {loading && <Loading />}
       {error && <ErrorBox error={error} onRetry={reload} />}
 
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-        {data?.map((item) => {
-          const label = PROVIDER_LABELS[item.provider];
-          const mine = item.connections.find((c) => c.mine);
-          // 카드 머리의 대표 상태: 개인 서비스는 내 연결, 팀 서비스는 첫 연결
-          const primary = item.personal ? mine : item.connections[0];
-          const needsReauth = item.connections.some((c) => c.status === 'REAUTH_REQUIRED');
-          return (
-            <div key={item.provider} className={`${CARD} flex flex-col justify-between p-6 ${needsReauth ? 'ring-2 ring-amber-500/60' : ''}`}>
-              <div>
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-                      <ServiceLogo service={PROVIDER_LOGO[item.provider]} />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="m-0 flex items-center gap-2 text-lg font-bold">
-                        {label.name}
-                        {item.personal && (
-                          <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                            개인
-                          </span>
-                        )}
-                      </h3>
-                      <p className="m-0 truncate text-xs text-slate-500 dark:text-slate-400">
-                        {primary ? (primary.accountLabel ?? primary.externalAccountId ?? '-') : '연결된 계정 없음'}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusPill status={primary?.status ?? 'DISCONNECTED'} />
-                </div>
-
-                <p className="mb-4 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{label.description}</p>
-
-                {item.connections.map((conn) => (
-                  <div key={conn.connectionId} className={`${SUB_CARD} mb-3 space-y-2 p-3`}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {item.connections.length > 1 && <StatusPill status={conn.status} />}
-                      <span className="text-xs text-slate-600 dark:text-slate-300">
-                        {conn.accountLabel ?? conn.externalAccountId ?? '-'} ·{' '}
-                        {conn.mine ? '내가 연결' : `${conn.connectedByName}님이 연결`}
-                      </span>
-                      <span className="flex-1" />
-                      {conn.status === 'REAUTH_REQUIRED' && conn.mine && (
-                        <a
-                          className={`${BTN_PRIMARY} !bg-amber-500 hover:!bg-amber-400`}
-                          href={reauthUrl(workspaceId, conn.connectionId)}
-                        >
-                          🔄 재인증
-                        </a>
-                      )}
-                      {label.target && (
-                        <button className={BTN_PRIMARY} onClick={() => setSelecting(conn)}>
-                          {label.target} 선택
-                        </button>
-                      )}
-                      <button className={BTN_DANGER} onClick={() => remove(conn)}>
-                        해제
-                      </button>
-                    </div>
-                    {conn.targets.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{label.target}:</span>
-                        {conn.targets.map((t) => (
-                          <span
-                            key={t.id}
-                            className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-bold text-indigo-600 dark:text-indigo-300"
-                          >
-                            {t.name ?? t.id}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 dark:border-white/10">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {item.connections.length === 0 ? '연결되지 않았습니다.' : `연결 ${item.connections.length}개`}
-                </span>
-                {item.configured ? (
-                  <a className={mine ? BTN_SUB : BTN_PRIMARY} href={connectUrl(workspaceId, item.provider)}>
-                    {mine ? '다른 계정으로 다시 연결' : '+ 연동 시작'}
-                  </a>
-                ) : (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">서버 설정 필요</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {data?.map((item) => (
+          <ServiceCard
+            key={item.provider}
+            workspaceId={workspaceId}
+            item={item}
+            onSelect={setSelecting}
+            onRemove={remove}
+          />
+        ))}
       </div>
 
       {selecting && (
@@ -212,6 +126,144 @@ export default function IntegrationsPage() {
         />
       )}
     </section>
+  );
+}
+
+/** 서비스 하나: 로고 · 이름 · 팀 공용/개인 연동 · 상태 / 수집 대상 · 마지막 동기화 / 버튼 */
+function ServiceCard({
+  workspaceId,
+  item,
+  onSelect,
+  onRemove,
+}: {
+  workspaceId: string;
+  item: IntegrationStatusResponse;
+  onSelect: (conn: ConnectionStatusDTO) => void;
+  onRemove: (conn: ConnectionStatusDTO) => void;
+}) {
+  const label = PROVIDER_LABELS[item.provider];
+  const mine = item.connections.find((c) => c.mine);
+  // 대표 연결: 개인 서비스는 내 연결, 팀 서비스는 첫 연결
+  const primary = item.personal ? mine : item.connections[0];
+  const status = primary?.status ?? 'DISCONNECTED';
+  const badge = STATUS_BADGE[status];
+
+  const statuses = useAsync(
+    () => (primary ? getSyncStatuses(workspaceId, item.provider) : Promise.resolve([])),
+    [workspaceId, item.provider, primary?.connectionId],
+  );
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const lastSynced = (statuses.data ?? [])
+    .map((s) => s.lastSyncedAt)
+    .filter((v): v is string => !!v)
+    .sort()
+    .pop();
+  const syncFailed = (statuses.data ?? []).some((s) => s.failed);
+
+  const sync = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      statuses.setData(await syncNow(workspaceId, item.provider));
+    } catch (e) {
+      setSyncError((e as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const targetText = primary
+    ? primary.targets.length > 0
+      ? primary.targets.map((t) => t.name ?? t.id).join(', ')
+      : label.target
+        ? '미선택'
+        : '내 메일함'
+    : '미선택';
+
+  return (
+    <div className="card integ-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-10 w-10 flex-shrink-0">
+            <ServiceLogo service={PROVIDER_LOGO[item.provider]} />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-1">
+              <strong className="text-[19px]">{label.name}</strong>
+              <span className="text-[13px] text-[var(--muted)]">· {item.personal ? '개인 연동' : '팀 공용'}</span>
+            </div>
+            {primary && (
+              <div className="truncate text-xs text-[var(--muted)]">
+                {primary.accountLabel ?? primary.externalAccountId ?? '-'} ·{' '}
+                {primary.mine ? '내가 연결' : `${primary.connectedByName}님이 연결`}
+              </div>
+            )}
+          </div>
+        </div>
+        <span className={`badge ${badge.className}`}>{badge.text}</span>
+      </div>
+
+      <div className="text-[13px] text-[var(--muted)]">
+        수집 대상: <strong className="text-[var(--text)]">{targetText}</strong> · 마지막 동기화:{' '}
+        {primary ? (lastSynced ? formatDateTime(lastSynced) : '-') : '-'}
+        {syncFailed && <span className="text-[var(--warning)]"> (최근 실패)</span>}
+      </div>
+
+      {item.connections.length > 1 && (
+        <div className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+          {item.connections
+            .filter((c) => c !== primary)
+            .map((c) => (
+              <div key={c.connectionId} className="flex items-center gap-2">
+                <span className={`badge ${STATUS_BADGE[c.status].className} !text-[10px]`}>{STATUS_BADGE[c.status].text}</span>
+                {c.accountLabel ?? c.externalAccountId ?? '-'} · {c.mine ? '내가 연결' : `${c.connectedByName}님이 연결`}
+                {c.mine && (
+                  <button type="button" className="link-button" onClick={() => onRemove(c)}>
+                    해제
+                  </button>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
+
+      {syncError && <div className="alert alert-error small">동기화하지 못했습니다. {syncError}</div>}
+
+      <div className="flex flex-wrap gap-2">
+        {primary && (
+          <button type="button" className="btn" onClick={sync} disabled={syncing}>
+            {syncing ? '동기화 중...' : '수동 동기화'}
+          </button>
+        )}
+        {primary?.status === 'REAUTH_REQUIRED' && primary.mine ? (
+          <a className="btn btn-primary" href={reauthUrl(workspaceId, primary.connectionId)}>
+            재인증하기
+          </a>
+        ) : primary && label.target ? (
+          <button type="button" className="btn btn-primary" onClick={() => onSelect(primary)}>
+            {label.target} 선택
+          </button>
+        ) : item.configured ? (
+          <a className="btn btn-primary" href={connectUrl(workspaceId, item.provider)}>
+            {mine ? '다른 계정으로 다시 연결' : '연결하기'}
+          </a>
+        ) : (
+          <span className="self-center text-xs text-[var(--muted)]">서버 설정 필요</span>
+        )}
+        {primary && !item.personal && !mine && item.configured && (
+          <a className="btn" href={connectUrl(workspaceId, item.provider)}>
+            내 계정 추가 연결
+          </a>
+        )}
+        {primary && (
+          <button type="button" className="btn btn-danger" onClick={() => onRemove(primary)}>
+            연결 해제
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

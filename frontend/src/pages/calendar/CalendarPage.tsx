@@ -1,4 +1,4 @@
-// UI-07 일정 (Google Calendar) (담당: A)
+// UI-07 일정 (Google Calendar) (담당: A) — 팀원 UI 시안(togather_ui.html): 달력 카드 | 선택한 날·일정 패널
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { createEvent, deleteEvent, getEvents, updateEvent, type CalendarEvent, type CalendarEventForm } from './api';
@@ -8,11 +8,11 @@ import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { ApiError } from '../../api/client';
 import { ErrorBox } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
-import { BTN_AI, BTN_SUB, MUTED, SUB_CARD } from '../../components/ui';
+import ServiceLogo from '../../components/ServiceLogo';
+import NavIcon from '../../layouts/NavIcon';
 import {
   addDays,
   formatDate,
-  formatDateTime,
   formatTime,
   fromLocalIso,
   sameDay,
@@ -22,6 +22,7 @@ import {
 } from '../../utils/date';
 
 type View = 'month' | 'week';
+type Filter = 'ALL' | 'TEAM' | 'PERSONAL';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 function visibleRange(view: View, anchor: Date): { start: Date; days: number } {
@@ -33,16 +34,26 @@ function visibleRange(view: View, anchor: Date): { start: Date; days: number } {
   return { start: addDays(first, -first.getDay()), days: 42 };
 }
 
+function dayTitle(d: Date) {
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS[d.getDay()]}요일`;
+}
+
+function timeRange(e: CalendarEvent) {
+  return e.allDay ? '종일' : `${formatTime(e.startAt)} - ${formatTime(e.endAt)}`;
+}
+
 export default function CalendarPage() {
   const { workspaceId = '' } = useParams();
   const [view, setView] = useState<View>('month');
+  const [filter, setFilter] = useState<Filter>('ALL');
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
+  const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const { start, days } = visibleRange(view, anchor);
   const from = toLocalIso(start);
   const to = toLocalIso(addDays(start, days));
   const events = useAsync(() => getEvents(workspaceId, from, to), [workspaceId, from, to]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
-  const [selected, setSelected] = useState<CalendarEvent | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null);
 
   // 다른 팀원이 팀 캘린더 일정을 바꾸면 새로고침 없이 다시 불러온다.
@@ -53,9 +64,13 @@ export default function CalendarPage() {
   const move = (dir: number) =>
     setAnchor(view === 'week' ? addDays(anchor, dir * 7) : new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
 
+  const shown = (events.data ?? []).filter(
+    (e) => filter === 'ALL' || (filter === 'PERSONAL' ? e.personal : !e.personal),
+  );
+
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    for (const e of events.data ?? []) {
+    for (const e of shown) {
       const s = startOfDay(fromLocalIso(e.startAt));
       const end = fromLocalIso(e.endAt);
       for (let d = s; d < end || sameDay(d, s); d = addDays(d, 1)) {
@@ -65,7 +80,11 @@ export default function CalendarPage() {
       }
     }
     return map;
-  }, [events.data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events.data, filter]);
+
+  const dayEvents = byDay.get(selectedDay.toDateString()) ?? [];
+  const selected = (events.data ?? []).find((e) => e.contentRefId === selectedId) ?? dayEvents[0] ?? null;
 
   const notConnected = events.error instanceof ApiError && events.error.code === 'CONNECTION_NOT_FOUND';
   const title =
@@ -74,46 +93,23 @@ export default function CalendarPage() {
       : `${formatDate(start)} ~ ${formatDate(addDays(start, 6))}`;
 
   return (
-    <section className="stack !gap-5">
+    <section className="stack">
       <PageHeader
-        eyebrow="GOOGLE CALENDAR"
+        icon={<NavIcon name="calendar" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="일정"
-        description="팀 캘린더 일정을 보고 등록합니다. 확정된 회의는 따로 표시됩니다."
+        description="팀의 회의와 내 일정을 한눈에 확인하세요."
         actions={
           <>
-            <div className={`${SUB_CARD} inline-flex gap-1 p-1`}>
-              {(['month', 'week'] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`cursor-pointer rounded-xl border-0 px-4 py-1.5 text-xs font-bold transition ${
-                    view === v ? 'bg-indigo-600 text-white' : `bg-transparent ${MUTED}`
-                  }`}
-                >
-                  {v === 'month' ? '월' : '주'}
-                </button>
-              ))}
-            </div>
-            <button className={BTN_AI} onClick={() => setEditing('new')} disabled={notConnected}>
-              + 일정
+            {!notConnected && events.data && <span className="badge badge-success">● Google Calendar 연결됨</span>}
+            <button type="button" className="btn" onClick={events.reload} disabled={events.loading}>
+              {events.loading ? '불러오는 중...' : '↻ 동기화'}
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => setEditing('new')} disabled={notConnected}>
+              + 새 일정
             </button>
           </>
         }
       />
-
-      <div className="flex items-center gap-2">
-        <button className={BTN_SUB} onClick={() => move(-1)} aria-label="이전">
-          ◀
-        </button>
-        <strong className="min-w-32 text-center text-lg">{title}</strong>
-        <button className={BTN_SUB} onClick={() => move(1)} aria-label="다음">
-          ▶
-        </button>
-        <button className={BTN_SUB} onClick={() => setAnchor(startOfDay(new Date()))}>
-          오늘
-        </button>
-        {events.loading && <span className={`text-xs ${MUTED}`}>불러오는 중...</span>}
-      </div>
 
       {notConnected ? (
         <div className="alert">
@@ -124,61 +120,153 @@ export default function CalendarPage() {
         events.error && <ErrorBox error={events.error} onRetry={events.reload} />
       )}
 
-      <div className={`calendar calendar-${view}`}>
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="calendar-head">
-            {d}
+      <div className="cal-board">
+        <div className="card cal-card">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button type="button" className="btn btn-small" onClick={() => move(-1)} aria-label="이전">
+                ‹
+              </button>
+              <strong className="min-w-28 text-center text-xl font-extrabold">{title}</strong>
+              <button type="button" className="btn btn-small" onClick={() => move(1)} aria-label="다음">
+                ›
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  const today = startOfDay(new Date());
+                  setAnchor(today);
+                  setSelectedDay(today);
+                  setSelectedId(null);
+                }}
+              >
+                오늘
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="segmented">
+                {(
+                  [
+                    ['ALL', '전체'],
+                    ['TEAM', '● 팀 일정'],
+                    ['PERSONAL', '● 개인 일정'],
+                  ] as const
+                ).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`${filter === v ? 'active' : ''} cal-filter-${v.toLowerCase()}`}
+                    onClick={() => setFilter(v)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="segmented">
+                {(['month', 'week'] as const).map((v) => (
+                  <button key={v} type="button" className={view === v ? 'active' : ''} onClick={() => setView(v)}>
+                    {v === 'month' ? '월' : '주'}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        ))}
-        {Array.from({ length: days }, (_, i) => addDays(start, i)).map((day) => {
-          const dayEvents = byDay.get(day.toDateString()) ?? [];
-          const outside = view === 'month' && day.getMonth() !== anchor.getMonth();
-          return (
-            <div
-              key={day.toISOString()}
-              className={`calendar-cell ${outside ? 'outside' : ''} ${sameDay(day, new Date()) ? 'today' : ''}`}
-            >
-              <span className="calendar-date">{day.getDate()}</span>
+
+          <div className={`cal-grid cal-${view}`}>
+            {WEEKDAYS.map((d, i) => (
+              <div key={d} className={`cal-head${i === 0 ? ' sun' : i === 6 ? ' sat' : ''}`}>
+                {d}
+              </div>
+            ))}
+            {Array.from({ length: days }, (_, i) => addDays(start, i)).map((day) => {
+              const list = byDay.get(day.toDateString()) ?? [];
+              const outside = view === 'month' && day.getMonth() !== anchor.getMonth();
+              const isSelected = sameDay(day, selectedDay);
+              const dow = day.getDay();
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={`cal-cell${outside ? ' outside' : ''}${isSelected ? ' selected' : ''}${
+                    sameDay(day, new Date()) ? ' today' : ''
+                  }${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}`}
+                  onClick={() => {
+                    setSelectedDay(startOfDay(day));
+                    setSelectedId(null);
+                  }}
+                >
+                  <span className="cal-date">{day.getDate()}</span>
+                  {list.slice(0, 3).map((e) => (
+                    <button
+                      key={`${e.contentRefId}-${day.getDate()}`}
+                      type="button"
+                      className={`cal-chip ${e.personal ? 'personal' : 'team'}${
+                        selected?.contentRefId === e.contentRefId && isSelected ? ' active' : ''
+                      }`}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setSelectedDay(startOfDay(day));
+                        setSelectedId(e.contentRefId);
+                      }}
+                      title={e.title ?? ''}
+                    >
+                      ● {!e.allDay && `${formatTime(e.startAt)} `}
+                      {e.title ?? '(제목 없음)'}
+                    </button>
+                  ))}
+                  {list.length > 3 && <span className="text-[11px] text-[var(--muted)]">+{list.length - 3}개 더</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card cal-side">
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-xl font-extrabold">{dayTitle(selectedDay)}</strong>
+            <span className="badge badge-primary">일정 {dayEvents.length}개</span>
+          </div>
+          {dayEvents.length === 0 ? (
+            <div className="text-[13px] text-[var(--muted)]">이 날은 일정이 없어요.</div>
+          ) : (
+            <div className="flex flex-col gap-2">
               {dayEvents.map((e) => (
                 <button
-                  key={`${e.contentRefId}-${day.getDate()}`}
-                  className={`calendar-event ${e.meetingId ? 'meeting' : ''}`}
-                  onClick={() => setSelected(e)}
-                  title={e.title ?? ''}
+                  key={e.contentRefId}
+                  type="button"
+                  className={`cal-day-item${selected?.contentRefId === e.contentRefId ? ' active' : ''}`}
+                  onClick={() => setSelectedId(e.contentRefId)}
                 >
-                  {!e.allDay && <span className="time">{formatTime(e.startAt)}</span>} {e.title ?? '(제목 없음)'}
+                  <span className={`cal-dot ${e.personal ? 'personal' : 'team'}`} />
+                  <strong className="whitespace-nowrap">{timeRange(e)}</strong>
+                  <span className="truncate">{e.title ?? '(제목 없음)'}</span>
                 </button>
               ))}
             </div>
-          );
-        })}
-      </div>
-      <p className="muted small">
-        <span className="legend meeting" /> ToGather에서 확정한 회의
-      </p>
+          )}
 
-      {selected && (
-        <EventDetail
-          workspaceId={workspaceId}
-          event={selected}
-          members={members.data ?? []}
-          onClose={() => setSelected(null)}
-          onEdit={() => {
-            setEditing(selected);
-            setSelected(null);
-          }}
-          onDeleted={() => {
-            setSelected(null);
-            events.reload();
-          }}
-        />
-      )}
+          {selected && (
+            <EventPanel
+              key={selected.contentRefId}
+              workspaceId={workspaceId}
+              event={selected}
+              members={members.data ?? []}
+              onEdit={() => setEditing(selected)}
+              onDeleted={() => {
+                setSelectedId(null);
+                events.reload();
+              }}
+            />
+          )}
+        </div>
+      </div>
+
       {editing && (
         <EventForm
           workspaceId={workspaceId}
           event={editing === 'new' ? null : editing}
           members={members.data ?? []}
-          defaultDate={anchor}
+          defaultDate={selectedDay}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -190,18 +278,17 @@ export default function CalendarPage() {
   );
 }
 
-function EventDetail({
+/** 오른쪽 아래: 선택한 일정 상세 */
+function EventPanel({
   workspaceId,
   event,
   members,
-  onClose,
   onEdit,
   onDeleted,
 }: {
   workspaceId: string;
   event: CalendarEvent;
   members: MemberResponse[];
-  onClose: () => void;
   onEdit: () => void;
   onDeleted: () => void;
 }) {
@@ -219,51 +306,60 @@ function EventDetail({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal stack" onClick={(e) => e.stopPropagation()}>
-        <div className="row">
-          <h2>{event.title ?? '(제목 없음)'}</h2>
-          {event.meetingId && <span className="badge badge-primary">회의</span>}
-          {event.personal && <span className="badge">내 캘린더</span>}
-        </div>
-        <p>
-          {event.allDay
-            ? `${formatDate(event.startAt)} 종일`
-            : `${formatDateTime(event.startAt)} ~ ${formatTime(event.endAt)}`}
-        </p>
-        {names.length > 0 && <p className="small">참여자: {names.join(', ')}</p>}
-        {event.description && <p className="pre">{event.description}</p>}
-        <div className="row">
-          {event.meetLink && (
-            <a className="btn btn-small" href={event.meetLink} target="_blank" rel="noreferrer">
-              화상 회의 참여
-            </a>
-          )}
-          {event.deepLink && (
-            <a className="btn btn-small" href={event.deepLink} target="_blank" rel="noreferrer">
-              Google Calendar에서 열기
-            </a>
-          )}
-          {event.meetingId && (
-            <Link className="btn btn-small" to={`/workspaces/${workspaceId}/meetings/${event.meetingId}`}>
-              회의 보기
-            </Link>
-          )}
-        </div>
-        {error && <ErrorBox error={error} />}
-        <div className="row">
-          <button className="btn" onClick={onEdit}>
+    <div className="flex flex-col gap-3 border-t border-[var(--border-soft)] pt-4">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold text-[var(--muted)]">선택한 일정</span>
+        <div className="flex gap-1.5">
+          <button type="button" className="btn btn-small" onClick={onEdit}>
             수정
           </button>
-          <button className="btn btn-danger" onClick={remove}>
+          <button type="button" className="btn btn-small btn-danger" onClick={remove}>
             삭제
-          </button>
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            닫기
           </button>
         </div>
       </div>
+      <strong className="text-xl font-extrabold">{event.title ?? '(제목 없음)'}</strong>
+      <div className="flex flex-wrap gap-1.5">
+        <span className={`badge ${event.personal ? 'badge-info' : 'badge-primary'}`}>
+          {event.personal ? '개인 일정' : event.meetingId ? '팀 회의' : '팀 일정'}
+        </span>
+        {event.meetingId && <span className="badge badge-success">✓ 확정</span>}
+      </div>
+      <div className="flex flex-col gap-1.5 text-sm">
+        <span>📅 {formatDate(event.startAt)}</span>
+        <span>🕓 {timeRange(event)}</span>
+        {event.meetLink && (
+          <span>
+            📹 온라인 ·{' '}
+            <a href={event.meetLink} target="_blank" rel="noreferrer">
+              Google Meet 참여
+            </a>
+          </span>
+        )}
+        {names.length > 0 && (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {names.slice(0, 5).map((n) => (
+              <span key={n} className="tg-avatar">
+                {n.slice(0, 1)}
+              </span>
+            ))}
+            <span className="text-[13px] text-[var(--muted)]">{names.join(' · ')}</span>
+          </span>
+        )}
+      </div>
+      {event.description && <p className="pre m-0 text-[13px] text-[var(--muted)]">{event.description}</p>}
+      <div className="flex flex-wrap gap-3 text-[13px] font-semibold">
+        {event.deepLink && (
+          <a href={event.deepLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1">
+            <span className="inline-flex h-4 w-4">
+              <ServiceLogo service="gcal" />
+            </span>
+            Google Calendar에서 열기
+          </a>
+        )}
+        {event.meetingId && <Link to={`/workspaces/${workspaceId}/meetings/${event.meetingId}`}>회의 보기 →</Link>}
+      </div>
+      {error && <ErrorBox error={error} />}
     </div>
   );
 }
