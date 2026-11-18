@@ -4,6 +4,8 @@ import { Link, useParams } from 'react-router';
 import {
   approveSchedule,
   approveTask,
+  approveTeamTask,
+  approveTeamSchedule,
   completePersonalTask,
   createPersonalTask,
   deletePersonalTask,
@@ -15,14 +17,18 @@ import {
   updatePersonalTask,
   type PersonalTaskResponse,
   updateSuggestion,
+  candidateWhen,
+  isDateOnly,
   type SuggestionDTO,
 } from './api';
 import { ApiError } from '../../api/client';
+import { getMembers, type MemberResponse } from '../workspace/api';
+import { useLoginUser } from '../../components/RequireAuth';
 import { useAsync } from '../../hooks/useAsync';
-import { Empty, ErrorBox, Loading } from '../../components/Status';
+import { ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import ServiceLogo from '../../components/ServiceLogo';
-import { BTN_AI, BTN_SUB, CARD, MUTED, SUB_CARD } from '../../components/ui';
+import NavIcon from '../../layouts/NavIcon';
 import { formatDate, formatDateTime } from '../../utils/date';
 import './assistant.css';
 
@@ -33,6 +39,8 @@ export default function AssistantPage() {
   const [tab, setTab] = useState<Tab>('SCHEDULE');
   const suggestions = useAsync(() => getSuggestions(workspaceId), [workspaceId]);
   const todos = useAsync(() => getMyTodoList(workspaceId), [workspaceId]);
+  const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
+  const [approved, setApproved] = useState<{ text: string; to: string | null; tab?: Tab } | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -61,39 +69,57 @@ export default function AssistantPage() {
     }
   };
 
-  const list = (suggestions.data ?? []).filter((s) => s.type === tab);
-  const count = (type: Tab) => (suggestions.data ?? []).filter((s) => s.type === type).length;
+  const pending = (suggestions.data ?? []).filter((s) => s.status === 'PENDING');
+  const list = pending.filter((s) => s.type === tab);
+  const count = (type: Tab) => pending.filter((s) => s.type === type).length;
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selected = list.find((s) => s.suggestionId === selectedId) ?? list[0];
+  const todoCount = todos.data ? todos.data.personalTasks.filter((t) => t.status !== 'DONE').length : 0;
+
+  const TABS: [Tab, string, number][] = [
+    ['SCHEDULE', '일정 후보', count('SCHEDULE')],
+    ['TASK', '할 일 후보', count('TASK')],
+    ['TODO', '내 할 일', todoCount],
+  ];
 
   return (
     <section className="stack">
       <PageHeader
-        eyebrow="AI ASSISTANT"
+        icon={<NavIcon name="assistant" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="AI 업무 보조"
-        description="최근 14일 동안 내가 쓰거나 멘션된 Slack 메시지와 내 메일에서 일정·할 일을 찾습니다. 승인하기 전에는 아무것도 등록되지 않습니다."
+        description={
+          <>
+            Slack·Gmail에서 찾은 일정과 할 일을 확인하고, 필요한 것만 반영하세요.
+            <span className="mt-0.5 block text-xs">ⓘ 승인하기 전에는 등록되지 않아요.</span>
+          </>
+        }
         actions={
           <button className="btn btn-primary" onClick={detect} disabled={detecting}>
-            {detecting ? '메시지 살펴보는 중...' : '✨ 새 후보 찾기'}
+            {detecting ? '메시지 살펴보는 중...' : '↻ 새 후보 찾기'}
           </button>
         }
       />
       {notice && <div className={`alert ${notice.ok ? 'alert-success' : 'alert-error'}`}>{notice.text}</div>}
+      {approved && (
+        <div className="alert alert-success">
+          <span>{approved.text}</span>
+          {approved.tab && (
+            <button type="button" className="btn btn-small" onClick={() => { setTab(approved.tab!); setApproved(null); }}>
+              바로 보기
+            </button>
+          )}
+          {approved.to && (
+            <Link to={approved.to} className="btn btn-small">
+              바로 보기
+            </Link>
+          )}
+        </div>
+      )}
 
-      <div className={`${SUB_CARD} inline-flex gap-1 self-start p-1`}>
-        {(
-          [
-            ['SCHEDULE', `📅 일정 후보${count('SCHEDULE') > 0 ? ` (${count('SCHEDULE')})` : ''}`],
-            ['TASK', `✅ 할 일 후보${count('TASK') > 0 ? ` (${count('TASK')})` : ''}`],
-            ['TODO', '📝 내 할 일'],
-          ] as const
-        ).map(([t, label]) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`cursor-pointer rounded-xl border-0 px-4 py-1.5 text-xs font-bold transition ${
-              tab === t ? 'bg-indigo-600 text-white' : `bg-transparent ${MUTED}`
-            }`}
-          >
-            {label}
+      <div className="tg-underline-tabs">
+        {TABS.map(([t, label, n]) => (
+          <button key={t} type="button" className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
+            {label} <span className="badge">{n}</span>
           </button>
         ))}
       </div>
@@ -102,18 +128,78 @@ export default function AssistantPage() {
         <>
           {suggestions.loading && !suggestions.data && <Loading />}
           {suggestions.error && <ErrorBox error={suggestions.error} onRetry={suggestions.reload} />}
-          {suggestions.data && list.length === 0 && (
-            <Empty>
-              {tab === 'SCHEDULE' ? '일정 후보가 없습니다.' : '할 일 후보가 없습니다.'} "새 후보 찾기"를 눌러 보세요.
-            </Empty>
-          )}
-          {list.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {list.map((s) => (
-                <div key={s.suggestionId} className={`${CARD} p-5`}>
-                  <SuggestionItem workspaceId={workspaceId} suggestion={s} onChanged={reload} />
+          {suggestions.data && (
+            <div className="assistant-board">
+              <div className="flex flex-col gap-4">
+                <div className="card flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <strong className="text-[15px]">{tab === 'SCHEDULE' ? '검토할 일정' : '검토할 할 일'}</strong>
+                      <span className="badge">{list.length}</span>
+                    </div>
+                    <span className="text-xs text-[var(--muted)]">↕ 최근 발견순</span>
+                  </div>
+                  {list.length === 0 ? (
+                    <div className="py-4 text-center text-[13px] text-[var(--muted)]">
+                      {tab === 'SCHEDULE' ? '일정 후보가 없습니다.' : '할 일 후보가 없습니다.'} "새 후보 찾기"를 눌러 보세요.
+                    </div>
+                  ) : (
+                    list.map((s) => (
+                      <SuggestionCard
+                        key={s.suggestionId}
+                        suggestion={s}
+                        active={s.suggestionId === selected?.suggestionId}
+                        onClick={() => setSelectedId(s.suggestionId)}
+                      />
+                    ))
+                  )}
                 </div>
-              ))}
+                <div className="card flex flex-col gap-2">
+                  <strong className="text-sm">후보를 찾는 범위</strong>
+                  <div className="flex items-center gap-2 text-[13px]">
+                    <span className="inline-flex h-4 w-4">
+                      <ServiceLogo service="slack" />
+                    </span>
+                    내가 작성하거나 멘션된 대화
+                  </div>
+                  <div className="flex items-center gap-2 text-[13px]">
+                    <span className="inline-flex h-4 w-4">
+                      <ServiceLogo service="gmail" />
+                    </span>
+                    내 메일
+                  </div>
+                  <div className="text-[11px] text-[var(--muted)]">ⓘ 최근 14일의 메시지를 기준으로 정리해요.</div>
+                </div>
+              </div>
+
+              <div className="card flex flex-col gap-4">
+                <div className="flex items-center gap-2">
+                  <strong className="text-[17px]">후보 검토</strong>
+                  {selected && <span className="badge badge-primary">검토 대기</span>}
+                </div>
+                {selected ? (
+                  <SuggestionReview
+                    key={selected.suggestionId}
+                    workspaceId={workspaceId}
+                    suggestion={selected}
+                    members={members.data ?? []}
+                    onChanged={reload}
+                    onApproved={(where, id) => {
+                      setApproved(
+                        where === 'PERSONAL'
+                          ? { text: '개인 할 일에 추가했어요.', to: null, tab: 'TODO' }
+                          : where === 'TEAM'
+                            ? { text: '팀 작업으로 등록했어요. 팀원 모두 팀 작업 목록에서 볼 수 있어요.', to: `/workspaces/${workspaceId}/tasks/${id}` }
+                            : where === 'TEAM_CALENDAR'
+                              ? { text: '팀 캘린더에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` }
+                              : { text: '내 Google Calendar에 일정을 등록했어요.', to: `/workspaces/${workspaceId}/calendar` },
+                      );
+                    }}
+                  />
+                ) : (
+                  <div className="text-[13px] text-[var(--muted)]">왼쪽에서 후보를 고르면 여기서 확인하고 승인할 수 있어요.</div>
+                )}
+              </div>
             </div>
           )}
         </>
@@ -124,22 +210,22 @@ export default function AssistantPage() {
           {todos.loading && !todos.data && <Loading />}
           {todos.error && <ErrorBox error={todos.error} onRetry={todos.reload} />}
           {todos.data && (
-            <div className="stack">
-              <div className="card stack">
-                <h2>담당 Task</h2>
+            <div className="assistant-board">
+              <div className="card flex flex-col gap-3">
+                <strong className="text-[15px]">내 담당 팀 작업</strong>
                 {todos.data.assignedTasks.length === 0 ? (
-                  <p className="small muted">담당한 Task가 없습니다.</p>
+                  <p className="small muted m-0">담당한 팀 작업이 없습니다.</p>
                 ) : (
-                  <ul className="list">
-                    {todos.data.assignedTasks.map((t) => (
-                      <li key={t.taskId} className="row">
-                        <Link to={`/workspaces/${workspaceId}/tasks/${t.taskId}`} className="grow">
-                          {t.title}
-                        </Link>
-                        {t.dueDate && <span className="small muted">마감 {formatDate(t.dueDate)}</span>}
-                      </li>
-                    ))}
-                  </ul>
+                  todos.data.assignedTasks.map((t) => (
+                    <Link
+                      key={t.taskId}
+                      to={`/workspaces/${workspaceId}/tasks/${t.taskId}`}
+                      className="assistant-cand flex items-center justify-between no-underline"
+                    >
+                      <span className="text-sm font-bold text-[var(--text)]">☑ {t.title}</span>
+                      {t.dueDate && <span className="text-xs text-[var(--muted)]">마감 {formatDate(t.dueDate)}</span>}
+                    </Link>
+                  ))
                 )}
               </div>
               <PersonalTodos workspaceId={workspaceId} tasks={todos.data.personalTasks} onChanged={todos.reload} />
@@ -151,16 +237,75 @@ export default function AssistantPage() {
   );
 }
 
-function SuggestionItem({
+/** "2026-12-25T00:00(:00)" → 1시간 뒤 "2026-12-25T01:00" (datetime-local 값) */
+function plusHour(datetime: string) {
+  const d = new Date(datetime.slice(0, 16));
+  d.setHours(d.getHours() + 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function sourceName(s: SuggestionDTO) {
+  return s.sourceProvider === 'GMAIL' ? 'Gmail' : 'Slack';
+}
+
+/** 왼쪽 후보 카드 */
+function SuggestionCard({
+  suggestion: s,
+  active,
+  onClick,
+}: {
+  suggestion: SuggestionDTO;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const when =
+    s.type === 'SCHEDULE'
+      ? candidateWhen(s.detectedDatetime, { date: formatDate, dateTime: formatDateTime })
+      : s.dueDate
+        ? `마감 ${formatDate(s.dueDate)}`
+        : '마감 미정';
+  return (
+    <button type="button" className={`assistant-cand${active ? ' active' : ''}`} onClick={onClick}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[13px] font-bold">
+          <span className="inline-flex h-4 w-4">
+            <ServiceLogo service={s.sourceProvider === 'GMAIL' ? 'gmail' : 'slack'} />
+          </span>
+          {sourceName(s)}
+          {s.sourceAuthor && ` · ${s.sourceAuthor}`}
+        </span>
+        <span className="text-xs font-bold text-[var(--primary)]">검토 대기</span>
+      </div>
+      <div className="mt-2 text-base font-extrabold">{s.title}</div>
+      <div className="mt-1 text-[13px] text-[var(--muted)]">📅 {when}</div>
+      {s.sourceExcerpt && <div className="mt-1 line-clamp-2 text-[13px]">“{s.sourceExcerpt}”</div>}
+    </button>
+  );
+}
+
+/** 오른쪽 검토: 원본 메시지 + 고칠 수 있는 제목·일시(마감일) + 무시 / 승인 */
+function SuggestionReview({
   workspaceId,
   suggestion,
+  members,
   onChanged,
+  onApproved,
 }: {
   workspaceId: string;
   suggestion: SuggestionDTO;
+  members: MemberResponse[];
   onChanged: () => void;
+  onApproved: (where: 'PERSONAL' | 'TEAM' | 'CALENDAR' | 'TEAM_CALENDAR', id: number) => void;
 }) {
-  const [editing, setEditing] = useState(suggestion.timeUndetermined);
+  const me = useLoginUser();
+  /** 할 일 후보: 나만 보는 개인 할 일 / 팀원 모두 보는 팀 Task */
+  const [target, setTarget] = useState<'PERSONAL' | 'TEAM'>('PERSONAL');
+  const [assigneeId, setAssigneeId] = useState<number>(me.userId);
+  /** 일정 후보: 내 Google Calendar / 팀 캘린더 */
+  const [participantIds, setParticipantIds] = useState<number[]>([me.userId]);
+  /** 끝 시각: 비워 두면 시작 1시간 뒤 */
+  const [endAt, setEndAt] = useState<string>('');
   const [form, setForm] = useState({
     title: suggestion.title,
     detectedDatetime: suggestion.detectedDatetime,
@@ -168,7 +313,13 @@ function SuggestionItem({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const endValue = endAt || (form.detectedDatetime ? plusHour(form.detectedDatetime) : '');
+  const endInvalid = !!form.detectedDatetime && !!endValue && endValue <= form.detectedDatetime.slice(0, 16);
   const isSchedule = suggestion.type === 'SCHEDULE';
+  const dirty =
+    form.title !== suggestion.title ||
+    form.detectedDatetime !== suggestion.detectedDatetime ||
+    form.dueDate !== suggestion.dueDate;
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -187,130 +338,193 @@ function SuggestionItem({
     }
   };
 
-  const save = (e: FormEvent) => {
+  // 고친 내용이 있으면 먼저 저장하고 승인한다.
+  const approve = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      await updateSuggestion(workspaceId, suggestion.suggestionId, form);
-      setEditing(false);
+      if (dirty) await updateSuggestion(workspaceId, suggestion.suggestionId, form);
+      if (isSchedule && target === 'TEAM') {
+        const r = await approveTeamSchedule(workspaceId, suggestion.suggestionId, participantIds, `${endValue}:00`);
+        onApproved('TEAM_CALENDAR', r.contentRefId);
+      } else if (isSchedule) {
+        const r = await approveSchedule(workspaceId, suggestion.suggestionId, `${endValue}:00`);
+        onApproved('CALENDAR', r.contentRefId);
+      } else if (target === 'TEAM') {
+        const r = await approveTeamTask(workspaceId, suggestion.suggestionId, assigneeId);
+        onApproved('TEAM', r.taskId);
+      } else {
+        const r = await approveTask(workspaceId, suggestion.suggestionId);
+        onApproved('PERSONAL', r.personalTaskId);
+      }
     });
   };
 
-  const approve = () =>
-    run(() =>
-      isSchedule
-        ? approveSchedule(workspaceId, suggestion.suggestionId)
-        : approveTask(workspaceId, suggestion.suggestionId),
-    );
-
   return (
-    <div className="stack">
-      {editing ? (
-        <form className="form" onSubmit={save}>
-          <input
-            className="input"
-            required
-            maxLength={200}
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-          />
-          {isSchedule ? (
-            <label>
-              일시
-              <input
-                type="datetime-local"
-                className="input"
-                value={form.detectedDatetime?.slice(0, 16) ?? ''}
-                onChange={(e) => setForm({ ...form, detectedDatetime: e.target.value ? `${e.target.value}:00` : null })}
-              />
-            </label>
-          ) : (
-            <label>
-              마감일
-              <input
-                type="date"
-                className="input"
-                value={form.dueDate ?? ''}
-                onChange={(e) => setForm({ ...form, dueDate: e.target.value || null })}
-              />
-            </label>
-          )}
-          <div className="row">
-            <span className="spacer" />
-            <button type="button" className="btn btn-small" onClick={() => setEditing(false)} disabled={busy}>
-              취소
-            </button>
-            <button className="btn btn-small btn-primary" disabled={busy || !form.title.trim()}>
-              저장
-            </button>
-          </div>
-        </form>
-      ) : (
-        <div className="stack !gap-2">
-          <div className="flex items-start justify-between gap-2">
-            <strong className="text-sm leading-snug">{suggestion.title}</strong>
-            {isSchedule &&
-              (suggestion.detectedDatetime ? (
-                <span className="whitespace-nowrap rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-bold text-indigo-500">
-                  📅 {formatDateTime(suggestion.detectedDatetime)}
-                </span>
-              ) : (
-                <span className="badge badge-warning">시간 미정</span>
-              ))}
-            {!isSchedule && suggestion.dueDate && (
-              <span className="whitespace-nowrap rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-bold text-indigo-500">
-                마감 {formatDate(suggestion.dueDate)}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="small muted row">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-800 dark:border-white/15 dark:bg-white/10 dark:text-slate-100">
-          <span className="inline-flex h-4 w-4 overflow-hidden rounded">
-            <ServiceLogo service={suggestion.sourceProvider === 'GMAIL' ? 'gmail' : 'slack'} />
+    <form className="flex flex-col gap-3" onSubmit={approve}>
+      <div className="rounded-xl bg-[var(--surface-2)] p-4">
+        <div className="flex items-center justify-between gap-2 text-[13px] font-bold text-[var(--muted)]">
+          <span>
+            원본 메시지 · {sourceName(suggestion)}
+            {suggestion.sourceAuthor && ` · ${suggestion.sourceAuthor}`}
+            {suggestion.sourceCreatedAt && ` · ${formatDateTime(suggestion.sourceCreatedAt)}`}
           </span>
-          {suggestion.sourceProvider === 'GMAIL' ? 'Gmail' : 'Slack'}
-        </span>
-        {suggestion.sourceTitle && <span>{suggestion.sourceTitle}</span>}
-        {suggestion.sourceAuthor && <span>{suggestion.sourceAuthor}</span>}
-        {suggestion.sourceCreatedAt && <span>{formatDateTime(suggestion.sourceCreatedAt)}</span>}
-        {suggestion.sourceLink && (
-          <a href={suggestion.sourceLink} target="_blank" rel="noreferrer">
-            원본
-          </a>
+          {suggestion.sourceLink && (
+            <a href={suggestion.sourceLink} target="_blank" rel="noreferrer">
+              ↗ 원본 보기
+            </a>
+          )}
+        </div>
+        {suggestion.sourceTitle && <div className="mt-1 text-xs text-[var(--muted)]">{suggestion.sourceTitle}</div>}
+        <div className="pre mt-2 text-sm">“{suggestion.sourceExcerpt ?? suggestion.title}”</div>
+      </div>
+
+      <label className="assistant-field">
+        <span>{isSchedule ? '일정 제목' : '할 일'}</span>
+        <input
+          className="input"
+          required
+          maxLength={200}
+          value={form.title}
+          onChange={(e) => setForm({ ...form, title: e.target.value })}
+        />
+      </label>
+      {isSchedule ? (
+        <>
+          <label className="assistant-field">
+            <span>시작</span>
+            <input
+              type="datetime-local"
+              className="input"
+              value={form.detectedDatetime?.slice(0, 16) ?? ''}
+              onChange={(e) => setForm({ ...form, detectedDatetime: e.target.value ? `${e.target.value}:00` : null })}
+            />
+          </label>
+          {isDateOnly(form.detectedDatetime) && (
+            <div className="pl-[122px] text-xs text-[var(--warning)]">메일에 시간이 없어 날짜만 채웠어요. 시간을 정해 주세요.</div>
+          )}
+          <label className="assistant-field">
+            <span>종료</span>
+            <input
+              type="datetime-local"
+              className="input"
+              value={endValue}
+              min={form.detectedDatetime?.slice(0, 16)}
+              onChange={(e) => setEndAt(e.target.value)}
+              disabled={!form.detectedDatetime}
+            />
+          </label>
+          {endInvalid && (
+            <div className="pl-[122px] text-xs text-[var(--danger)]">종료 시각은 시작 시각보다 뒤여야 해요.</div>
+          )}
+        </>
+      ) : (
+        <label className="assistant-field">
+          <span>마감일</span>
+          <input
+            type="date"
+            className="input"
+            value={form.dueDate ?? ''}
+            onChange={(e) => setForm({ ...form, dueDate: e.target.value || null })}
+          />
+        </label>
+      )}
+      <div className="assistant-field">
+        <span>등록 위치</span>
+        {isSchedule ? (
+          <div className="segmented assistant-target">
+            <button type="button" className={target === 'PERSONAL' ? 'active' : ''} onClick={() => setTarget('PERSONAL')}>
+              개인 일정 (내 캘린더)
+            </button>
+            <button type="button" className={target === 'TEAM' ? 'active' : ''} onClick={() => setTarget('TEAM')}>
+              팀 일정 (팀 캘린더)
+            </button>
+          </div>
+        ) : (
+          <div className="segmented assistant-target">
+            <button type="button" className={target === 'PERSONAL' ? 'active' : ''} onClick={() => setTarget('PERSONAL')}>
+              개인 할 일 (나만 보기)
+            </button>
+            <button type="button" className={target === 'TEAM' ? 'active' : ''} onClick={() => setTarget('TEAM')}>
+              팀 작업 (모두 보기)
+            </button>
+          </div>
         )}
       </div>
-      {suggestion.sourceExcerpt && (
-        <p className="m-0 line-clamp-2 rounded-r-xl border-0 border-l-[3px] border-solid border-violet-400/60 bg-violet-500/5 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
-          “{suggestion.sourceExcerpt}”
-        </p>
-      )}
-      {error && <div className="alert alert-error small">{error}</div>}
-      {!editing && (
-        <div className="flex items-center gap-2 border-0 border-t border-solid border-slate-200/60 pt-3 dark:border-white/10">
-          <button className={BTN_SUB} onClick={() => setEditing(true)} disabled={busy}>
-            수정
-          </button>
-          <button
-            className={BTN_SUB}
-            onClick={() => run(() => dismissSuggestion(workspaceId, suggestion.suggestionId))}
-            disabled={busy}
-          >
-            무시
-          </button>
-          <span className="flex-1" />
-          <button
-            className={BTN_AI}
-            onClick={approve}
-            disabled={busy || (isSchedule && !suggestion.detectedDatetime)}
-            title={isSchedule && !suggestion.detectedDatetime ? '일시를 먼저 정해 주세요' : undefined}
-          >
-            {isSchedule ? '✨ 캘린더에 등록' : '✨ 할 일로 등록'}
-          </button>
+      {isSchedule && target === 'TEAM' && (
+        <div className="assistant-field">
+          <span>참여자</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(members.length ? members : [{ userId: me.userId, name: me.name } as MemberResponse]).map((m) => {
+              const on = participantIds.includes(m.userId);
+              return (
+                <button
+                  key={m.userId}
+                  type="button"
+                  className={`badge cursor-pointer border-0 ${on ? 'badge-primary' : ''}`}
+                  onClick={() =>
+                    setParticipantIds(on ? participantIds.filter((id) => id !== m.userId) : [...participantIds, m.userId])
+                  }
+                >
+                  {on ? '✓ ' : ''}
+                  {m.name}
+                  {m.userId === me.userId ? ' (나)' : ''}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
-    </div>
+      {!isSchedule && target === 'TEAM' && (
+        <label className="assistant-field">
+          <span>담당자</span>
+          <select className="input" value={assigneeId} onChange={(e) => setAssigneeId(Number(e.target.value))}>
+            {(members.length ? members : [{ userId: me.userId, name: me.name } as MemberResponse]).map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.name}
+                {m.userId === me.userId ? ' (나)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {error && <div className="alert alert-error small">{error}</div>}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="btn !h-12 !px-8"
+          onClick={() => run(() => dismissSuggestion(workspaceId, suggestion.suggestionId))}
+          disabled={busy}
+        >
+          무시
+        </button>
+        <button
+          className="btn btn-primary !h-12 flex-1"
+          disabled={busy || !form.title.trim() || (isSchedule && (!form.detectedDatetime || endInvalid))}
+          title={isSchedule && !form.detectedDatetime ? '날짜와 시간을 먼저 정해 주세요' : undefined}
+        >
+          {busy
+            ? '처리 중...'
+            : isSchedule
+              ? target === 'TEAM'
+                ? '승인하고 팀 일정 등록'
+                : '승인하고 내 일정 등록'
+              : target === 'TEAM'
+                ? '승인하고 팀 작업 등록'
+                : '승인하고 개인 할 일 등록'}
+        </button>
+      </div>
+      <div className="text-center text-xs text-[var(--muted)]">
+        {isSchedule
+          ? target === 'TEAM'
+            ? '📅 팀 일정은 팀 캘린더에 등록되고, 일정 화면에서 팀원 모두가 볼 수 있어요.'
+            : '📅 개인 일정은 내 Google Calendar에 등록돼요.'
+          : target === 'TEAM'
+            ? '☑ 팀 작업은 팀 작업 목록에서 팀원 모두가 볼 수 있어요.'
+            : '☑ 개인 할 일은 "내 할 일" 탭에서 나만 볼 수 있어요.'}
+      </div>
+    </form>
   );
 }
 
@@ -350,7 +564,7 @@ function PersonalTodos({
 
   return (
     <div className="card stack">
-      <h2>개인 할 일</h2>
+      <strong className="text-[15px]">개인 할 일</strong>
       <form className="row" onSubmit={add}>
         <input
           className="input grow"

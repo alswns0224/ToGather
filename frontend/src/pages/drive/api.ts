@@ -126,6 +126,14 @@ export const getDriveFolders = (
     ws(workspaceId, '/drive/folders'),
   );
 
+/**
+ * GET /api/workspaces/{workspaceId}/drive/folders/names
+ *
+ * 연동한 폴더 ID와 이름 (업로드할 폴더 고르기에 이름으로 보여준다)
+ */
+export const getDriveFolderNames = (workspaceId: string) =>
+  http.get<{ folderId: string; name: string | null }[]>(ws(workspaceId, '/drive/folders/names'));
+
 // =====================================================
 // 2. Google Drive 파일 목록 조회
 // =====================================================

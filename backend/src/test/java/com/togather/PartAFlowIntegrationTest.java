@@ -135,9 +135,46 @@ class PartAFlowIntegrationTest {
 
         // 팀원은 수정·삭제·내보내기 불가, 팀장은 내보낼 수 없음
         call(json(patch(ws), "{\"name\":\"변경\"}"), member).andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error.code").value("WORKSPACE_OWNER_REQUIRED"));
+                .andExpect(jsonPath("$.error.code").value("MAIN_OWNER_REQUIRED"));
+        call(post(ws + "/invite-links"), member).andExpect(jsonPath("$.error.code").value("WORKSPACE_OWNER_REQUIRED"));
         call(delete(ws + "/members/" + ownerId), owner).andExpect(jsonPath("$.error.code").value("CANNOT_REMOVE_OWNER"));
         call(json(patch(ws), "{\"name\":\"캡스톤 디자인\"}"), owner).andExpect(jsonPath("$.data.name").value("캡스톤 디자인"));
+
+        // 역할: 관리자 임명·해제는 팀장만, 관리자는 팀장을 바꿀 수 없음, 팀장 넘기기
+        String ownerRole = ws + "/members/" + ownerId + "/role";
+        String memberRole = ws + "/members/" + memberId + "/role";
+        call(json(patch(memberRole), "{\"role\":\"ADMIN\"}"), member)
+                .andExpect(jsonPath("$.error.code").value("MAIN_OWNER_REQUIRED"));
+        call(json(patch(ownerRole), "{\"role\":\"MEMBER\"}"), owner)
+                .andExpect(jsonPath("$.error.code").value("CANNOT_CHANGE_OWNER_ROLE"));
+        call(json(patch(memberRole), "{\"role\":\"ADMIN\"}"), owner)
+                .andExpect(jsonPath("$.data[0].role").value("OWNER"))
+                .andExpect(jsonPath("$.data[1].role").value("ADMIN"));
+        // 관리자: 초대 링크 관리는 되지만 이름 수정·팀장 해제·팀장 넘기기·삭제는 안 됨
+        call(get(ws + "/invite-links/active"), member).andExpect(status().isOk());
+        call(get(ws), member).andExpect(jsonPath("$.data.myRole").value("ADMIN"));
+        call(json(patch(ws), "{\"name\":\"변경\"}"), member)
+                .andExpect(jsonPath("$.error.code").value("MAIN_OWNER_REQUIRED"));
+        call(json(patch(ownerRole), "{\"role\":\"MEMBER\"}"), member)
+                .andExpect(jsonPath("$.error.code").value("MAIN_OWNER_REQUIRED"));
+        call(post(ws + "/members/" + memberId + "/transfer-owner"), member)
+                .andExpect(jsonPath("$.error.code").value("MAIN_OWNER_REQUIRED"));
+        call(delete(ws), member).andExpect(jsonPath("$.error.code").value("MAIN_OWNER_REQUIRED"));
+        call(delete(ws + "/members/" + memberId), owner).andExpect(jsonPath("$.error.code").value("CANNOT_REMOVE_OWNER"));
+        // 관리자는 스스로 내려놓을 수 있다
+        call(json(patch(memberRole), "{\"role\":\"MEMBER\"}"), member)
+                .andExpect(jsonPath("$.data[1].role").value("MEMBER"));
+        // 넘기기: 대상은 팀장, 넘긴 사람은 팀원. 다시 돌려받는다
+        call(post(ws + "/members/" + ownerId + "/transfer-owner"), owner)
+                .andExpect(jsonPath("$.error.code").value("CANNOT_TRANSFER_TO_SELF"));
+        call(post(ws + "/members/" + memberId + "/transfer-owner"), owner)
+                .andExpect(jsonPath("$.data[0].userId").value(memberId))
+                .andExpect(jsonPath("$.data[0].role").value("OWNER"))
+                .andExpect(jsonPath("$.data[1].role").value("MEMBER"));
+        call(json(patch(ws), "{\"name\":\"변경\"}"), owner).andExpect(status().isForbidden());
+        call(post(ws + "/members/" + ownerId + "/transfer-owner"), member)
+                .andExpect(jsonPath("$.data[0].userId").value(ownerId));
+        call(get(ws), owner).andExpect(jsonPath("$.data.myRole").value("OWNER"));
 
         // 연동 상태 (UC-03-02): 5개 서비스, 서버 설정이 없으면 configured=false
         call(get(ws + "/integrations"), member)
@@ -230,6 +267,13 @@ class PartAFlowIntegrationTest {
         // 팀원 내보내기 후에는 접근 불가, 워크스페이스 삭제
         call(delete(ws + "/members/" + memberId), owner).andExpect(jsonPath("$.data.length()").value(1));
         call(get(ws), member).andExpect(status().isForbidden());
+        // 내보낸 사람은 갖고 있던 초대 링크로 다시 들어올 수 없고, 팀장에게는 새 링크가 생긴다
+        call(post("/api/invites/" + token + "/join"), member)
+                .andExpect(jsonPath("$.error.code").value("INVITE_LINK_INVALID"));
+        call(get(ws), member).andExpect(status().isForbidden());
+        call(get(ws + "/invite-links/active"), owner)
+                .andExpect(jsonPath("$.data.token").exists())
+                .andExpect(jsonPath("$.data.token").value(org.hamcrest.Matchers.not(token)));
         call(delete(ws), owner).andExpect(status().isNoContent());
         call(get("/api/workspaces"), owner).andExpect(jsonPath("$.data.length()").value(0));
 

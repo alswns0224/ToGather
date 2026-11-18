@@ -486,13 +486,13 @@ public class MeetingService {
         }
     }
 
-    /** 회의를 만든 사람 또는 팀장 */
+    /** 회의를 만든 사람 또는 팀장·관리자 */
     private boolean canManage(Meeting meeting, Long userId) {
         if (userId.equals(meeting.getCreatedBy())) {
             return true;
         }
         return workspaceMemberRepository.findByWorkspaceIdAndUserId(meeting.getWorkspaceId(), userId)
-                .map(WorkspaceMember::isOwner)
+                .map(WorkspaceMember::isAdmin)
                 .orElse(false);
     }
 

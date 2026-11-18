@@ -2,24 +2,34 @@ package com.togather.content.notion.controller;
 
 import com.togather.common.auth.LoginUser;
 import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.common.exception.BusinessException;
+import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.ApiResponse;
 import com.togather.content.dto.ContentRefDTO;
+import com.togather.content.notion.dto.NotionBlocksSaveRequest;
 import com.togather.content.notion.dto.NotionDatabaseResponse;
+import com.togather.content.notion.dto.NotionEditorResponse;
 import com.togather.content.notion.dto.NotionPageCreateRequest;
 import com.togather.content.notion.dto.NotionPageDetailResponse;
 import com.togather.content.notion.dto.NotionPageResponse;
 import com.togather.content.notion.dto.NotionPageUpdateRequest;
 import com.togather.content.notion.service.NotionContentService;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -71,6 +81,39 @@ public class NotionContentController {
         return ApiResponse.ok(notionContentService.updateContent(workspaceId, userId, contentRefId, request.title(),
                 request.body()));
     }
+
+    /** 블록 단위 편집기: 제목과 블록 목록 (글·표·이미지·고칠 수 없는 블록) */
+    @GetMapping("/pages/{contentRefId}/blocks")
+    public ApiResponse<NotionEditorResponse> getEditor(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                       @PathVariable Long contentRefId) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(notionContentService.getEditor(workspaceId, userId, contentRefId));
+    }
+
+    /** 블록 단위 편집 저장: 고친 블록만 반영한다. */
+    @PutMapping("/pages/{contentRefId}/blocks")
+    public ApiResponse<ContentRefDTO> saveBlocks(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                 @PathVariable Long contentRefId,
+                                                 @Valid @RequestBody NotionBlocksSaveRequest request) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(notionContentService.saveBlocks(workspaceId, userId, contentRefId, request));
+    }
+
+    /** 이미지 파일을 Notion에 올린다. 돌려준 fileUploadId를 1시간 안에 저장해야 문서에 붙는다. (20MB까지) */
+    @PostMapping(value = "/pages/{contentRefId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<Map<String, String>> uploadImage(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                        @PathVariable Long contentRefId,
+                                                        @RequestPart("file") MultipartFile file) throws IOException {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        if (file.isEmpty() || file.getSize() > MAX_IMAGE_BYTES) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return ApiResponse.ok(Map.of("fileUploadId", notionContentService.uploadImage(workspaceId, userId,
+                contentRefId, file.getOriginalFilename(), file.getContentType(), file.getBytes())));
+    }
+
+    /** Notion 한 번 올리기 한도 */
+    private static final long MAX_IMAGE_BYTES = 20L * 1024 * 1024;
 
     @DeleteMapping("/pages/{contentRefId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

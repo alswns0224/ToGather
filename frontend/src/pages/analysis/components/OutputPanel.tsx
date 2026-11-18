@@ -33,9 +33,9 @@ export default function OutputPanel({
 
   return (
     <div className="stack">
-      <h2 className="!text-lg">✅ 처리 결과</h2>
+      <strong className="text-sm">확정 후 가능한 작업</strong>
 
-      <div className="card stack">
+      <div className="analysis-output-step stack">
         <div className="row">
           <h3 className="m-0 text-sm">📄 Notion 결정사항 문서</h3>
           <StatusBadge status={analysis.notionOutputStatus} />
@@ -48,7 +48,7 @@ export default function OutputPanel({
       </div>
 
       {followUps.length > 0 && (
-        <div className="card stack">
+        <div className="analysis-output-step stack">
           <h3 className="m-0 text-sm">✅ 후속 작업 → Task</h3>
           <ul className="list analysis-output">
             {followUps.map((item) => (
@@ -61,7 +61,7 @@ export default function OutputPanel({
       )}
 
       {meetings.length > 0 && (
-        <div className="card stack">
+        <div className="analysis-output-step stack">
           <h3 className="m-0 text-sm">📅 회의 제안 → Calendar 일정</h3>
           <ul className="list analysis-output">
             {meetings.map((item) => (
@@ -185,7 +185,7 @@ function TaskStep({
       <>
         <StatusBadge status="SUCCESS" />
         <span className="grow">{item.content}</span>
-        <Link to={`/workspaces/${workspaceId}/tasks/${item.outputTargetId}`}>Task 보기</Link>
+        <Link to={`/workspaces/${workspaceId}/tasks/${item.outputTargetId}`}>팀 작업 보기</Link>
       </>
     );
   }
@@ -238,7 +238,7 @@ function TaskStep({
           onChange={(e) => setForm({ ...form, dueDate: e.target.value || null })}
         />
         <button className="btn btn-primary btn-small" disabled={busy || !form.assigneeId || !form.dueDate}>
-          {busy ? '만드는 중...' : item.outputStatus === 'FAILED' ? '다시 시도' : 'Task 만들기'}
+          {busy ? '만드는 중...' : item.outputStatus === 'FAILED' ? '다시 시도' : '팀 작업 만들기'}
         </button>
       </div>
       {error && <div className="alert alert-error small">{error}</div>}

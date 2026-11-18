@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import type { SlackMessageResponse } from '../api';
-import { formatDateTime } from '../../../utils/date';
+import { formatDateTime, formatTime } from '../../../utils/date';
 import Composer from './Composer';
 
-const AVATAR_COLORS = ['#4F46E5', '#7C3AED', '#0D9488', '#E11D48', '#2563EB', '#D97706'];
+const AVATAR_COLORS = ['#F97316', '#7C3AED', '#0D9488', '#E11D48', '#2563EB', '#D97706'];
 
 /** 이름마다 늘 같은 아바타 색 */
 function avatarColor(name: string | null) {
@@ -13,7 +13,27 @@ function avatarColor(name: string | null) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-/** 메시지 한 건: 작성자, 작성 시각, 본문, 첨부 파일 (UI-04) */
+export function Avatar({ name }: { name: string | null }) {
+  return (
+    <span
+      className="slack-avatar"
+      style={{ background: `color-mix(in oklab, ${avatarColor(name)} 14%, transparent)`, color: avatarColor(name) }}
+    >
+      {(name ?? '?').slice(0, 1)}
+    </span>
+  );
+}
+
+/** 파일 이름의 확장자 (첨부 상자 표시용) */
+function ext(name: string) {
+  const m = /\.([a-z0-9]{1,5})$/i.exec(name);
+  return m ? m[1].toUpperCase() : 'FILE';
+}
+
+/**
+ * 메시지 한 줄: 아바타, 작성자, 시각, 본문, 첨부, 답글 수 (UI-04)
+ * 채널 목록에서는 줄을 누르면 스레드가 열리고, 스레드 안에서는 그냥 보여준다.
+ */
 export default function MessageItem({
   message,
   selected,
@@ -30,89 +50,97 @@ export default function MessageItem({
   const [editing, setEditing] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const remove = async () => {
+  const remove = async (e: MouseEvent) => {
+    e.stopPropagation();
     if (!window.confirm('이 메시지를 삭제할까요? Slack에서도 삭제됩니다.')) return;
     setDeleteError(null);
     try {
       await onDelete();
-    } catch (e) {
-      setDeleteError((e as Error).message);
+    } catch (err) {
+      setDeleteError((err as Error).message);
     }
   };
 
+  const clickable = !!onOpenThread && !editing;
+
   return (
-    <li className={`slack-message${selected ? ' selected' : ''}`}>
-      <div className="row">
-        <span
-          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900"
-          style={{ background: avatarColor(message.authorName) }}
-        >
-          {(message.authorName ?? '?').slice(0, 2)}
-        </span>
-        <strong className="text-xs">{message.authorName ?? '알 수 없음'}</strong>
-        <span className="text-[10px] muted">{formatDateTime(message.createdAt)}</span>
-        {message.edited && <span className="small muted">(수정됨)</span>}
-        {message.syncFailed && <span className="badge badge-warning">동기화 실패</span>}
-        <span className="spacer" />
-        {message.deepLink && !message.isOriginDeleted && (
-          <a className="small" href={message.deepLink} target="_blank" rel="noreferrer">
-            Slack에서 보기
-          </a>
+    <div
+      className={`slack-message${selected ? ' selected' : ''}${clickable ? ' clickable' : ''}`}
+      onClick={clickable ? onOpenThread : undefined}
+    >
+      <Avatar name={message.authorName} />
+      <div className="slack-message-body">
+        <div className="slack-message-meta">
+          <strong>{message.authorName ?? '알 수 없음'}</strong>
+          <span title={formatDateTime(message.createdAt)}>{formatTime(message.createdAt)}</span>
+          {message.edited && <span>(수정됨)</span>}
+          {message.syncFailed && <span className="badge badge-warning">동기화 실패</span>}
+          <span className="spacer" />
+          <span className="slack-message-actions" onClick={(e) => e.stopPropagation()}>
+            {message.deepLink && !message.isOriginDeleted && (
+              <a href={message.deepLink} target="_blank" rel="noreferrer">
+                Slack에서 보기
+              </a>
+            )}
+            {message.mine && !message.isOriginDeleted && !editing && (
+              <>
+                <button type="button" className="link-button" onClick={() => setEditing(true)}>
+                  수정
+                </button>
+                <button type="button" className="link-button" onClick={remove}>
+                  삭제
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+
+        {message.isOriginDeleted && <p className="small muted m-0">Slack에서 삭제된 메시지입니다. (보관된 사본)</p>}
+
+        {editing ? (
+          <div onClick={(e) => e.stopPropagation()}>
+            <Composer
+              placeholder="메시지 수정"
+              initialText={message.text}
+              submitLabel="저장"
+              onSubmit={async (text) => {
+                await onUpdate(text);
+                setEditing(false);
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          </div>
+        ) : (
+          <p className={`pre slack-text${message.isOriginDeleted ? ' muted' : ''}`}>{message.text}</p>
         )}
-        {message.mine && !message.isOriginDeleted && !editing && (
-          <>
-            <button className="link-button small" onClick={() => setEditing(true)}>
-              수정
-            </button>
-            <button className="link-button small" onClick={remove}>
-              삭제
-            </button>
-          </>
+
+        {message.attachments.map((a, i) => {
+          const box = (
+            <>
+              <span className="slack-file-ext">{ext(a.name)}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-bold">{a.name}</span>
+                <span className="block text-[11px] text-[var(--muted)]">첨부 파일</span>
+              </span>
+            </>
+          );
+          return a.url ? (
+            <a key={i} className="slack-file" href={a.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+              {box}
+            </a>
+          ) : (
+            <span key={i} className="slack-file">
+              {box}
+            </span>
+          );
+        })}
+
+        {deleteError && <div className="alert alert-error">삭제하지 못했습니다. {deleteError}</div>}
+
+        {onOpenThread && message.replyCount > 0 && (
+          <span className="slack-reply-count">답글 {message.replyCount}개</span>
         )}
       </div>
-
-      {message.isOriginDeleted && <p className="small muted">Slack에서 삭제된 메시지입니다. (보관된 사본)</p>}
-
-      {editing ? (
-        <Composer
-          placeholder="메시지 수정"
-          initialText={message.text}
-          submitLabel="저장"
-          onSubmit={async (text) => {
-            await onUpdate(text);
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
-        />
-      ) : (
-        <p className={`pre slack-text${message.isOriginDeleted ? ' muted' : ''}`}>{message.text}</p>
-      )}
-
-      {message.attachments.length > 0 && (
-        <div className="tags">
-          {message.attachments.map((a, i) =>
-            a.url ? (
-              <a key={i} className="tag" href={a.url} target="_blank" rel="noreferrer">
-                📎 {a.name}
-              </a>
-            ) : (
-              <span key={i} className="tag">
-                📎 {a.name}
-              </span>
-            ),
-          )}
-        </div>
-      )}
-
-      {deleteError && <div className="alert alert-error">삭제하지 못했습니다. {deleteError}</div>}
-
-      {onOpenThread && (
-        <div className="mt-1 flex justify-end border-0 border-t border-solid border-slate-200/40 pt-2 dark:border-white/10">
-          <button className="link-button text-[11px] font-bold" onClick={onOpenThread}>
-            {message.replyCount > 0 ? `답글 ${message.replyCount}개 →` : '스레드 열기 →'}
-          </button>
-        </div>
-      )}
-    </li>
+    </div>
   );
 }

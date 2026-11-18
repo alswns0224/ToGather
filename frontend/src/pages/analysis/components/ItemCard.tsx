@@ -76,15 +76,15 @@ export default function ItemCard({
   // 처리 결과에서 Task·일정을 만들었으면 담당자·마감·일시는 거기서 정해졌으므로 "미정" 대신 확정으로 보여준다.
   const outputDone =
     item.outputStatus === 'SUCCESS' && (item.itemType === 'FOLLOW_UP' || item.itemType === 'MEETING_PROPOSAL');
-  const decidedElsewhere = outputDone ? (item.itemType === 'FOLLOW_UP' ? 'Task에서 지정' : '일정에서 지정') : '미정';
+  const decidedElsewhere = outputDone ? (item.itemType === 'FOLLOW_UP' ? '팀 작업에서 지정' : '일정에서 지정') : '미정';
 
   return (
-    <li className="analysis-item stack">
+    <li className={`analysis-item type-${item.itemType.toLowerCase()} stack`}>
       <div className="row">
         <span className="pre grow">{item.content}</span>
         {outputDone ? (
           <span className="badge badge-success">
-            확정 · {item.itemType === 'FOLLOW_UP' ? 'Task 생성됨' : '일정 등록됨'}
+            확정 · {item.itemType === 'FOLLOW_UP' ? '팀 작업 생성됨' : '일정 등록됨'}
           </span>
         ) : (
           item.undetermined && <span className="badge badge-warning">미정</span>

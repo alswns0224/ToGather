@@ -95,11 +95,21 @@ togather:
     client-id: ${NOTION_CLIENT_ID:}
     client-secret: ${NOTION_CLIENT_SECRET:}
 
+    # Notion 연동 설정 → Webhooks에서 구독을 만들 때 받는 verification_token
+    # 실시간 이벤트(/api/notion/webhook) 서명 확인에 사용
+    # 없으면 5분 동기화만 동작
+    webhook-token: ${NOTION_WEBHOOK_TOKEN:}
+
+  analysis:
+    # Slack 스레드 자동 논의 분석 (10분마다). 기본 꺼짐: "논의 분석하기"를 누를 때만 분석한다.
+    auto-enabled: ${ANALYSIS_AUTO_ENABLED:false}
+
   gemini:
     api-key: ${GEMINI_API_KEY:}
 
     # 모델 이름은 Google AI Studio의 최신 모델로 변경 가능
     model: ${GEMINI_MODEL:gemini-3.5-flash}
     embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
-    timeout-seconds: 30
+    # 재시도 포함 전체 제한 시간. 한 번 호출은 이 시간의 2/3까지 기다린다. (Gemini 응답이 15~40초 걸리기도 함)
+    timeout-seconds: 90
     max-retries: 2

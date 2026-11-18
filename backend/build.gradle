@@ -31,6 +31,10 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
 
+    // Drive 파일 본문 추출 (통합 검색): PDF, Word·PowerPoint·Excel
+    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    implementation 'org.apache.poi:poi-ooxml:5.4.0'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 

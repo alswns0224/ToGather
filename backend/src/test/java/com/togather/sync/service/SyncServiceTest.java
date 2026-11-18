@@ -134,6 +134,16 @@ class SyncServiceTest {
         assertThat(adapter.contexts).isEmpty();
     }
 
+    @Test
+    void 동기화_버튼을_누르면_1분_안이어도_바로_동기화한다() {
+        state.recordSuccess(SYNCED, null, java.time.LocalDateTime.now().minusSeconds(20));
+        adapter.result = new SyncResult(1, SYNCED.plusMinutes(5));
+
+        syncService.syncNow(1L, Provider.SLACK, 7L, true);
+
+        assertThat(adapter.contexts).hasSize(1);
+    }
+
     static class FakeAdapter implements SyncAdapter {
 
         final List<SyncContext> contexts = new ArrayList<>();

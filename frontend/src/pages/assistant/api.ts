@@ -52,11 +52,19 @@ export const updateSuggestion = (
   body: { title: string; detectedDatetime: string | null; dueDate: string | null },
 ) => http.patch<SuggestionDTO>(base(workspaceId, `/suggestions/${id}`), body);
 
-export const approveSchedule = (workspaceId: string, id: number) =>
-  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-schedule`));
+export const approveSchedule = (workspaceId: string, id: number, endAt: string | null = null) =>
+  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-schedule`), { endAt });
 
 export const approveTask = (workspaceId: string, id: number) =>
   http.post<{ personalTaskId: number }>(base(workspaceId, `/suggestions/${id}/approve-task`));
+
+/** 일정 후보를 팀 캘린더에 등록 (참여자를 비우면 승인한 사람만) */
+export const approveTeamSchedule = (workspaceId: string, id: number, participantIds: number[], endAt: string | null = null) =>
+  http.post<{ contentRefId: number }>(base(workspaceId, `/suggestions/${id}/approve-team-schedule`), { participantIds, endAt });
+
+/** 할 일 후보를 팀 Task로 승인 (담당자를 비우면 승인한 사람) */
+export const approveTeamTask = (workspaceId: string, id: number, assigneeId: number | null) =>
+  http.post<{ taskId: number }>(base(workspaceId, `/suggestions/${id}/approve-team-task`), { assigneeId });
 
 export const dismissSuggestion = (workspaceId: string, id: number) =>
   http.post<void>(base(workspaceId, `/suggestions/${id}/dismiss`));
@@ -77,3 +85,11 @@ export const reopenPersonalTask = (workspaceId: string, id: number) =>
 
 export const deletePersonalTask = (workspaceId: string, id: number) =>
   http.delete<void>(base(workspaceId, `/personal-tasks/${id}`));
+
+/** 날짜만 정해진 후보(시간 00:00)는 "11/20(금) · 시간 미정"으로 보여준다. */
+export const isDateOnly = (datetime: string | null) => !!datetime && /T00:00(:00)?$/.test(datetime);
+
+export function candidateWhen(datetime: string | null, format: { date: (v: string) => string; dateTime: (v: string) => string }) {
+  if (!datetime) return '시간 미정';
+  return isDateOnly(datetime) ? `${format.date(datetime)} · 시간 미정` : format.dateTime(datetime);
+}
