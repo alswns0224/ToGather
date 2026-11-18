@@ -2,14 +2,18 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
+  changeMemberRole,
   createInviteLink,
   deleteWorkspace,
   getActiveInviteLink,
   getMembers,
   getWorkspace,
   removeMember,
+  transferOwner,
   updateWorkspace,
   type InviteLinkResponse,
+  type MemberResponse,
+  type WorkspaceRole,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { useLoginUser } from '../../components/RequireAuth';
@@ -19,23 +23,100 @@ import { BTN_AI, BTN_DANGER, CARD, INPUT, MUTED } from '../../components/ui';
 import PageHeader from '../../components/PageHeader';
 import NavIcon from '../../layouts/NavIcon';
 
+const ROLE_LABEL: Record<WorkspaceRole, string> = { OWNER: '팀장', ADMIN: '관리자', MEMBER: '팀원' };
+
 export default function MembersPage() {
   const { workspaceId = '' } = useParams();
   const user = useLoginUser();
   const navigate = useNavigate();
   const workspace = useAsync(() => getWorkspace(workspaceId), [workspaceId]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
-  const isOwner = workspace.data?.myRole === 'OWNER';
+  // 팀장: 관리자 임명·해제, 팀장 넘기기, 워크스페이스 수정·삭제까지 / 관리자: 초대 링크 관리, 일반 팀원 내보내기
+  const isMainOwner = workspace.data?.myRole === 'OWNER';
+  const isAdmin = isMainOwner || workspace.data?.myRole === 'ADMIN';
   const [actionError, setActionError] = useState<Error>();
+  // 내보내면 서버가 초대 링크를 새로 만들므로, 머리의 초대 링크를 다시 불러온다
+  const [inviteVersion, setInviteVersion] = useState(0);
 
   const remove = async (userId: number, name: string) => {
-    if (!window.confirm(`${name}님을 워크스페이스에서 내보낼까요?`)) return;
+    if (!window.confirm(`${name}님을 워크스페이스에서 내보낼까요?\n기존 초대 링크는 더 이상 쓸 수 없고 새 링크로 바뀝니다.`)) return;
     setActionError(undefined);
     try {
       members.setData(await removeMember(workspaceId, userId));
+      setInviteVersion((v) => v + 1);
     } catch (err) {
       setActionError(err as Error);
     }
+  };
+
+  // 역할 변경 · 권한 넘기기: 내 권한이 바뀔 수 있으므로 워크스페이스(myRole)도 다시 불러온다
+  const runRoleAction = async (message: string, action: () => Promise<MemberResponse[]>) => {
+    if (!window.confirm(message)) return;
+    setActionError(undefined);
+    try {
+      members.setData(await action());
+      workspace.reload();
+    } catch (err) {
+      setActionError(err as Error);
+    }
+  };
+
+  const memberActions = (m: MemberResponse) => {
+    const isMe = m.userId === user.userId;
+    const none = <span className="text-[13px] text-[var(--muted)]">{isMe ? '본인' : '-'}</span>;
+    if (m.role === 'OWNER') return none;
+    if (m.role === 'ADMIN') {
+      if (!isMe && !isMainOwner) return none;
+      return (
+        <button
+          type="button"
+          className="btn btn-small"
+          onClick={() =>
+            runRoleAction(
+              isMe ? '관리자를 내려놓을까요? 팀원이 됩니다.' : `${m.name}님을 관리자에서 해제할까요?`,
+              () => changeMemberRole(workspaceId, m.userId, 'MEMBER'),
+            )
+          }
+        >
+          {isMe ? '관리자 내려놓기' : '관리자 해제'}
+        </button>
+      );
+    }
+    if (!isAdmin) return none;
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {isMainOwner && (
+          <>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() =>
+                runRoleAction(`${m.name}님을 관리자로 임명할까요?
+초대 링크 관리와 팀원 내보내기를 할 수 있게 됩니다.`, () =>
+                  changeMemberRole(workspaceId, m.userId, 'ADMIN'),
+                )
+              }
+            >
+              관리자 임명
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() =>
+                runRoleAction(`${m.name}님에게 팀장을 넘길까요?\n넘기면 나는 팀원이 됩니다.`, () =>
+                  transferOwner(workspaceId, m.userId),
+                )
+              }
+            >
+              팀장 넘기기
+            </button>
+          </>
+        )}
+        <button type="button" className="btn btn-danger btn-small" onClick={() => remove(m.userId, m.name)}>
+          내보내기
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -44,11 +125,13 @@ export default function MembersPage() {
         icon={<NavIcon name="members" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="팀원 관리"
         description={
-          isOwner
-            ? '초대 링크를 만들어 팀원을 초대하고 역할을 관리합니다.'
-            : `${workspace.data?.name ?? ''} 팀원 목록입니다. 초대와 내보내기는 팀장만 할 수 있어요.`
+          isMainOwner
+            ? '초대 링크로 팀원을 초대하고, 관리자 임명·팀장 넘기기로 역할을 관리합니다.'
+            : isAdmin
+              ? '관리자는 초대 링크를 관리하고 팀원을 내보낼 수 있어요. 역할 변경과 워크스페이스 수정·삭제는 팀장만 할 수 있어요.'
+              : `${workspace.data?.name ?? ''} 팀원 목록입니다. 초대와 내보내기는 팀장·관리자만 할 수 있어요.`
         }
-        actions={isOwner ? <InviteActions workspaceId={workspaceId} /> : undefined}
+        actions={isAdmin ? <InviteActions key={inviteVersion} workspaceId={workspaceId} /> : undefined}
       />
 
       {actionError && <ErrorBox error={actionError} />}
@@ -74,27 +157,15 @@ export default function MembersPage() {
               </div>
               <span className="text-sm">{formatDateTime(m.joinedAt)}</span>
               <span>
-                <span className={`badge ${m.role === 'OWNER' ? 'badge-primary' : ''}`}>
-                  {m.role === 'OWNER' ? '관리자' : '구성원'}
-                </span>
+                <span className={`badge ${m.role === 'MEMBER' ? '' : 'badge-primary'}`}>{ROLE_LABEL[m.role]}</span>
               </span>
-              <span>
-                {m.userId === user.userId ? (
-                  <span className="text-[13px] text-[var(--muted)]">본인</span>
-                ) : isOwner && m.role !== 'OWNER' ? (
-                  <button type="button" className="btn btn-danger btn-small" onClick={() => remove(m.userId, m.name)}>
-                    내보내기
-                  </button>
-                ) : (
-                  <span className="text-[13px] text-[var(--muted)]">-</span>
-                )}
-              </span>
+              <span>{memberActions(m)}</span>
             </div>
           ))}
         </div>
       )}
 
-      {isOwner && workspace.data && (
+      {isMainOwner && workspace.data && (
         <WorkspaceSettings
           workspaceId={workspaceId}
           initial={{ name: workspace.data.name, description: workspace.data.description ?? '' }}

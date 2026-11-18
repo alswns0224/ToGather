@@ -1323,6 +1323,39 @@ public class DriveApiClient {
     }
 
     /**
+     * 검색용 본문 추출을 위해 파일 내용을 받는다.
+     * exportMimeType이 있으면 Google 문서를 그 형식으로 내보내고(text/plain, text/csv), 없으면 원본을 받는다.
+     *
+     * @return 파일 바이트. maxBytes보다 크면 null (큰 파일은 본문을 읽지 않는다)
+     */
+    public byte[] downloadForText(String accessToken, String fileId, String exportMimeType, long maxBytes) {
+        validateId(fileId);
+        URI uri = exportMimeType != null
+            ? UriComponentsBuilder.fromUriString(BASE + "/files/" + fileId + "/export")
+                .queryParam("mimeType", exportMimeType).build().encode().toUri()
+            : UriComponentsBuilder.fromUriString(BASE + "/files/" + fileId)
+                .queryParam("alt", "media").queryParam("supportsAllDrives", true).build().encode().toUri();
+        try {
+            return transferRestClient.get().uri(uri).headers(h -> h.setBearerAuth(accessToken))
+                .exchange((request, response) -> {
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        log.info("Drive 본문 받기 실패: HTTP {}", response.getStatusCode().value());
+                        throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+                    }
+                    try (var in = response.getBody()) {
+                        byte[] bytes = in.readNBytes((int) Math.min(Integer.MAX_VALUE - 1, maxBytes + 1));
+                        return bytes.length > maxBytes ? null : bytes;
+                    } catch (IOException e) {
+                        throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+                    }
+                });
+        } catch (RestClientException e) {
+            logRestError("Drive download for text", e);
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+    }
+
+    /**
      * PDF 내보내기 지원 Google 문서 형식.
      */
     public static boolean isPdfExportable(

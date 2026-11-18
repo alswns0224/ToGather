@@ -171,6 +171,29 @@ public interface ContentRefRepository
     /**
      * 본문에 멘션이 들어간 메시지.
      */
+    /**
+     * 통합 검색의 낱말 찾기: 제목이나 본문에 검색어가 그대로 들어 있는 팀 콘텐츠 (최근 수정순).
+     * pattern은 "%검색어%" 형태로, 검색어 안의 %, _, \ 는 \로 바꿔 넣는다.
+     */
+    @Query("""
+        select c
+        from ContentRef c
+        where c.workspaceId = :workspaceId
+          and c.provider in :providers
+          and c.ownerUserId is null
+          and c.isOriginDeleted = false
+          and c.driveTrashed = false
+          and (lower(c.title) like lower(:pattern) escape '\\'
+               or lower(c.content) like lower(:pattern) escape '\\')
+        order by c.lastModifiedAt desc
+        """)
+    List<ContentRef> searchByKeyword(
+        Long workspaceId,
+        Collection<Provider> providers,
+        String pattern,
+        org.springframework.data.domain.Pageable pageable
+    );
+
     @Query("""
         select c
         from ContentRef c

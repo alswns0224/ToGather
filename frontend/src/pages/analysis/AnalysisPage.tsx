@@ -17,6 +17,7 @@ import { getMembers } from '../workspace/api';
 import { useAsync } from '../../hooks/useAsync';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import ServiceLogo from '../../components/ServiceLogo';
+import NavIcon from '../../layouts/NavIcon';
 import { formatDateTime } from '../../utils/date';
 import ItemCard, { ItemEditor } from './components/ItemCard';
 import OutputPanel from './components/OutputPanel';
@@ -48,7 +49,7 @@ export default function AnalysisPage() {
   return <AnalysisDetail key={analysisId} workspaceId={workspaceId} analysisId={Number(analysisId)} />;
 }
 
-/** "논의 정리" 실행: 분석이 끝날 때까지 처리 단계를 보여준다. (최대 30초) */
+/** "논의 정리" 실행: 분석이 끝날 때까지 처리 단계를 보여준다. (보통 15초 안팎, 최대 90초) */
 function NewAnalysis({
   workspaceId,
   contentRefId,
@@ -125,7 +126,7 @@ function StepPill({ status }: { status?: AnalysisStatus }) {
 export function AnalysisHeader({ status }: { status?: AnalysisStatus }) {
   return (
     <PageHeader
-      icon={<span className="text-[22px] leading-6 text-[var(--primary)]">✦</span>}
+      icon={<NavIcon name="analyses" className="h-[22px] w-[22px] text-[var(--primary)]" />}
       title="논의 정리"
       description={
         <>

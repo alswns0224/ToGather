@@ -1024,7 +1024,8 @@ hr {
 /* 팀원 표 (시안의 tbl-head · tbl-row) */
 .members-row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 110px 110px;
+  /* 관리 칸: 관리자 임명 · 팀장 넘기기 · 내보내기 버튼이 한 줄에 들어가는 폭 */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 90px 300px;
   align-items: center;
   gap: 12px;
   padding: 12px 20px;
@@ -1479,6 +1480,31 @@ hr {
 .drive-drop.dragging {
   border-color: var(--primary);
   background: var(--primary-soft);
+}
+
+/* 화면 전체 놓기 영역 (파일을 화면 위로 끌고 오면) */
+.drive-drop-overlay {
+  position: fixed;
+  inset: 12px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px dashed var(--primary);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  pointer-events: none;
+}
+
+.drive-drop-overlay-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 28px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
 }
 
 .drive-drop-icon {

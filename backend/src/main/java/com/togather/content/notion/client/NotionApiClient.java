@@ -165,9 +165,19 @@ public class NotionApiClient {
     public record PageContent(String text, boolean editable) {
     }
 
+    /**
+     * 표는 행까지 읽어 본문 텍스트에 넣는다. (Notion에서 표만 고쳐도 동기화가 바뀐 것으로 알아채고,
+     * 통합 검색·논의 정리에서도 표 내용을 쓸 수 있게)
+     */
     public PageContent getPageContent(String token, String pageId) {
         List<Map<String, Object>> blocks = getChildren(token, pageId);
-        return new PageContent(NotionBlocks.toText(blocks), NotionBlocks.isEditable(blocks));
+        Map<String, List<Map<String, Object>>> tableRows = new HashMap<>();
+        for (Map<String, Object> block : blocks) {
+            if ("table".equals(str(block, "type")) && bool(block, "has_children")) {
+                tableRows.put(str(block, "id"), getChildren(token, str(block, "id")));
+            }
+        }
+        return new PageContent(NotionBlocks.toText(blocks, tableRows), NotionBlocks.isEditable(blocks));
     }
 
     // ===================== 생성·수정·삭제 =====================
@@ -243,7 +253,154 @@ public class NotionApiClient {
         }
     }
 
+    // ===================== 블록 단위 편집 (이미지·표가 있는 문서) =====================
+
+    /** 블록의 바로 아래 블록 (페이지 본문, 표의 행 등) */
+    public List<Map<String, Object>> getBlocks(String token, String blockId) {
+        return getChildren(token, blockId);
+    }
+
+    /**
+     * afterBlockId 바로 뒤에 블록을 넣는다. 100개씩 나눠 넣으며, 다음 묶음은 앞 묶음의 마지막 블록 뒤에 넣는다.
+     *
+     * @return 새로 만든 블록 ID (넣은 순서)
+     */
+    public List<String> insertAfter(String token, String parentId, String afterBlockId, List<Map<String, Object>> blocks) {
+        List<String> created = new ArrayList<>();
+        String after = afterBlockId;
+        for (int i = 0; i < blocks.size(); i += MAX_CHILDREN) {
+            List<Map<String, Object>> chunk = blocks.subList(i, Math.min(blocks.size(), i + MAX_CHILDREN));
+            Map<String, Object> body = new HashMap<>();
+            body.put("children", chunk);
+            body.put("after", after);
+            Map<String, Object> json = call("blocks.append", () -> request(token).patch()
+                    .uri(BASE + "/blocks/{id}/children", parentId)
+                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JSON));
+            // 결과의 앞쪽이 방금 넣은 블록이다.
+            List<String> ids = list(json, "results").stream().limit(chunk.size()).map(b -> str(b, "id")).toList();
+            created.addAll(ids);
+            if (!ids.isEmpty()) {
+                after = ids.getLast();
+            }
+        }
+        return created;
+    }
+
+    /** 맨 뒤에 블록을 넣는다. @return 새로 만든 블록 ID */
+    public List<String> appendBlocks(String token, String parentId, List<Map<String, Object>> blocks) {
+        List<String> created = new ArrayList<>();
+        for (int i = 0; i < blocks.size(); i += MAX_CHILDREN) {
+            List<Map<String, Object>> chunk = blocks.subList(i, Math.min(blocks.size(), i + MAX_CHILDREN));
+            Map<String, Object> json = call("blocks.append", () -> request(token).patch()
+                    .uri(BASE + "/blocks/{id}/children", parentId)
+                    .contentType(MediaType.APPLICATION_JSON).body(Map.of("children", chunk)).retrieve().body(JSON));
+            List<Map<String, Object>> results = list(json, "results");
+            // 맨 뒤에 넣었으므로 결과의 뒤쪽이 방금 넣은 블록이다.
+            results.subList(Math.max(0, results.size() - chunk.size()), results.size())
+                    .forEach(b -> created.add(str(b, "id")));
+        }
+        return created;
+    }
+
+    /** 블록을 지운다. 이미 없으면 성공으로 본다. */
+    public void deleteBlock(String token, String blockId) {
+        try {
+            call("blocks.delete", () -> request(token).delete().uri(BASE + "/blocks/{id}", blockId)
+                    .retrieve().body(JSON));
+        } catch (BusinessException e) {
+            if (e.getErrorCode() != ErrorCode.RESOURCE_NOT_FOUND) {
+                throw e;
+            }
+        }
+    }
+
+    /** 표 한 행의 칸을 바꾼다. (칸 전체를 보내야 한다) */
+    public void updateTableRow(String token, String rowId, List<String> cells, int width) {
+        Map<String, Object> body = Map.of("table_row", Map.of("cells", NotionBlocks.cells(cells, width)));
+        call("blocks.update", () -> request(token).patch().uri(BASE + "/blocks/{id}", rowId)
+                .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JSON));
+    }
+
+    /** 표 맨 아래에 행을 붙인다. */
+    public void appendTableRows(String token, String tableId, List<List<String>> rows, int width) {
+        List<Map<String, Object>> blocks = rows.stream()
+                .map(cells -> Map.<String, Object>of("object", "block", "type", "table_row",
+                        "table_row", Map.of("cells", NotionBlocks.cells(cells, width))))
+                .toList();
+        appendBlocks(token, tableId, blocks);
+    }
+
+    /**
+     * 이미지 블록 내용. fileUploadId(우리 서버로 올린 파일)나 url(외부 이미지 주소) 중 하나, 캡션.
+     * 둘 다 없으면 캡션만 바꾼다.
+     */
+    public static Map<String, Object> imageBody(String url, String fileUploadId, String caption) {
+        Map<String, Object> image = new HashMap<>();
+        if (fileUploadId != null && !fileUploadId.isBlank()) {
+            image.put("type", "file_upload");
+            image.put("file_upload", Map.of("id", fileUploadId));
+        } else if (url != null && !url.isBlank()) {
+            image.put("type", "external");
+            image.put("external", Map.of("url", url));
+        }
+        image.put("caption", caption == null || caption.isBlank() ? List.of() : NotionBlocks.richText(caption));
+        return image;
+    }
+
+    /** 이미지 블록을 바꾼다. (파일 업로드를 쓰므로 업로드와 같은 새 API 버전으로 부른다) */
+    public void updateImage(String token, String blockId, Map<String, Object> image) {
+        call("blocks.update", () -> request(token, FILE_UPLOAD_VERSION).patch().uri(BASE + "/blocks/{id}", blockId)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("image", image)).retrieve().body(JSON));
+    }
+
+    /**
+     * 이미지 블록을 afterBlockId 뒤에 넣는다. afterBlockId가 null이면 맨 뒤에 넣는다.
+     *
+     * @return 새 블록 ID
+     */
+    public String insertImage(String token, String parentId, String afterBlockId, Map<String, Object> image) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("children", List.of(Map.of("object", "block", "type", "image", "image", image)));
+        if (afterBlockId != null) {
+            body.put("position", Map.of("type", "after_block", "after_block", Map.of("id", afterBlockId)));
+        }
+        Map<String, Object> json = call("blocks.append", () -> request(token, FILE_UPLOAD_VERSION).patch()
+                .uri(BASE + "/blocks/{id}/children", parentId)
+                .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JSON));
+        List<Map<String, Object>> results = list(json, "results");
+        if (results.isEmpty()) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        // 뒤에 넣었으면 첫 번째, 맨 뒤에 넣었으면 마지막이 새 블록이다.
+        return str(afterBlockId != null ? results.getFirst() : results.getLast(), "id");
+    }
+
+    /**
+     * 파일을 Notion에 올린다. (한 번에 20MB까지. 무료 워크스페이스는 5MB까지)
+     * 올린 파일은 1시간 안에 이미지 블록에 붙여야 한다.
+     *
+     * @return file_upload ID
+     */
+    public String uploadFile(String token, String filename, String contentType, byte[] bytes) {
+        Map<String, Object> created = call("file_uploads.create", () -> request(token, FILE_UPLOAD_VERSION).post()
+                .uri(BASE + "/file_uploads").contentType(MediaType.APPLICATION_JSON).body(Map.of())
+                .retrieve().body(JSON));
+        String id = str(created, "id");
+        org.springframework.util.LinkedMultiValueMap<String, Object> form = new org.springframework.util.LinkedMultiValueMap<>();
+        HttpHeaders partHeaders = new HttpHeaders();
+        partHeaders.setContentType(MediaType.parseMediaType(contentType));
+        partHeaders.setContentDispositionFormData("file", filename);
+        form.add("file", new org.springframework.http.HttpEntity<>(bytes, partHeaders));
+        call("file_uploads.send", () -> request(token, FILE_UPLOAD_VERSION).post()
+                .uri(BASE + "/file_uploads/{id}/send", id).contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(form).retrieve().body(JSON));
+        return id;
+    }
+
     // ===================== 내부 =====================
+
+    /** 파일 업로드 API는 최근 버전에만 있어서 업로드·이미지 블록 호출만 이 버전으로 부른다. (Notion 문서 예시 버전) */
+    static final String FILE_UPLOAD_VERSION = "2026-03-11";
 
     private List<Map<String, Object>> getChildren(String token, String blockId) {
         List<Map<String, Object>> blocks = new ArrayList<>();
@@ -289,17 +446,67 @@ public class NotionApiClient {
     }
 
     private RestClient request(String token) {
+        return request(token, NotionOAuthClient.NOTION_VERSION);
+    }
+
+    private RestClient request(String token, String version) {
         return externalRestClient.mutate()
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                .defaultHeader("Notion-Version", NotionOAuthClient.NOTION_VERSION)
+                .defaultHeader("Notion-Version", version)
                 .build();
     }
 
+    /** 요청이 몰려 Notion이 잠시 거절(429)하면 이만큼까지 기다렸다 다시 보낸다. (블록 단위 저장은 호출이 많다) */
+    private static final int MAX_RATE_LIMIT_RETRIES = 3;
+
     private static Map<String, Object> call(String action, Supplier<Map<String, Object>> request) {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return callOnce(action, request);
+            } catch (RateLimited e) {
+                if (attempt >= MAX_RATE_LIMIT_RETRIES) {
+                    log.warn("Notion {} 요청 한도 초과", action);
+                    throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+                }
+                try {
+                    Thread.sleep(e.waitMillis);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+                }
+            }
+        }
+    }
+
+    private static final class RateLimited extends RuntimeException {
+        final long waitMillis;
+
+        RateLimited(long waitMillis) {
+            super(null, null, false, false);
+            this.waitMillis = waitMillis;
+        }
+    }
+
+    private static Map<String, Object> callOnce(String action, Supplier<Map<String, Object>> request) {
         try {
             return request.get();
         } catch (HttpStatusCodeException e) {
             HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+            if (status == HttpStatus.TOO_MANY_REQUESTS) {
+                String retryAfter = e.getResponseHeaders() == null ? null : e.getResponseHeaders().getFirst("Retry-After");
+                long seconds = 1;
+                try {
+                    seconds = retryAfter == null ? 1 : Math.min(5, Math.max(1, Long.parseLong(retryAfter.trim())));
+                } catch (NumberFormatException ignored) {
+                    // 기본 1초
+                }
+                throw new RateLimited(seconds * 1000);
+            }
+            if (status == HttpStatus.BAD_REQUEST) {
+                // 요청 형식 문제는 원인을 알 수 있게 Notion 메시지를 남긴다. (토큰 등 비밀값은 들어 있지 않다)
+                log.warn("Notion {} 잘못된 요청: {}", action, e.getResponseBodyAsString());
+                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+            }
             if (status == HttpStatus.UNAUTHORIZED) {
                 throw new BusinessException(ErrorCode.REAUTH_REQUIRED);
             }

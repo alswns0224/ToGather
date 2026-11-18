@@ -17,6 +17,7 @@ import com.togather.task.dto.TaskSummary;
 import com.togather.task.service.TaskContextService;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -24,6 +25,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 /**
@@ -39,6 +41,12 @@ public class SearchService {
     static final int MAX_QUERY = 200;
     static final int MAX_LIMIT = 50;
     static final int SNIPPET = 160;
+    /** 낱말이 그대로 들어 있는 결과의 관련도 (문맥 검색 점수가 더 높으면 그 점수를 쓴다) */
+    static final double KEYWORD_SCORE = 0.7;
+    /** 이 글자 수 이하인 Slack 메시지는 문맥 검색에서 뺀다. ("ㅎㅇ", "ㅇㅋ" 등) */
+    static final int MIN_MEANINGFUL_CHARS = 3;
+    /** DriveSyncAdapter가 파일 본문 앞에 붙이는 표시 */
+    private static final String DRIVE_BODY_MARKER = "\n\n본문:\n";
 
     private final WorkspaceAccessChecker workspaceAccessChecker;
     private final EmbeddingClient embeddingClient;
@@ -74,7 +82,8 @@ public class SearchService {
         for (VectorHit hit : hits) {
             ContentRef ref = refs.get(hit.contentRefId());
             if (ref != null && ref.getWorkspaceId().equals(workspaceId) && targets.contains(ref.getProvider())
-                    && !ref.isOriginDeleted() && !ref.isDriveTrashed() && score(hit) >= properties.minScore()) {
+                    && !ref.isOriginDeleted() && !ref.isDriveTrashed() && score(hit) >= properties.minScore()
+                    && !isTooShort(ref)) {
                 kept.add(hit);
             }
             if (kept.size() == size) {
@@ -82,12 +91,23 @@ public class SearchService {
             }
         }
 
-        List<Long> ids = kept.stream().map(VectorHit::contentRefId).toList();
+        // 낱말 찾기: 문맥 검색은 글 앞부분만 보므로, 긴 문서·파일 속에 검색어가 그대로 있는 것도 함께 찾는다.
+        Map<Long, Double> scores = new LinkedHashMap<>();
+        kept.forEach(hit -> scores.put(hit.contentRefId(), score(hit)));
+        for (ContentRef ref : keywordMatches(workspaceId, targets, q, size)) {
+            refs.putIfAbsent(ref.getContentRefId(), ref);
+            scores.merge(ref.getContentRefId(), KEYWORD_SCORE, Math::max);
+        }
+        List<Long> ids = scores.entrySet().stream()
+                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                .limit(size)
+                .map(Map.Entry::getKey)
+                .toList();
+
         Map<Long, List<TaskSummary>> tasks = taskContextService.getTasksByContents(ids);
-        Map<Long, ContentRef> roots = slackRoots(kept.stream().map(h -> refs.get(h.contentRefId())).toList());
-        List<Item> items = kept.stream()
-                .map(hit -> toItem(refs.get(hit.contentRefId()), score(hit), roots,
-                        tasks.getOrDefault(hit.contentRefId(), List.of())))
+        Map<Long, ContentRef> roots = slackRoots(ids.stream().map(refs::get).toList());
+        List<Item> items = ids.stream()
+                .map(id -> toItem(refs.get(id), scores.get(id), roots, tasks.getOrDefault(id, List.of()), q))
                 .toList();
         return new SearchResponse(q, items, contentIndexService.countPending(workspaceId));
     }
@@ -109,16 +129,58 @@ public class SearchService {
                 .collect(Collectors.toMap(ContentRef::getContentRefId, Function.identity()));
     }
 
-    private static Item toItem(ContentRef ref, double score, Map<Long, ContentRef> roots, List<TaskSummary> tasks) {
+    /**
+     * "ㅎㅇ"처럼 아주 짧은 Slack 메시지는 뜻이 거의 없는데도 문맥 점수가 높게 나와(0.5 이상) 문맥 검색 결과에서 뺀다.
+     * 검색어가 그대로 들어 있으면 낱말 찾기로는 나온다.
+     */
+    static boolean isTooShort(ContentRef ref) {
+        if (ref.getProvider() != Provider.SLACK) {
+            return false;
+        }
+        String text = SlackMessageFormat.parse(ref.getContent()).text();
+        String compact = text == null ? "" : text.replaceAll("\\s+", "");
+        return compact.codePointCount(0, compact.length()) <= MIN_MEANINGFUL_CHARS;
+    }
+
+    /** 제목·본문에 검색어가 그대로 들어 있는 콘텐츠 (두 글자 이상일 때만) */
+    private List<ContentRef> keywordMatches(Long workspaceId, Set<Provider> targets, String q, int size) {
+        if (q.length() < 2) {
+            return List.of();
+        }
+        String escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return contentRefRepository.searchByKeyword(workspaceId, targets, "%" + escaped + "%", PageRequest.of(0, size));
+    }
+
+    private static Item toItem(ContentRef ref, double score, Map<Long, ContentRef> roots, List<TaskSummary> tasks,
+                               String query) {
         String body = ref.getProvider() == Provider.SLACK
                 ? SlackMessageFormat.parse(ref.getContent()).text()
-                : ref.getContent();
-        String snippet = body == null ? "" : body.strip().replaceAll("\\s+", " ");
-        if (snippet.length() > SNIPPET) {
-            snippet = snippet.substring(0, SNIPPET) + "…";
-        }
+                : bodyForSnippet(ref);
+        String snippet = snippet(body == null ? "" : body.strip().replaceAll("\\s+", " "), query);
         return new Item(ref.getContentRefId(), ref.getProvider(), ref.getTitle(), snippet, ref.getDeepLink(),
                 ref.getCreatedAt(), ref.getAuthorName(), score, appPath(ref, roots), tasks);
+    }
+
+    /** Drive 파일은 "파일 유형" 줄 대신 추출한 본문을 미리보기로 보여준다. */
+    private static String bodyForSnippet(ContentRef ref) {
+        String content = ref.getContent();
+        if (ref.getProvider() == Provider.GOOGLE_DRIVE && content != null && content.contains(DRIVE_BODY_MARKER)) {
+            int at = content.indexOf(DRIVE_BODY_MARKER);
+            String body = content.substring(at + DRIVE_BODY_MARKER.length());
+            return body.isBlank() ? content.substring(0, at) : body;
+        }
+        return content;
+    }
+
+    /** 검색어가 들어 있으면 그 주변을, 없으면 앞부분을 미리보기로 */
+    static String snippet(String text, String query) {
+        int at = query == null || query.isBlank() ? -1 : text.toLowerCase().indexOf(query.toLowerCase());
+        if (at < 0 || text.length() <= SNIPPET) {
+            return text.length() > SNIPPET ? text.substring(0, SNIPPET) + "…" : text;
+        }
+        int start = Math.max(0, Math.min(at - SNIPPET / 3, text.length() - SNIPPET));
+        int end = Math.min(text.length(), start + SNIPPET);
+        return (start > 0 ? "…" : "") + text.substring(start, end) + (end < text.length() ? "…" : "");
     }
 
     static String appPath(ContentRef ref, Map<Long, ContentRef> roots) {

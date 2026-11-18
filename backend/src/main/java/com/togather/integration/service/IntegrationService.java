@@ -263,10 +263,34 @@ public class IntegrationService {
                 .toList();
     }
 
+    /**
+     * 연동 대상 ID → 이름 (연동 관리에서 고를 때 저장한 이름. 예: Drive 폴더 이름).
+     * 이름이 없으면 값이 null이다.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, String> getConnectionTargetNames(Long workspaceId, Provider provider) {
+        List<Long> connectionIds = connectionRepository
+                .findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId, provider, ConnectionStatus.DISCONNECTED)
+                .stream().map(ServiceConnection::getConnectionId).toList();
+        Map<String, String> names = new java.util.LinkedHashMap<>();
+        for (IntegrationTarget target : targetRepository.findAllByConnectionIdIn(connectionIds)) {
+            names.putIfAbsent(target.getExternalTargetId(), target.getName());
+        }
+        return names;
+    }
+
     /** 외부 대상(예: Slack 채널 ID)을 연동 대상으로 고른 워크스페이스들. 외부 서비스의 실시간 이벤트를 나눠 줄 때 쓴다. */
     @Transactional(readOnly = true)
     public List<Long> findWorkspacesByTarget(Provider provider, String externalTargetId) {
         return targetRepository.findWorkspaceIdsByTarget(provider, externalTargetId, ConnectionStatus.DISCONNECTED);
+    }
+
+    /** 외부 계정(예: Notion 워크스페이스 ID)을 연동한 워크스페이스들. Notion 웹훅을 나눠 줄 때 쓴다. */
+    @Transactional(readOnly = true)
+    public List<Long> findWorkspacesByExternalAccount(Provider provider, String externalAccountId) {
+        return connectionRepository
+                .findAllByProviderAndExternalAccountIdAndStatusNot(provider, externalAccountId, ConnectionStatus.DISCONNECTED)
+                .stream().map(ServiceConnection::getWorkspaceId).distinct().toList();
     }
 
     /**

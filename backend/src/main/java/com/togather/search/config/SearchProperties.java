@@ -32,7 +32,8 @@ public record SearchProperties(
         chromaUrl = blankToDefault(chromaUrl, "http://127.0.0.1:8000");
         collection = blankToDefault(collection, "togather_contents");
         batchSize = batchSize == null ? 32 : batchSize;
-        minScore = minScore == null ? 0.35 : minScore;
+        // BGE-M3로 재 보니 관련 있는 글은 0.54 이상, 인사·맞장구("안녕하세요", "네 알겠습니다")는 0.38~0.51이었다.
+        minScore = minScore == null ? 0.52 : minScore;
     }
 
     private static String blankToDefault(String value, String defaultValue) {

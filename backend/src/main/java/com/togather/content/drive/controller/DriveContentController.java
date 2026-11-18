@@ -98,6 +98,20 @@ public class DriveContentController {
     }
 
     /**
+     * 업로드할 폴더 고르기: 연동한 폴더 ID와 이름.
+     *
+     * GET /api/workspaces/{workspaceId}/drive/folders/names
+     */
+    @GetMapping("/folders/names")
+    public ApiResponse<List<DriveContentService.DriveFolderResponse>> getFolderNames(
+        @LoginUser Long userId,
+        @PathVariable Long workspaceId
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(driveContentService.getFolderNames(workspaceId, userId));
+    }
+
+    /**
      * 2. Google Drive 파일 목록 조회.
      *
      * GET /api/workspaces/{workspaceId}/drive/files

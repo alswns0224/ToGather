@@ -171,3 +171,27 @@ textarea.input.notion-editor {
     grid-template-columns: 1fr;
   }
 }
+
+/* 블록 단위 편집기 */
+.notion-block-editor textarea.notion-editor {
+  min-height: 72px;
+}
+
+.notion-fixed-block {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.notion-image-edit,
+.notion-table-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 12px;
+}

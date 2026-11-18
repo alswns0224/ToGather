@@ -32,11 +32,8 @@ export default function LoginPage() {
   const isIndigo = palette === 'indigo';
   const isDark = theme === 'dark';
 
-  const logoSrc = isIndigo
-    ? '/togather-logo-mark.png'
-    : isDark
-      ? '/togather-logo-white.png'
-      : '/togather-logo-carrot.png';
+  // 주황 테마는 다크·라이트 모두 주황 로고
+  const logoSrc = isIndigo ? '/togather-logo-mark.png' : '/togather-logo-carrot.png';
 
   const startGoogle = () => {
     setRedirecting(true);

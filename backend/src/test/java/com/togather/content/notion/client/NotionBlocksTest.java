@@ -53,4 +53,21 @@ class NotionBlocksTest {
                 .toList());
         return Map.of("type", type, type, body);
     }
+
+    @Test
+    void 표와_이미지도_본문_텍스트에_넣는다() {
+        List<Map<String, Object>> blocks = List.of(
+                Map.of("id", "t1", "type", "table", "table", Map.of("table_width", 2), "has_children", true),
+                Map.of("id", "i1", "type", "image", "image", Map.of("type", "file",
+                        "file", Map.of("url", "https://s3.example/abc/photo.png?X-Amz-Signature=1"),
+                        "caption", List.of(Map.of("plain_text", "회의 사진")))));
+        Map<String, List<Map<String, Object>>> rows = Map.of("t1", List.of(
+                Map.of("type", "table_row", "table_row", Map.of("cells",
+                        List.of(List.of(Map.of("plain_text", "이름")), List.of(Map.of("plain_text", "역할")))))));
+
+        String text = NotionBlocks.toText(blocks, rows);
+
+        // 서명(? 뒤)은 조회할 때마다 바뀌므로 빼서, 같은 이미지면 같은 텍스트가 된다.
+        assertThat(text).isEqualTo("| 이름 | 역할 |\n[이미지: photo.png] 회의 사진");
+    }
 }

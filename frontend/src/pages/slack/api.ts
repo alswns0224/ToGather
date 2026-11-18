@@ -74,4 +74,6 @@ export const deleteMessage = (workspaceId: string, channelId: string, ts: string
   http.delete<void>(channels(workspaceId, `/${enc(channelId)}/messages/${enc(ts)}`));
 
 /** 즉시 동기화 (B-03). 실패해도 저장된 메시지는 그대로 보인다. */
-export const syncSlack = (workspaceId: string) => http.post<SyncStatusResponse[]>(ws(workspaceId, '/sync/SLACK'));
+/** force: 동기화 버튼을 직접 누른 경우 1분 간격 제한 없이 바로 동기화 */
+export const syncSlack = (workspaceId: string, force = false) =>
+  http.post<SyncStatusResponse[]>(ws(workspaceId, `/sync/SLACK${force ? '?force=true' : ''}`));

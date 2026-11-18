@@ -10,4 +10,6 @@ public interface InviteLinkRepository extends JpaRepository<InviteLink, Long> {
     Optional<InviteLink> findByToken(String token);
 
     Optional<InviteLink> findFirstByWorkspaceIdAndExpiresAtAfterOrderByExpiresAtDesc(Long workspaceId, LocalDateTime now);
+
+    void deleteAllByWorkspaceId(Long workspaceId);
 }

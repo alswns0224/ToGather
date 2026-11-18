@@ -65,18 +65,22 @@ public class WorkspaceService {
         return WorkspaceResponse.of(workspace, 1, WorkspaceRole.OWNER);
     }
 
+    /** 이름·설명 수정은 팀장만 할 수 있다. */
     @Transactional
     public WorkspaceResponse updateWorkspace(Long workspaceId, Long userId, WorkspaceRequest request) {
-        workspaceAccessChecker.checkOwner(workspaceId, userId);
+        workspaceAccessChecker.checkMainOwner(workspaceId, userId);
         Workspace workspace = findWorkspace(workspaceId);
         workspace.update(request.name().strip(), normalize(request.description()));
         return WorkspaceResponse.of(workspace, workspaceMemberRepository.countByWorkspaceId(workspaceId), WorkspaceRole.OWNER);
     }
 
-    /** 워크스페이스와 소속 데이터(팀원, Task, 회의, 연동 등)를 삭제한다. 하위 데이터는 DB의 ON DELETE CASCADE로 지워진다. */
+    /**
+     * 워크스페이스와 소속 데이터(팀원, Task, 회의, 연동 등)를 삭제한다. 하위 데이터는 DB의 ON DELETE CASCADE로 지워진다.
+     * 팀장만 할 수 있다.
+     */
     @Transactional
     public void deleteWorkspace(Long workspaceId, Long userId) {
-        workspaceAccessChecker.checkOwner(workspaceId, userId);
+        workspaceAccessChecker.checkMainOwner(workspaceId, userId);
         workspaceRepository.delete(findWorkspace(workspaceId));
     }
 

@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type DragEvent,
 } from 'react';
 import { Link, useParams } from 'react-router';
 
@@ -22,6 +21,7 @@ import {
   formatDriveFileSize,
   getDriveDownloadUrl,
   getDriveFiles,
+  getDriveFolderNames,
   getDriveFolders,
   getDrivePreviewUrl,
   getDriveSyncStatuses,
@@ -89,7 +89,8 @@ function fileFormat(file: DriveFile): string {
 function fileDescription(file: DriveFile): string {
   return (
     file.content
-      ?.split('\n')
+      ?.split('\n\n본문:\n')[0] // 검색용 본문은 설명이 아니다 (서버가 보통 빼고 보낸다)
+      .split('\n')
       .filter(line => !line.startsWith('파일 유형:'))
       .join('\n')
       .trim() || ''
@@ -380,6 +381,21 @@ export default function DrivePage() {
   // 8. 업로드 가능한 폴더
   // ===================================================
 
+  // 업로드할 폴더 고르기에 보여줄 폴더 이름 (연동 관리에서 고를 때 저장한 이름)
+  const [folderNames, setFolderNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    getDriveFolderNames(workspaceId)
+      .then((list) => {
+        if (!active) return;
+        setFolderNames(Object.fromEntries(list.filter((f) => f.name).map((f) => [f.folderId, f.name as string])));
+      })
+      .catch(() => undefined); // 이름을 못 가져오면 "연동 폴더 N"으로 보여준다
+    return () => {
+      active = false;
+    };
+  }, [workspaceId]);
+
   const folderIds = useMemo(() => {
     // 선택된 연동 폴더 API가 정상 응답하면
     // 동기화 상태가 아닌 실제 연동 폴더 목록을 사용
@@ -591,15 +607,15 @@ export default function DrivePage() {
     setUploadFile(file);
   }
 
-  function handleDragEnter(event: DragEvent<HTMLDivElement>) {
-    if (!event.dataTransfer.types.includes('Files')) return;
+  function handleDragEnter(event: globalThis.DragEvent) {
+    if (!event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
     dragDepthRef.current += 1;
     if (canSelectUpload) setIsDraggingFile(true);
   }
 
-  function handleDragOver(event: DragEvent<HTMLDivElement>) {
-    if (!event.dataTransfer.types.includes('Files')) return;
+  function handleDragOver(event: globalThis.DragEvent) {
+    if (!event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = canSelectUpload ? 'copy' : 'none';
   }
@@ -609,11 +625,12 @@ export default function DrivePage() {
     if (dragDepthRef.current === 0) setIsDraggingFile(false);
   }
 
-  function handleFileDrop(event: DragEvent<HTMLDivElement>) {
+  function handleFileDrop(event: globalThis.DragEvent) {
+    if (!event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
     dragDepthRef.current = 0;
     setIsDraggingFile(false);
-    if (!canSelectUpload || workingRef.current || !event.dataTransfer.types.includes('Files')) return;
+    if (!canSelectUpload || workingRef.current) return;
 
     const files = event.dataTransfer.files;
     const hasDirectory = Array.from(event.dataTransfer.items)
@@ -626,6 +643,26 @@ export default function DrivePage() {
     }
     selectUploadFile(files[0]);
   }
+
+  // 화면 어디에 끌어다 놓아도 업로드할 파일로 고른다. (업로드 칸뿐 아니라 사이드바·목록 위에서도)
+  const dragHandlersRef = useRef({ handleDragEnter, handleDragOver, handleDragLeave, handleFileDrop });
+  dragHandlersRef.current = { handleDragEnter, handleDragOver, handleDragLeave, handleFileDrop };
+  useEffect(() => {
+    const enter = (e: globalThis.DragEvent) => dragHandlersRef.current.handleDragEnter(e);
+    const over = (e: globalThis.DragEvent) => dragHandlersRef.current.handleDragOver(e);
+    const leave = () => dragHandlersRef.current.handleDragLeave();
+    const drop = (e: globalThis.DragEvent) => dragHandlersRef.current.handleFileDrop(e);
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragover', over);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
 
   // ===================================================
   // 13. Google Drive 파일 업로드
@@ -876,6 +913,16 @@ export default function DrivePage() {
 
   return (
     <section className="stack">
+      {/* 화면 어디로 끌어와도 점선 테두리로 놓을 수 있다고 알린다 */}
+      {isDraggingFile && canSelectUpload && (
+        <div className="drive-drop-overlay" aria-hidden="true">
+          <div className="drive-drop-overlay-label">
+            <span className="text-3xl">☁️</span>
+            <strong>여기에 놓으면 업로드할 파일로 선택돼요</strong>
+            <span className="text-[13px] text-[var(--muted)]">파일 한 개, 최대 100MB</span>
+          </div>
+        </div>
+      )}
       <PageHeader
         icon={<NavIcon name="drive" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="Drive"
@@ -920,10 +967,6 @@ export default function DrivePage() {
         role="region"
         aria-label="Google Drive 파일 업로드 영역"
         aria-busy={working === 'upload'}
-        onDragEnter={handleDragEnter}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleFileDrop}
         className={`drive-drop${isDraggingFile && canSelectUpload ? ' dragging' : ''}`}
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -974,7 +1017,7 @@ export default function DrivePage() {
             >
               {folderIds.map((id, index) => (
                 <option key={id} value={id}>
-                  {folderIds.length === 1 ? '연동된 Drive 폴더' : `연동 폴더 ${index + 1}`}
+                  {folderNames[id] ?? (folderIds.length === 1 ? '연동된 Drive 폴더' : `연동 폴더 ${index + 1}`)}
                 </option>
               ))}
             </select>

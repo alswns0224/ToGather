@@ -67,7 +67,18 @@ public class SyncService {
      * 1분 안에 동기화를 시도한 대상은 건너뛴다.
      */
     public List<SyncStatusResponse> syncNow(Long workspaceId, Provider provider, Long requestedBy) {
-        syncWorkspace(workspaceId, provider, requestedBy, false);
+        return syncNow(workspaceId, provider, requestedBy, false);
+    }
+
+    /**
+     * @param force 사용자가 동기화 버튼을 직접 눌렀을 때 true: 1분 간격 제한 없이 바로 동기화한다.
+     *              (화면 진입·주기 호출은 false로 두어 외부 API 호출 한도를 지킨다)
+     */
+    public List<SyncStatusResponse> syncNow(Long workspaceId, Provider provider, Long requestedBy, boolean force) {
+        SyncAdapter adapter = adapter(provider);
+        for (SyncTarget target : targets(adapter, workspaceId, requestedBy)) {
+            syncTarget(adapter, workspaceId, target, requestedBy, false, force);
+        }
         return getStatuses(workspaceId, provider);
     }
 
