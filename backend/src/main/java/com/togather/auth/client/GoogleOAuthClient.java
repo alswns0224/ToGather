@@ -94,16 +94,20 @@ public class GoogleOAuthClient {
         }
     }
 
-    /** 연결 해제 시 토큰을 무효화한다. 실패해도 해제는 계속 진행하므로 예외를 던지지 않는다. */
+    /** 폐기 실패를 Service로 전달해 로컬 해제 결과와 별도로 안내한다. */
     public void revoke(String token) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("token", token);
         try {
             externalRestClient.post()
-                    .uri(UriComponentsBuilder.fromUriString(REVOKE_URL).queryParam("token", token).build().toUri())
+                    .uri(REVOKE_URL)
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException e) {
             log.warn("Google 토큰 revoke 실패: {}", e.getClass().getSimpleName());
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         }
     }
 

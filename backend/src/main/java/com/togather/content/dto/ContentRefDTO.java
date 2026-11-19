@@ -22,8 +22,17 @@ public record ContentRefDTO(
         String fileFormat,
         LocalDateTime lastModifiedAt,
         int messageCount,
-        boolean syncFailed
+        boolean syncFailed,
+        Long fileSize
 ) {
+
+    /** 기존 호출자의 11개 인자 생성자를 유지한다. */
+    public ContentRefDTO(Long contentRefId, Provider provider, ContentType contentType, String externalId,
+                         String title, String content, String deepLink, String fileFormat,
+                         LocalDateTime lastModifiedAt, int messageCount, boolean syncFailed) {
+        this(contentRefId, provider, contentType, externalId, title, content, deepLink, fileFormat,
+                lastModifiedAt, messageCount, syncFailed, null);
+    }
 
     public static ContentRefDTO from(ContentRef ref) {
         return from(ref, 0);
@@ -32,6 +41,6 @@ public record ContentRefDTO(
     public static ContentRefDTO from(ContentRef ref, int messageCount) {
         return new ContentRefDTO(ref.getContentRefId(), ref.getProvider(), ref.getContentType(), ref.getOriginId(),
                 ref.getTitle(), ref.isOriginDeleted() ? ref.getSnapshot() : ref.getContent(), ref.getDeepLink(),
-                null, ref.getLastModifiedAt(), messageCount, ref.isSyncFailed());
+                null, ref.getLastModifiedAt(), messageCount, ref.isSyncFailed(), ref.getFileSize());
     }
 }

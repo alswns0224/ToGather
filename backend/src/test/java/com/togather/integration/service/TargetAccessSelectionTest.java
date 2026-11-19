@@ -1,0 +1,78 @@
+package com.togather.integration.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.togather.common.enums.ConnectionStatus;
+import com.togather.common.enums.Provider;
+import com.togather.integration.domain.IntegrationTarget;
+import com.togather.integration.domain.ServiceConnection;
+import com.togather.integration.repository.IntegrationTargetRepository;
+import com.togather.integration.repository.ServiceConnectionRepository;
+import com.togather.support.IntegrationTestSupport;
+import java.time.LocalDateTime;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+class TargetAccessSelectionTest extends IntegrationTestSupport {
+    @Autowired private IntegrationService integrations;
+    @Autowired private ConnectionOperationRegistry operations;
+    @Autowired private ServiceConnectionRepository connections;
+    @Autowired private IntegrationTargetRepository targets;
+    @Autowired private TokenCipher cipher;
+
+    private Long userId;
+    private Long otherId;
+    private Long workspaceId;
+
+    @BeforeEach
+    void setUp() {
+        userId = createUser("첫 연결", UUID.randomUUID() + "@test.example");
+        otherId = createUser("대상 연결", UUID.randomUUID() + "@test.example");
+        workspaceId = createWorkspace(userId);
+        addMember(workspaceId, otherId, "MEMBER");
+    }
+
+    @Test
+    void 먼저_연결한_사람이_아닌_원래_대상을_선택한_사람의_연결을_쓴다() {
+        save(userId, "new-calendar", "first-token");
+        ServiceConnection original = save(otherId, "original-calendar", "original-token");
+        try (var scope = operations.openScope()) {
+            var access = integrations.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR, "original-calendar").orElseThrow();
+            assertThat(access.connectionId()).isEqualTo(original.getConnectionId());
+            assertThat(access.accessToken()).isEqualTo("original-token");
+            assertThat(access.targetIds()).containsExactly("original-calendar");
+        }
+    }
+
+    @Test
+    void 대상이_없으면_다른_연결로_대체하지_않고_기존_두_인자_호출은_유지한다() {
+        ServiceConnection first = save(userId, "current-calendar", "first-token");
+        try (var scope = operations.openScope()) {
+            assertThat(integrations.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR, "missing-calendar")).isEmpty();
+            assertThat(integrations.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR).orElseThrow().connectionId())
+                .isEqualTo(first.getConnectionId());
+        }
+    }
+
+    @Test
+    void 해제된_연결의_대상은_사용하지_않는다() {
+        ServiceConnection original = save(userId, "original-calendar", "original-token");
+        original.disconnect();
+        connections.save(original);
+        save(otherId, "other-calendar", "other-token");
+        try (var scope = operations.openScope()) {
+            assertThat(integrations.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR, "original-calendar")).isEmpty();
+        }
+    }
+
+    private ServiceConnection save(Long owner, String calendarId, String token) {
+        var connection = new ServiceConnection(workspaceId, owner, Provider.GOOGLE_CALENDAR, UUID.randomUUID().toString(),
+            cipher.encrypt(token, "test-refresh"), "test-scope", LocalDateTime.now().plusDays(1));
+        connection.changeStatus(ConnectionStatus.CONNECTED);
+        connection = connections.save(connection);
+        targets.save(new IntegrationTarget(connection.getConnectionId(), calendarId, calendarId));
+        return connection;
+    }
+}
