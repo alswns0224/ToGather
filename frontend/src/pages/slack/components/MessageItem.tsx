@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from 'react';
 import type { SlackMessageResponse } from '../api';
 import { formatDateTime, formatTime } from '../../../utils/date';
 import Composer from './Composer';
+import LinkedMessageTasks from './LinkedMessageTasks';
 
 const AVATAR_COLORS = ['#F97316', '#7C3AED', '#0D9488', '#E11D48', '#2563EB', '#D97706'];
 
@@ -35,12 +36,16 @@ function ext(name: string) {
  * 채널 목록에서는 줄을 누르면 스레드가 열리고, 스레드 안에서는 그냥 보여준다.
  */
 export default function MessageItem({
+  workspaceId,
+  showLinkedTasks = false,
   message,
   selected,
   onOpenThread,
   onUpdate,
   onDelete,
 }: {
+  workspaceId: string;
+  showLinkedTasks?: boolean;
   message: SlackMessageResponse;
   selected?: boolean;
   onOpenThread?: () => void;
@@ -136,6 +141,9 @@ export default function MessageItem({
         })}
 
         {deleteError && <div className="alert alert-error">삭제하지 못했습니다. {deleteError}</div>}
+
+        <LinkedMessageTasks key={`${workspaceId}/${message.contentRefId ?? message.ts}`}
+          workspaceId={workspaceId} contentRefId={message.contentRefId} initiallyOpen={showLinkedTasks} />
 
         {onOpenThread && message.replyCount > 0 && (
           <span className="slack-reply-count">답글 {message.replyCount}개</span>

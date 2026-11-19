@@ -1,11 +1,46 @@
 package com.togather.content.calendar.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.togather.content.calendar.client.GoogleCalendarClient.EventWrite;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.json.JsonCompareMode;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 class GoogleCalendarClientTest {
+
+    @Test
+    void 기존_회의_일정은_필요한_필드만_PATCH하고_Meet_정보를_덮어쓰지_않는다() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://www.googleapis.com/calendar/v3/calendars/team%40gmail.com/events/event-id?sendUpdates=none"))
+            .andExpect(method(HttpMethod.PATCH))
+            .andExpect(content().json("""
+                {"summary":"바뀐 회의","description":"진행 방식: 온라인",
+                 "start":{"dateTime":"2026-11-23T14:00:00","timeZone":"Asia/Seoul"},
+                 "end":{"dateTime":"2026-11-23T15:30:00","timeZone":"Asia/Seoul"},
+                 "attendees":[{"email":"member@test.example"}]}
+                """, JsonCompareMode.STRICT))
+            .andRespond(withSuccess("""
+                {"id":"event-id","summary":"바뀐 회의","hangoutLink":"https://meet.google.com/test",
+                 "start":{"dateTime":"2026-11-23T14:00:00+09:00"},
+                 "end":{"dateTime":"2026-11-23T15:30:00+09:00"},"attendees":[{"email":"member@test.example"}]}
+                """, MediaType.APPLICATION_JSON));
+        var event = new GoogleCalendarClient(builder.build()).patchEvent("test-token", "team@gmail.com", "event-id",
+            new EventWrite("바뀐 회의", "진행 방식: 온라인", LocalDateTime.of(2026, 11, 23, 14, 0),
+                LocalDateTime.of(2026, 11, 23, 15, 30), List.of("member@test.example")));
+        assertThat(event.meetLink()).isEqualTo("https://meet.google.com/test");
+        server.verify();
+    }
 
     @Test
     void 초가_0이어도_초까지_있는_UTC_RFC3339로_보낸다() {

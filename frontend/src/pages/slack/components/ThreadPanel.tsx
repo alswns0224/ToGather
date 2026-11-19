@@ -63,6 +63,9 @@ export default function ThreadPanel({
             )}
             <div className="slack-thread-root">
               <MessageItem
+                key={`${workspaceId}/${root.ts}`}
+                workspaceId={workspaceId}
+                showLinkedTasks
                 message={root}
                 onUpdate={async (text) => {
                   await updateMessage(workspaceId, channelId, root.ts, text);
@@ -84,6 +87,7 @@ export default function ThreadPanel({
                 thread.data.replies.map((r) => (
                   <MessageItem
                     key={r.ts}
+                    workspaceId={workspaceId}
                     message={r}
                     onUpdate={async (text) => {
                       await updateMessage(workspaceId, channelId, r.ts, text);

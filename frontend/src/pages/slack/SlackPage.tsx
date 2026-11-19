@@ -168,7 +168,7 @@ export default function SlackPage() {
           </nav>
 
           <ChannelMessages
-            key={`${channelId}-${syncTick}`}
+            key={`${workspaceId}/${channelId}/${syncTick}`}
             refreshKey={liveTick}
             workspaceId={workspaceId}
             channelId={channelId}
@@ -180,7 +180,7 @@ export default function SlackPage() {
 
           {threadTs ? (
             <ThreadPanel
-              key={threadTs}
+              key={`${workspaceId}/${channelId}/${threadTs}`}
               refreshKey={liveTick}
               workspaceId={workspaceId}
               channelId={channelId}
@@ -290,6 +290,7 @@ function ChannelMessages({
                       </div>
                     )}
                     <MessageItem
+                      workspaceId={workspaceId}
                       message={m}
                       selected={m.ts === selectedTs}
                       onOpenThread={() => onOpenThread(m.ts)}

@@ -9,7 +9,9 @@ import com.togather.common.enums.SlotSource;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.calendar.dto.CalendarEventResponse;
+import com.togather.content.calendar.dto.CalendarEventUpdateRequest;
 import com.togather.content.calendar.service.CalendarContentService;
+import com.togather.content.service.ContentRefService;
 import com.togather.meeting.domain.AvailabilitySlot;
 import com.togather.meeting.domain.Meeting;
 import com.togather.meeting.domain.MeetingAgenda;
@@ -77,6 +79,7 @@ public class MeetingService {
     private final UserService userService;
     private final TaskService taskService;
     private final CalendarContentService calendarContentService;
+    private final ContentRefService contentRefService;
 
     // ===================== 회의 CRUD =====================
 
@@ -139,7 +142,16 @@ public class MeetingService {
 
     @Transactional
     public MeetingDetailResponse updateMeeting(Long workspaceId, Long meetingId, Long userId, MeetingUpdateRequest request) {
-        Meeting meeting = findManageableScheduling(workspaceId, meetingId, userId);
+        Meeting meeting = findManageable(workspaceId, meetingId, userId);
+        if (meeting.getStatus() == MeetingStatus.CANCELED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "취소된 회의는 수정할 수 없습니다.");
+        }
+        if (meeting.getStatus() == MeetingStatus.CONFIRMED) {
+            return updateConfirmedMeeting(meeting, userId, request);
+        }
+        if (request.startAt() != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "조율 중인 회의는 시간 추천·확정으로 일정을 정해 주세요.");
+        }
         int duration = request.durationMinutes() != null ? request.durationMinutes() : meeting.getDurationMinutes();
         LocalDateTime start = request.candidateStartAt() != null ? request.candidateStartAt() : meeting.getCandidatePeriod().getStart();
         LocalDateTime end = request.candidateEndAt() != null ? request.candidateEndAt() : meeting.getCandidatePeriod().getEnd();
@@ -159,17 +171,40 @@ public class MeetingService {
             slotRepository.deleteAllByMeetingId(meetingId);
             participantRepository.findAllByMeetingId(meetingId).forEach(MeetingParticipant::resetResponse);
         }
-        if (periodChanged || durationChanged) {
+        if (periodChanged || durationChanged || request.participantIds() != null) {
             candidateRepository.deleteAllByMeetingId(meetingId);
         }
         return getMeeting(workspaceId, meetingId, userId);
     }
 
+    private MeetingDetailResponse updateConfirmedMeeting(Meeting meeting, Long userId, MeetingUpdateRequest request) {
+        if ((request.candidateStartAt() != null
+                && !request.candidateStartAt().equals(meeting.getCandidatePeriod().getStart()))
+            || (request.candidateEndAt() != null
+                && !request.candidateEndAt().equals(meeting.getCandidatePeriod().getEnd()))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "확정된 회의는 후보 기간 대신 확정 시작 시각을 수정해 주세요.");
+        }
+        LocalDateTime start = request.startAt() != null ? request.startAt() : meeting.getStartAt();
+        if (start == null) {
+            throw new BusinessException(ErrorCode.INVALID_TIME_RANGE);
+        }
+        int duration = request.durationMinutes() != null ? request.durationMinutes() : meeting.getDurationMinutes();
+        meeting.update(request.title() != null ? request.title().strip() : meeting.getTitle(), duration,
+                meeting.getCandidatePeriod(),
+                request.meetingMode() != null ? blankToNull(request.meetingMode()) : meeting.getMeetingMode());
+        meeting.reschedule(start);
+        if (request.participantIds() != null) {
+            updateParticipants(meeting, userId, request.participantIds());
+        }
+        candidateRepository.deleteAllByMeetingId(meeting.getMeetingId());
+        syncCalendar(meeting, userId, false);
+        return getMeeting(meeting.getWorkspaceId(), meeting.getMeetingId(), userId);
+    }
+
     /** 회의를 취소한다. 확정된 회의면 등록된 캘린더 일정도 지운다(실패해도 취소는 진행). */
     @Transactional
     public void cancelMeeting(Long workspaceId, Long meetingId, Long userId) {
-        Meeting meeting = findMeeting(workspaceId, meetingId);
-        checkManage(meeting, userId);
+        Meeting meeting = findManageable(workspaceId, meetingId, userId);
         if (meeting.getStatus() == MeetingStatus.CANCELED) {
             return;
         }
@@ -198,22 +233,25 @@ public class MeetingService {
             int nextOrder = agendaRepository.findAllByMeetingIdOrderByOrderNoAsc(meetingId).stream()
                     .mapToInt(MeetingAgenda::getOrderNo).max().orElse(0) + 1;
             agendaRepository.save(new MeetingAgenda(meeting.getMeetingId(), taskId, nextOrder));
+            syncConfirmedCalendar(meeting, userId);
         }
         return getMeeting(workspaceId, meetingId, userId);
     }
 
     @Transactional
     public MeetingDetailResponse changeAgenda(Long workspaceId, Long meetingId, Long agendaId, Long userId, Long taskId) {
-        findManageable(workspaceId, meetingId, userId);
+        Meeting meeting = findManageable(workspaceId, meetingId, userId);
         validateTask(workspaceId, taskId);
         findAgenda(meetingId, agendaId).changeTask(taskId);
+        syncConfirmedCalendar(meeting, userId);
         return getMeeting(workspaceId, meetingId, userId);
     }
 
     @Transactional
     public MeetingDetailResponse deleteAgenda(Long workspaceId, Long meetingId, Long agendaId, Long userId) {
-        findManageable(workspaceId, meetingId, userId);
+        Meeting meeting = findManageable(workspaceId, meetingId, userId);
         agendaRepository.delete(findAgenda(meetingId, agendaId));
+        syncConfirmedCalendar(meeting, userId);
         return getMeeting(workspaceId, meetingId, userId);
     }
 
@@ -236,7 +274,7 @@ public class MeetingService {
     @Transactional
     public AvailabilityResponse saveAvailability(Long workspaceId, Long meetingId, Long userId,
                                                  AvailabilitySaveRequest request) {
-        Meeting meeting = findMeeting(workspaceId, meetingId);
+        Meeting meeting = findMeetingForUpdate(workspaceId, meetingId);
         if (!meeting.isScheduling()) {
             throw new BusinessException(ErrorCode.MEETING_NOT_SCHEDULING);
         }
@@ -276,7 +314,7 @@ public class MeetingService {
     /** 최적 회의 시간을 계산해 저장하고 반환한다. (UC-10-08) */
     @Transactional
     public List<TimeCandidateResponse> recommendTimes(Long workspaceId, Long meetingId, Long userId) {
-        Meeting meeting = findMeeting(workspaceId, meetingId);
+        Meeting meeting = findMeetingForUpdate(workspaceId, meetingId);
         if (!meeting.isScheduling()) {
             throw new BusinessException(ErrorCode.MEETING_NOT_SCHEDULING);
         }
@@ -327,17 +365,18 @@ public class MeetingService {
             throw new BusinessException(ErrorCode.INVALID_TIME_RANGE);
         }
         meeting.confirm(startAt);
-        registerCalendar(meeting, userId);
+        syncCalendar(meeting, userId, false);
         return getMeeting(workspaceId, meetingId, userId);
     }
 
     @Transactional(noRollbackFor = BusinessException.class)
     public MeetingDetailResponse retryCalendarRegistration(Long workspaceId, Long meetingId, Long userId) {
         Meeting meeting = findManageable(workspaceId, meetingId, userId);
-        if (meeting.getStatus() != MeetingStatus.CONFIRMED || meeting.getCalendarRefId() != null) {
+        if (meeting.getStatus() != MeetingStatus.CONFIRMED
+                || (meeting.getCalendarRefId() != null && !meeting.isCalendarSyncFailed())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
-        registerCalendar(meeting, userId);
+        syncCalendar(meeting, userId, true);
         return getMeeting(workspaceId, meetingId, userId);
     }
 
@@ -357,17 +396,43 @@ public class MeetingService {
 
     // ===================== 내부 =====================
 
-    private void registerCalendar(Meeting meeting, Long userId) {
+    private void syncConfirmedCalendar(Meeting meeting, Long userId) {
+        if (meeting.getStatus() == MeetingStatus.CONFIRMED) {
+            syncCalendar(meeting, userId, false);
+        }
+    }
+
+    /** 자동 반영은 기존 일정을 수정한다. 삭제된 일정 재생성은 사용자의 명시적 재시도에서만 허용한다. */
+    private void syncCalendar(Meeting meeting, Long userId, boolean recreateMissing) {
         List<Long> participantIds = participantRepository.findAllByMeetingId(meeting.getMeetingId()).stream()
                 .map(MeetingParticipant::getUserId).toList();
         try {
-            CalendarEventResponse event = calendarContentService.createMeetingEvent(meeting.getWorkspaceId(), userId,
-                    meeting.getTitle(), meeting.getStartAt(), meeting.getEndAt(), participantIds, description(meeting));
+            CalendarEventResponse event;
+            if (meeting.getCalendarRefId() == null) {
+                event = createCalendarEvent(meeting, userId, participantIds);
+            } else {
+                try {
+                    event = calendarContentService.updateEvent(meeting.getWorkspaceId(), userId,
+                            meeting.getCalendarRefId(), new CalendarEventUpdateRequest(meeting.getTitle(),
+                                    meeting.getStartAt(), meeting.getEndAt(), participantIds, description(meeting)));
+                } catch (BusinessException e) {
+                    if (!recreateMissing || e.getErrorCode() != ErrorCode.CALENDAR_EVENT_NOT_FOUND
+                            || !contentRefService.getOwner(meeting.getCalendarRefId()).isOriginDeleted()) {
+                        throw e;
+                    }
+                    event = createCalendarEvent(meeting, userId, participantIds);
+                }
+            }
             meeting.registerCalendarEvent(event.contentRefId(), event.meetLink());
         } catch (BusinessException e) {
-            log.warn("회의 캘린더 등록 실패: meetingId={}, code={}", meeting.getMeetingId(), e.getErrorCode());
+            log.warn("회의 캘린더 반영 실패: meetingId={}, code={}", meeting.getMeetingId(), e.getErrorCode());
             meeting.markCalendarSyncFailed();
         }
+    }
+
+    private CalendarEventResponse createCalendarEvent(Meeting meeting, Long userId, List<Long> participantIds) {
+        return calendarContentService.createMeetingEvent(meeting.getWorkspaceId(), userId, meeting.getTitle(),
+                meeting.getStartAt(), meeting.getEndAt(), participantIds, description(meeting));
     }
 
     private String description(Meeting meeting) {
@@ -456,9 +521,14 @@ public class MeetingService {
     }
 
     private Meeting findManageable(Long workspaceId, Long meetingId, Long userId) {
-        Meeting meeting = findMeeting(workspaceId, meetingId);
+        Meeting meeting = findMeetingForUpdate(workspaceId, meetingId);
         checkManage(meeting, userId);
         return meeting;
+    }
+
+    private Meeting findMeetingForUpdate(Long workspaceId, Long meetingId) {
+        return meetingRepository.findLockedByMeetingIdAndWorkspaceId(meetingId, workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
     }
 
     private Meeting findManageableScheduling(Long workspaceId, Long meetingId, Long userId) {
