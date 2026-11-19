@@ -56,8 +56,13 @@ export const selectTargets = (workspaceId: string, connectionId: number, targets
 export const skipTargets = (workspaceId: string, connectionId: number) =>
   http.post<ConnectionStatusDTO>(ws(workspaceId, `/integrations/connections/${connectionId}/skip-targets`));
 
+export interface DisconnectResult {
+  manualRevocationRequired: boolean;
+  relatedConnectionsRequireReauth: boolean;
+}
+
 export const disconnect = (workspaceId: string, connectionId: number) =>
-  http.delete<void>(ws(workspaceId, `/integrations/connections/${connectionId}`));
+  http.delete<DisconnectResult>(ws(workspaceId, `/integrations/connections/${connectionId}`));
 
 /** 연결·재인증은 페이지 이동으로 진행한다. */
 export const connectUrl = (workspaceId: string, provider: Provider) =>

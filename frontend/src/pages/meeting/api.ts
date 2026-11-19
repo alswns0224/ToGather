@@ -72,6 +72,16 @@ export interface MeetingCreateRequest {
   agendaTaskIds: number[];
 }
 
+export interface MeetingUpdateRequest {
+  title?: string;
+  durationMinutes?: number;
+  candidateStartAt?: string;
+  candidateEndAt?: string;
+  participantIds?: number[];
+  meetingMode?: string;
+  startAt?: string;
+}
+
 export interface AvailabilityResponse {
   candidateStartAt: string;
   candidateEndAt: string;
@@ -109,7 +119,7 @@ const base = (workspaceId: string, path = '') => ws(workspaceId, `/meetings${pat
 export const getMeetings = (w: string) => http.get<MeetingSummaryResponse[]>(base(w));
 export const createMeeting = (w: string, body: MeetingCreateRequest) => http.post<MeetingDetailResponse>(base(w), body);
 export const getMeeting = (w: string, id: string | number) => http.get<MeetingDetailResponse>(base(w, `/${id}`));
-export const updateMeeting = (w: string, id: number, body: Partial<MeetingCreateRequest>) =>
+export const updateMeeting = (w: string, id: number, body: MeetingUpdateRequest) =>
   http.patch<MeetingDetailResponse>(base(w, `/${id}`), body);
 export const cancelMeeting = (w: string, id: number) => http.post<void>(base(w, `/${id}/cancel`));
 

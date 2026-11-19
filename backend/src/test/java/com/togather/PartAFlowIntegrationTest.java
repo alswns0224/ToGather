@@ -240,9 +240,13 @@ class PartAFlowIntegrationTest {
         call(json(post(mt + "/availability/me"), slots(monday, "10:00")), owner)
                 .andExpect(jsonPath("$.error.code").value("MEETING_NOT_SCHEDULING"));
 
-        // 확정된 회의는 수정할 수 없다
+        // 확정 회의도 수정한다. Calendar 미연동이면 로컬 변경·확정 상태를 보존하고 재시도를 안내한다.
         call(json(patch(mt), "{\"title\":\"바뀐 제목\"}"), owner)
-                .andExpect(jsonPath("$.error.code").value("MEETING_NOT_SCHEDULING"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("바뀐 제목"))
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.startAt").value(monday + "T11:00:00"))
+                .andExpect(jsonPath("$.data.calendarSyncFailed").value(true));
 
         // 회의 수정 (UC-10-02): 제목·참여자 변경, 후보 기간을 바꾸면 응답 초기화
         MvcResult second = call(json(post(ws + "/meetings"), meetingBody), owner).andReturn();

@@ -152,9 +152,25 @@ public class NotionOAuthClient implements OAuthProviderClient {
         return targetId.substring(PAGE_TARGET_PREFIX.length());
     }
 
-    /** Notion은 토큰 revoke API가 없다. 사용자가 Notion 설정에서 연결을 끊어야 완전히 해제된다. */
+    /** 공식 OAuth 토큰 폐기 API. 조회/검색에 쓰는 기존 Notion 버전은 바꾸지 않는다. */
     @Override
     public void revoke(String accessToken) {
+        TogatherProperties.OAuthClient notion = client();
+        try {
+            externalRestClient.post()
+                    .uri("https://api.notion.com/v1/oauth/revoke")
+                    .headers(h -> {
+                        h.setBasicAuth(notion.clientId(), notion.clientSecret());
+                        h.set("Notion-Version", "2026-03-11");
+                    })
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("token", accessToken))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException e) {
+            log.warn("Notion 토큰 revoke 실패: {}", e.getClass().getSimpleName());
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
     }
 
     private Map<String, Object> postToken(Map<String, ?> body) {

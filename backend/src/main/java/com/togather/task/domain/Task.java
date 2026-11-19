@@ -78,25 +78,28 @@ public class Task extends BaseTimeEntity {
 
     /** 진행률(%) = 제출된 산출물 / 필요 산출물. 산출물이 없으면 상태로 판단한다. */
     public int calculateProgress() {
-        if (deliverables.isEmpty()) {
-            return status == TaskStatus.DONE ? 100 : 0;
-        }
-
         long submitted = deliverables.stream()
             .filter(TaskDeliverable::isSubmitted)
             .count();
 
-        return (int) (submitted * 100 / deliverables.size());
+        return calculateProgress(status, deliverables.size(), submitted);
     }
 
     public RiskLevel evaluateRisk(LocalDate today) {
+        return evaluateRisk(status, dueDate, calculateProgress(), today);
+    }
+
+    /** 목록·집계 projection도 Entity와 같은 진행률·위험도 규칙을 사용한다. */
+    public static int calculateProgress(TaskStatus status, long required, long submitted) {
+        return required == 0 ? (status == TaskStatus.DONE ? 100 : 0) : (int) (submitted * 100 / required);
+    }
+
+    public static RiskLevel evaluateRisk(TaskStatus status, LocalDate dueDate, int progress, LocalDate today) {
         if (status == TaskStatus.DONE || dueDate == null) {
             return RiskLevel.NORMAL;
         }
 
         long daysLeft = ChronoUnit.DAYS.between(today, dueDate);
-        int progress = calculateProgress();
-
         if (daysLeft < 0 || (daysLeft <= DANGER_WINDOW_DAYS && progress < DANGER_PROGRESS_THRESHOLD)) {
             return RiskLevel.DANGER;
         }
@@ -115,7 +118,13 @@ public class Task extends BaseTimeEntity {
     public TaskDeliverable addDeliverable(String name, String ext) {
         TaskDeliverable deliverable = new TaskDeliverable(this, name, ext);
         deliverables.add(deliverable);
+        refreshStatusByDeliverables();
         return deliverable;
+    }
+
+    public void removeDeliverable(TaskDeliverable deliverable) {
+        deliverables.remove(deliverable);
+        refreshStatusByDeliverables();
     }
 
     public void update(String title, String description, LocalDate dueDate) {

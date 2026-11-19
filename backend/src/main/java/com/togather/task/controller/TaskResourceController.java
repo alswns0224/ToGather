@@ -3,6 +3,8 @@ package com.togather.task.controller;
 import com.togather.common.auth.LoginUser;
 import com.togather.common.enums.Provider;
 import com.togather.common.response.ApiResponse;
+import com.togather.task.dto.DeliverableInput;
+import com.togather.task.dto.TaskDeliverableSummary;
 import com.togather.task.dto.TaskReferenceCandidate;
 import com.togather.task.service.TaskResourceService;
 import jakarta.validation.Valid;
@@ -14,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -48,6 +51,22 @@ public class TaskResourceController {
     public void unlink(@LoginUser Long userId, @PathVariable Long workspaceId, @PathVariable Long taskId,
                        @PathVariable Long contentRefId) {
         resources.unlink(workspaceId, userId, taskId, contentRefId);
+    }
+
+    @PostMapping("/deliverables")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<TaskDeliverableSummary> addDeliverable(
+        @LoginUser Long userId, @PathVariable Long workspaceId, @PathVariable Long taskId,
+        @Valid @RequestBody DeliverableInput input
+    ) {
+        return ApiResponse.ok(resources.addDeliverable(workspaceId, userId, taskId, input));
+    }
+
+    @DeleteMapping("/deliverables/{deliverableId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeDeliverable(@LoginUser Long userId, @PathVariable Long workspaceId, @PathVariable Long taskId,
+                                  @PathVariable Long deliverableId) {
+        resources.removeDeliverable(workspaceId, userId, taskId, deliverableId);
     }
 
     @PutMapping("/deliverables/{deliverableId}/submission")

@@ -11,6 +11,7 @@ import com.togather.common.response.ApiResponse;
 import com.togather.integration.client.OAuthProviderClient.TargetOption;
 import com.togather.integration.domain.ServiceConnection;
 import com.togather.integration.dto.ConnectionStatusDTO;
+import com.togather.integration.dto.DisconnectResult;
 import com.togather.integration.dto.IntegrationStatusResponse;
 import com.togather.integration.dto.TargetSelectRequest;
 import com.togather.integration.service.IntegrationService;
@@ -22,14 +23,12 @@ import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -130,10 +129,9 @@ public class IntegrationController {
     }
 
     @DeleteMapping(BASE + "/connections/{connectionId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void disconnectService(@LoginUser Long userId, @PathVariable Long workspaceId,
+    public ApiResponse<DisconnectResult> disconnectService(@LoginUser Long userId, @PathVariable Long workspaceId,
                                   @PathVariable Long connectionId) {
-        integrationService.disconnectService(workspaceId, userId, connectionId);
+        return ApiResponse.ok(integrationService.disconnectService(workspaceId, userId, connectionId));
     }
 
     /** query 값은 Enum 이름·숫자만 들어가므로 인코딩하지 않는다. */

@@ -11,6 +11,8 @@ import com.togather.content.domain.ContentRef;
 import com.togather.content.domain.ContentRef.DriveFileState;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveFile;
+import com.togather.content.drive.dto.DriveUploadCandidate;
+import com.togather.content.drive.dto.DriveUploadMode;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
@@ -27,6 +29,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +74,18 @@ public class DriveContentService {
     private final DriveApiClient driveApiClient;
     private final TeamTokenResolver teamTokenResolver;
     private final WorkspaceEventService workspaceEventService;
+    private final Set<UploadKey> activeUploads = ConcurrentHashMap.newKeySet();
+
+    private record UploadKey(String folderId, String name) {
+    }
+
+    public List<DriveUploadCandidate> getUploadCandidates(Long workspaceId, Long userId, String folderId, String name) {
+        validateFileName(name);
+        String token = resolveToken(workspaceId, userId, folderId);
+        return driveApiClient.findFilesByName(token, folderId, DriveApiClient.normalizeFileName(name)).stream()
+                .filter(file -> file.isDirectChildOf(folderId))
+                .map(DriveUploadCandidate::from).toList();
+    }
 
     /**
      * 1. 연동된 Google Drive 폴더 목록.
@@ -262,7 +279,7 @@ public class DriveContentService {
         }
         return new ContentRefDTO(dto.contentRefId(), dto.provider(), dto.contentType(), dto.externalId(), dto.title(),
             content.substring(0, content.indexOf(DriveSyncAdapter.BODY_MARKER)), dto.deepLink(), dto.fileFormat(),
-            dto.lastModifiedAt(), dto.messageCount(), dto.syncFailed());
+            dto.lastModifiedAt(), dto.messageCount(), dto.syncFailed(), dto.fileSize());
     }
 
     /**
@@ -341,6 +358,13 @@ public class DriveContentService {
         String mimeType,
         Path localFile
     ) {
+        return uploadFile(workspaceId, userId, folderId, fileName, mimeType, localFile,
+                DriveUploadMode.CREATE_NEW, null, null);
+    }
+
+    public ContentRefDTO uploadFile(Long workspaceId, Long userId, String folderId, String fileName,
+                                     String mimeType, Path localFile, DriveUploadMode mode,
+                                     String targetFileId, String expectedVersion) {
 
         validateFileName(fileName);
 
@@ -380,36 +404,44 @@ public class DriveContentService {
             folderId
         );
 
-        // Google Drive에 실제 업로드
-        DriveFile uploaded = driveApiClient.uploadFile(
-            token,
-            folderId,
-            fileName,
-            mimeType,
-            localFile
-        );
-
-        // PostgreSQL ContentRef 저장
-        ContentRefDTO result = saveUploadedFile(
-            workspaceId,
-            folderId,
-            fileName,
-            uploaded
-        );
-
-        // 프론트엔드 변경 알림
-        publishDriveChanged(
-            workspaceId,
-            folderId
-        );
-
-        log.info(
-            "Drive upload completed: workspaceId={}, fileId={}",
-            workspaceId,
-            uploaded.id()
-        );
-
-        return result;
+        if (mode == null || (mode != DriveUploadMode.OVERWRITE && (targetFileId != null || expectedVersion != null))
+                || (mode == DriveUploadMode.OVERWRITE && (targetFileId == null || targetFileId.isBlank()
+                    || expectedVersion == null || !expectedVersion.matches("[0-9]{1,20}")))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        String canonicalName = DriveApiClient.normalizeFileName(fileName);
+        UploadKey key = new UploadKey(folderId, canonicalName);
+        if (!activeUploads.add(key)) throw new BusinessException(ErrorCode.DRIVE_UPLOAD_IN_PROGRESS);
+        try {
+            DriveFile uploaded;
+            if (mode == DriveUploadMode.OVERWRITE) {
+                DriveFile target = driveApiClient.getFileMetadata(token, targetFileId);
+                if (target == null || !targetFileId.equals(target.id()) || !target.isDirectChildOf(folderId)) {
+                    throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                }
+                if (!canonicalName.equals(target.name()) || !Objects.equals(expectedVersion, target.version())) {
+                    throw new BusinessException(ErrorCode.DRIVE_FILE_CHANGED);
+                }
+                if (!target.canOverwrite()) {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT, "이 파일은 내용을 덮어쓸 수 없습니다. 새 파일로 저장해 주세요.");
+                }
+                uploaded = driveApiClient.overwriteFile(token, targetFileId, canonicalName, mimeType, localFile);
+                if (uploaded == null || !targetFileId.equals(uploaded.id())) {
+                    throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+                }
+            } else {
+                if (mode == DriveUploadMode.ASK && !driveApiClient.findFilesByName(token, folderId, canonicalName).isEmpty()) {
+                    throw new BusinessException(ErrorCode.DRIVE_FILE_NAME_CONFLICT);
+                }
+                uploaded = driveApiClient.uploadFile(token, folderId, canonicalName, mimeType, localFile);
+            }
+            ContentRefDTO result = saveUploadedFile(workspaceId, folderId, canonicalName, uploaded);
+            publishDriveChanged(workspaceId, folderId);
+            log.info("Drive upload completed: workspaceId={}, fileId={}", workspaceId, uploaded.id());
+            return result;
+        } finally {
+            activeUploads.remove(key);
+        }
     }
 
     /**
@@ -889,7 +921,7 @@ public class DriveContentService {
                 : "https://drive.google.com/file/d/"
                 + uploaded.id() + "/view";
 
-        return contentRefService.upsert(
+        return contentRefService.upsertDriveFile(
             new ContentRefUpsert(
                 workspaceId,
                 null,
@@ -907,7 +939,7 @@ public class DriveContentService {
                 modifiedAt,
                 null,
                 null
-            )
+            ), uploaded.fileSize()
         );
     }
 

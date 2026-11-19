@@ -2,18 +2,30 @@ package com.togather.task.controller;
 
 import com.togather.common.auth.LoginUser;
 import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.common.enums.TaskStatus;
 import com.togather.common.response.ApiResponse;
 import com.togather.common.response.PageResponse;
+import com.togather.meeting.dto.MeetingSummary;
 import com.togather.task.dto.TaskCreateRequest;
 import com.togather.task.dto.TaskDetailResponse;
+import com.togather.task.dto.TaskFilter;
+import com.togather.task.dto.TaskProgressResponse;
+import com.togather.task.dto.TaskSort;
 import com.togather.task.dto.TaskSummary;
 import com.togather.task.dto.TaskUpdateRequest;
 import com.togather.task.service.TaskService;
+import com.togather.task.service.TaskReadService;
+import com.togather.task.service.TaskDeletionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -31,6 +43,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskReadService taskReadService;
+    private final TaskDeletionService taskDeletionService;
     private final WorkspaceAccessChecker workspaceAccessChecker;
 
     /** 워크스페이스 Task 목록 */
@@ -42,19 +56,36 @@ public class TaskController {
         @RequestParam(required = false, defaultValue = "0")
         @Min(0) int page,
         @RequestParam(required = false, defaultValue = "20")
-        @Min(1) @Max(100) int size
+        @Min(1) @Max(100) int size,
+        @RequestParam(required = false) @Positive Long assigneeId,
+        @RequestParam(defaultValue = "false") boolean unassigned,
+        @RequestParam(required = false) TaskStatus status,
+        @RequestParam(required = false) @Size(max = 200) String query,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBefore,
+        @RequestParam(defaultValue = "RECENT") TaskSort sort
     ) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
 
         return ApiResponse.ok(
-            taskService.getTaskPage(
-                workspaceId,
-                userId,
-                mine,
-                page,
-                size
-            )
+            taskReadService.getPage(workspaceId, userId, mine,
+                    new TaskFilter(assigneeId, unassigned, status, query, dueBefore, sort), page, size)
         );
+    }
+
+    /** 페이지와 무관하게 같은 검색 조건의 전체·담당자별 진행 현황을 집계한다. */
+    @GetMapping("/progress")
+    public ApiResponse<TaskProgressResponse> getProgress(
+        @LoginUser Long userId, @PathVariable Long workspaceId,
+        @RequestParam(defaultValue = "false") boolean mine,
+        @RequestParam(required = false) @Positive Long assigneeId,
+        @RequestParam(defaultValue = "false") boolean unassigned,
+        @RequestParam(required = false) TaskStatus status,
+        @RequestParam(required = false) @Size(max = 200) String query,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBefore
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(taskReadService.getProgress(workspaceId, userId, mine,
+                new TaskFilter(assigneeId, unassigned, status, query, dueBefore, TaskSort.RECENT)));
     }
 
     /** Task 상세 조회 */
@@ -112,6 +143,17 @@ public class TaskController {
         );
     }
 
+    /** 삭제를 막는 회의 목록. 화면에서 안건 연결을 해제할 회의로 안내한다. */
+    @GetMapping("/{taskId}/deletion-blockers")
+    public ApiResponse<List<MeetingSummary>> getDeletionBlockers(
+        @LoginUser Long userId,
+        @PathVariable Long workspaceId,
+        @PathVariable Long taskId
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(taskDeletionService.getDeletionBlockers(workspaceId, taskId));
+    }
+
     /** Task 삭제 */
     @DeleteMapping("/{taskId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -121,6 +163,6 @@ public class TaskController {
         @PathVariable Long taskId
     ) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        taskService.deleteTask(workspaceId, taskId);
+        taskDeletionService.deleteTask(workspaceId, taskId);
     }
 }

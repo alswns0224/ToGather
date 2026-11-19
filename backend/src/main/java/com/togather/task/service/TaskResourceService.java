@@ -13,6 +13,8 @@ import com.togather.content.slack.service.SlackContentService;
 import com.togather.task.domain.Task;
 import com.togather.task.domain.TaskContentLink;
 import com.togather.task.domain.TaskDeliverable;
+import com.togather.task.dto.DeliverableInput;
+import com.togather.task.dto.TaskDeliverableSummary;
 import com.togather.task.dto.TaskReferenceCandidate;
 import com.togather.task.repository.TaskContentLinkRepository;
 import com.togather.task.repository.TaskRepository;
@@ -78,6 +80,21 @@ public class TaskResourceService {
     public void unlink(Long workspaceId, Long userId, Long taskId, Long contentRefId) {
         lockTask(workspaceId, userId, taskId);
         linkRepository.deleteByTaskIdAndContentRefId(taskId, contentRefId);
+    }
+
+    @Transactional
+    public TaskDeliverableSummary addDeliverable(Long workspaceId, Long userId, Long taskId,
+                                                 DeliverableInput input) {
+        Task task = lockTask(workspaceId, userId, taskId);
+        TaskDeliverable deliverable = task.addDeliverable(input.name().strip(), input.ext());
+        taskRepository.flush();
+        return TaskDeliverableSummary.from(deliverable);
+    }
+
+    @Transactional
+    public void removeDeliverable(Long workspaceId, Long userId, Long taskId, Long deliverableId) {
+        Task task = lockTask(workspaceId, userId, taskId);
+        task.removeDeliverable(findDeliverable(task, deliverableId));
     }
 
     @Transactional

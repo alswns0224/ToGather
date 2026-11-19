@@ -566,7 +566,7 @@ public class DriveSyncAdapter implements SyncAdapter {
             .orElse(null);
 
         // 6. 공통 콘텐츠 저장 서비스 호출
-        ContentRefDTO saved = contentRefService.upsert(
+        ContentRefDTO saved = contentRefService.upsertDriveFile(
             new ContentRefUpsert(
                 workspaceId,
                 null,
@@ -582,7 +582,7 @@ public class DriveSyncAdapter implements SyncAdapter {
                 modifiedAt,
                 null,
                 null
-            )
+            ), file.fileSize()
         );
 
         // 본문이 새로 붙거나 바뀌었는데 수정 시각이 그대로면(예: 예전 파일·ToGather에서 올린 파일) 검색 색인이

@@ -29,7 +29,7 @@ public interface OAuthProviderClient {
     /** 대상 선택이 필요한 서비스인지 */
     boolean requiresTarget(Provider provider);
 
-    /** 연결 해제 시 토큰 무효화. 실패해도 예외를 던지지 않는다. */
+    /** 연결 해제 시 토큰 무효화. 확인하지 못하면 BusinessException; 로컬 해제와 안내는 Service가 처리한다. */
     void revoke(String accessToken);
 
     /**

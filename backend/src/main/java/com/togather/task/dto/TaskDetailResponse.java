@@ -14,7 +14,8 @@ public record TaskDetailResponse(
     LocalDate dueDate,
     TaskStatus status,
     int progress,
-    RiskLevel riskLevel
+    RiskLevel riskLevel,
+    boolean statusManagedByDeliverables
 ) {
 
     public static TaskDetailResponse from(Task task, LocalDate today) {
@@ -27,7 +28,8 @@ public record TaskDetailResponse(
             task.getDueDate(),
             task.getStatus(),
             task.calculateProgress(),
-            task.evaluateRisk(today)
+            task.evaluateRisk(today),
+            !task.getDeliverables().isEmpty()
         );
     }
 }
