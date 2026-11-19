@@ -1,3 +1,4 @@
+// UI-09 Task 협업 맥락 (담당: C)
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { MUTED } from '../../components/ui';
@@ -10,9 +11,11 @@ import { getMembers } from '../workspace/api';
 import { STATUS_TEXT as MEETING_STATUS } from '../meeting/MeetingListPage';
 import { SOURCES } from './TaskContextPanels';
 import {
+  addTaskDeliverable,
   getReferenceCandidates,
   getTaskContext,
   linkTaskReference,
+  removeTaskDeliverable,
   submitTaskDeliverable,
   unlinkTaskReference,
   unsubmitTaskDeliverable,
@@ -42,6 +45,7 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
   const [contextRevision, setContextRevision] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [addingDeliverable, setAddingDeliverable] = useState(false);
   const [provider, setProvider] = useState<TaskReferenceProvider>('SLACK');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -136,7 +140,15 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
           </button>
         </div>
       )}
-      {actionError && <p role="alert" className="alert alert-error">{actionError}</p>}
+      {actionError && (
+        <div role="alert" className="alert alert-error">
+          <span>{actionError}</span>
+          <button type="button" className="btn btn-small" disabled={busy}
+            onClick={() => setContextRevision((current) => current + 1)}>
+            최신 상태 확인
+          </button>
+        </div>
+      )}
       {!context && !contextError && <p className={MUTED}>팀 작업을 불러오는 중...</p>}
 
       {context && task && (
@@ -293,9 +305,30 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
             <div className="flex flex-col gap-4">
               {/* 필수 산출물 */}
               <div className="card flex flex-col gap-3 !p-5">
-                <strong className="text-[17px]">필수 산출물 제출</strong>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-[17px]">필수 산출물 제출</strong>
+                  <span className={`text-xs ${MUTED}`}>
+                    제출 {context.deliverables.filter((deliverable) => deliverable.submitted).length}/{context.deliverables.length}
+                  </span>
+                  <button type="button" className="btn btn-small" disabled={busy || addingDeliverable}
+                    onClick={() => setAddingDeliverable(true)}>
+                    + 항목 추가
+                  </button>
+                </div>
+                {addingDeliverable && (
+                  <DeliverableForm busy={busy} onCancel={() => setAddingDeliverable(false)}
+                    onAdd={(name, ext) => void run(async () => {
+                      await addTaskDeliverable(workspaceId, taskId, { name, ext });
+                      setAddingDeliverable(false);
+                    })} />
+                )}
                 {context.deliverables.length === 0 && (
-                  <p className={`m-0 text-sm ${MUTED}`}>이 팀 작업에 설정된 산출물이 없습니다.</p>
+                  <p className={`m-0 text-sm ${MUTED}`}>
+                    설정된 산출물이 없습니다. 항목을 추가하거나 팀 작업 목록에서 상태를 직접 변경할 수 있어요.
+                  </p>
+                )}
+                {context.deliverables.length > 0 && (
+                  <p className={`m-0 text-xs ${MUTED}`}>항목을 추가하거나 삭제하면 남은 산출물 기준으로 진행률과 완료 상태가 바뀝니다.</p>
                 )}
                 {context.deliverables.length > 0 && (
                   <>
@@ -409,6 +442,41 @@ function RefCard({
   );
 }
 
+function DeliverableForm({ busy, onCancel, onAdd }: {
+  busy: boolean;
+  onCancel: () => void;
+  onAdd: (name: string, ext: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [ext, setExt] = useState('');
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!busy && name.trim()) onAdd(name.trim(), ext.trim());
+  }
+
+  return (
+    <form className="stack rounded-xl border border-[var(--border)] p-3" onSubmit={submit}>
+      <label className="stack !gap-1 text-sm">
+        산출물 이름
+        <input className="input" value={name} onChange={(event) => setName(event.target.value)}
+          required maxLength={200} disabled={busy} placeholder="예: 최종 발표 자료" />
+      </label>
+      <label className="stack !gap-1 text-sm">
+        확장자 (선택)
+        <input className="input" value={ext} onChange={(event) => setExt(event.target.value)}
+          maxLength={20} pattern="\.?[a-zA-Z0-9]+" disabled={busy} placeholder="예: pdf · 비워두면 모든 파일 허용" />
+      </label>
+      <div className="flex justify-end gap-2">
+        <button type="button" className="btn btn-small" disabled={busy} onClick={onCancel}>취소</button>
+        <button type="submit" className="btn btn-primary btn-small" disabled={busy || !name.trim()}>
+          {busy ? '추가 중...' : '항목 추가'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function DeliverableCard({
   workspaceId, taskId, folderId, deliverable, busy, run,
 }: {
@@ -425,6 +493,15 @@ function DeliverableCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const extension = deliverable.ext?.trim().replace(/^\./, '').toLowerCase();
   const url = externalUrl(deliverable.link);
+
+  function remove() {
+    const message = deliverable.submitted
+      ? `‘${deliverable.name}’ 항목과 제출 기록을 삭제할까요? 원본 Drive 파일은 유지됩니다.`
+      : `‘${deliverable.name}’ 항목을 삭제할까요? Drive에 올린 파일은 유지됩니다.`;
+    if (window.confirm(`${message}\n마지막 항목을 삭제하면 현재 상태가 유지되고, 상태를 직접 변경할 수 있습니다.`)) {
+      void run(() => removeTaskDeliverable(workspaceId, taskId, deliverable.deliverableId));
+    }
+  }
 
   function submit(chosen: File | null = file) {
     if (!chosen || (!folderId && pendingContentId === null)) return;
@@ -502,6 +579,12 @@ function DeliverableCard({
         )}
       </div>
       {fileError && <p role="alert" className="m-0 text-sm text-[var(--danger)]">{fileError}</p>}
+      <div className="mt-2 flex justify-end">
+        <button type="button" className="link-button text-xs !text-[var(--danger)]" disabled={busy}
+          aria-label={`${deliverable.name} 항목 삭제`} onClick={remove}>
+          항목 삭제
+        </button>
+      </div>
     </article>
   );
 }
