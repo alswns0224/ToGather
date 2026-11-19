@@ -46,6 +46,8 @@ export default function IntegrationsPage() {
   const { loading, error, data, reload } = useAsync(() => getIntegrations(workspaceId), [workspaceId]);
   const [selecting, setSelecting] = useState<ConnectionStatusDTO | null>(null);
   const [actionError, setActionError] = useState<Error>();
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [disconnectNotice, setDisconnectNotice] = useState<{ text: string; warning: boolean } | null>(null);
 
   const connectedProvider = params.get('connected');
   const connectedId = params.get('connectionId');
@@ -62,13 +64,27 @@ export default function IntegrationsPage() {
 
   const remove = async (conn: ConnectionStatusDTO) => {
     const name = PROVIDER_LABELS[conn.provider].name;
-    if (!window.confirm(`${name} 연결을 해제할까요? 이 서비스의 콘텐츠를 더 이상 불러오지 않습니다.`)) return;
+    const google = ['GOOGLE_DRIVE', 'GOOGLE_CALENDAR', 'GMAIL'].includes(conn.provider);
+    const scopeNotice = google ? '\n같은 Google 계정으로 연결한 다른 서비스도 재인증이 필요할 수 있습니다.' : '';
+    if (!window.confirm(`${name} 연결을 해제할까요? 이 서비스의 콘텐츠를 더 이상 불러오지 않습니다.${scopeNotice}`)) return;
     setActionError(undefined);
+    setDisconnectNotice(null);
+    setRemovingId(conn.connectionId);
     try {
-      await disconnect(workspaceId, conn.connectionId);
+      const result = await disconnect(workspaceId, conn.connectionId);
+      setDisconnectNotice({
+        warning: result.manualRevocationRequired || result.relatedConnectionsRequireReauth,
+        text: result.manualRevocationRequired
+          ? `${name}의 ToGather 연결은 해제했지만 외부 권한 폐기를 확인하지 못했어요. ${name} 설정에서 ToGather 권한을 직접 확인·해제해 주세요.`
+          : result.relatedConnectionsRequireReauth
+            ? `${name} 연결을 해제했어요. 같은 Google 계정의 다른 연결은 다시 인증해 주세요.`
+            : `${name} 연결을 해제했어요.`,
+      });
       reload();
     } catch (err) {
       setActionError(err as Error);
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -98,6 +114,12 @@ export default function IntegrationsPage() {
         </div>
       )}
       {actionError && <ErrorBox error={actionError} />}
+      {disconnectNotice && (
+        <div className={`alert ${disconnectNotice.warning ? '' : 'alert-success'}`} role="status">
+          <span>{disconnectNotice.text}</span>
+          <button type="button" className="btn btn-small" onClick={() => setDisconnectNotice(null)}>닫기</button>
+        </div>
+      )}
       {loading && <Loading />}
       {error && <ErrorBox error={error} onRetry={reload} />}
 
@@ -109,6 +131,7 @@ export default function IntegrationsPage() {
             item={item}
             onSelect={setSelecting}
             onRemove={remove}
+            removingId={removingId}
           />
         ))}
       </div>
@@ -135,11 +158,13 @@ function ServiceCard({
   item,
   onSelect,
   onRemove,
+  removingId,
 }: {
   workspaceId: string;
   item: IntegrationStatusResponse;
   onSelect: (conn: ConnectionStatusDTO) => void;
   onRemove: (conn: ConnectionStatusDTO) => void;
+  removingId: number | null;
 }) {
   const label = PROVIDER_LABELS[item.provider];
   const mine = item.connections.find((c) => c.mine);
@@ -258,8 +283,9 @@ function ServiceCard({
           </a>
         )}
         {primary && (
-          <button type="button" className="btn btn-danger" onClick={() => onRemove(primary)}>
-            연결 해제
+          <button type="button" className="btn btn-danger" onClick={() => onRemove(primary)}
+            disabled={syncing || removingId !== null}>
+            {removingId === primary.connectionId ? '연결 해제 중...' : syncing ? '동기화 중' : '연결 해제'}
           </button>
         )}
       </div>
