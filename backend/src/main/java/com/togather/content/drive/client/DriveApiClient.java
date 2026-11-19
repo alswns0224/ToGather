@@ -2,6 +2,7 @@ package com.togather.content.drive.client;
 
 import static com.togather.common.util.JsonValues.list;
 import static com.togather.common.util.JsonValues.str;
+import static com.togather.common.util.JsonValues.obj;
 
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
@@ -31,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -69,7 +71,7 @@ public class DriveApiClient {
 
     private static final String FILE_FIELDS =
         "id,name,mimeType,description,webViewLink,"
-            + "createdTime,modifiedTime,parents,trashed";
+            + "createdTime,modifiedTime,parents,trashed,size,version,capabilities(canModifyContent)";
 
     private static final int MAX_PAGES = 200;
 
@@ -137,8 +139,21 @@ public class DriveApiClient {
         LocalDateTime createdAt,
         LocalDateTime modifiedAt,
         List<String> parents,
-        boolean trashed
+        boolean trashed,
+        Long fileSize,
+        String version,
+        boolean canModifyContent
     ) {
+        public DriveFile(String id, String name, String mimeType, String description, String webViewLink,
+                         LocalDateTime createdAt, LocalDateTime modifiedAt, List<String> parents, boolean trashed) {
+            this(id, name, mimeType, description, webViewLink, createdAt, modifiedAt, parents, trashed, null, null, false);
+        }
+
+        public boolean canOverwrite() {
+            return !trashed && canModifyContent && mimeType != null
+                    && !mimeType.startsWith("application/vnd.google-apps.")
+                    && version != null && version.matches("[0-9]{1,20}");
+        }
         public boolean isDirectChildOf(String folderId) {
             return !trashed && isInFolder(folderId);
         }
@@ -238,6 +253,17 @@ public class DriveApiClient {
         String folderId,
         boolean trashed
     ) {
+        return listFolderFilesByTrashState(accessToken, folderId, trashed, null);
+    }
+
+    public List<DriveFile> findFilesByName(String token, String folderId, String name) {
+        String safeName = safeFileName(name);
+        return listFolderFilesByTrashState(token, folderId, false, safeName).stream()
+                .filter(file -> safeName.equals(file.name())).toList();
+    }
+
+    private List<DriveFile> listFolderFilesByTrashState(String accessToken, String folderId,
+                                                       boolean trashed, String name) {
 
         validateId(folderId);
 
@@ -255,6 +281,7 @@ public class DriveApiClient {
                         "'" + folderId
                             + "' in parents and trashed = "
                             + trashed
+                            + (name == null ? "" : " and name = '" + name.replace("\\", "\\\\").replace("'", "\\'") + "'")
                     )
                     .queryParam(
                         "fields",
@@ -513,8 +540,18 @@ public class DriveApiClient {
         String mimeType,
         Path localFile
     ) {
+        return transferFile(accessToken, folderId, name, mimeType, localFile, null);
+    }
 
-        validateId(folderId);
+    public DriveFile overwriteFile(String token, String fileId, String name, String mimeType, Path localFile) {
+        validateId(fileId);
+        return transferFile(token, null, name, mimeType, localFile, fileId);
+    }
+
+    private DriveFile transferFile(String accessToken, String folderId, String name, String mimeType,
+                                    Path localFile, String fileId) {
+
+        if (fileId == null) validateId(folderId);
 
         String safeName =
             safeFileName(name);
@@ -549,7 +586,8 @@ public class DriveApiClient {
                 folderId,
                 safeName,
                 safeMime,
-                size
+                size,
+                fileId
             );
 
             long offset = 0;
@@ -746,19 +784,19 @@ public class DriveApiClient {
         String folderId,
         String fileName,
         String mimeType,
-        long fileSize
+        long fileSize,
+        String fileId
     ) {
 
         String metadata =
             "{\"name\":" + jsonQuote(fileName)
-                + ",\"parents\":["
-                + jsonQuote(folderId)
-                + "],\"mimeType\":"
+                + (fileId == null ? ",\"parents\":[" + jsonQuote(folderId) + "]" : "")
+                + ",\"mimeType\":"
                 + jsonQuote(mimeType)
                 + "}";
 
         URI uri = UriComponentsBuilder
-            .fromUriString(UPLOAD_URL)
+            .fromUriString(UPLOAD_URL + (fileId == null ? "" : "/" + fileId))
             .queryParam(
                 "uploadType",
                 "resumable"
@@ -778,7 +816,7 @@ public class DriveApiClient {
         try {
 
             ResponseEntity<Void> response =
-                externalRestClient.post()
+                externalRestClient.method(fileId == null ? HttpMethod.POST : HttpMethod.PATCH)
                     .uri(uri)
                     .headers(
                         h -> h.setBearerAuth(token)
@@ -1494,8 +1532,25 @@ public class DriveApiClient {
             List.copyOf(parents),
             Boolean.TRUE.equals(
                 json.get("trashed")
-            )
+            ),
+            parseFileSize(json.get("size")),
+            str(json, "version"),
+            Boolean.TRUE.equals(obj(json, "capabilities").get("canModifyContent"))
         );
+    }
+
+    private static Long parseFileSize(Object raw) {
+        if (raw == null) return null;
+        try {
+            long value = Long.parseLong(raw.toString());
+            if (value >= 0) return value;
+        } catch (NumberFormatException ignored) {
+        }
+        throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    public static String normalizeFileName(String name) {
+        return safeFileName(name);
     }
 
     // =====================================================

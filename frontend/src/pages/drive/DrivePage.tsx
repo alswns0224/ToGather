@@ -7,7 +7,8 @@ import {
 } from 'react';
 import { Link, useParams } from 'react-router';
 
-import { http, ws } from '../../api/client';
+import { ApiError, http, ws } from '../../api/client';
+import DriveUploadConflict from './DriveUploadConflict';
 import PageHeader from '../../components/PageHeader';
 import NavIcon from '../../layouts/NavIcon';
 
@@ -21,6 +22,7 @@ import {
   formatDriveFileSize,
   getDriveDownloadUrl,
   getDriveFiles,
+  getDriveUploadCandidates,
   getDriveFolderNames,
   getDriveFolders,
   getDrivePreviewUrl,
@@ -32,6 +34,8 @@ import {
   uploadDriveFile,
   type DriveFile,
   type DriveSyncStatus,
+  type DriveUploadCandidate,
+  type DriveUploadOptions,
 } from './api';
 
 // =====================================================
@@ -49,6 +53,7 @@ type WorkingAction =
   | 'refresh'
   | 'sync'
   | 'upload'
+  | 'check-upload'
   | 'delete'
   | 'restore'
   | null;
@@ -109,6 +114,10 @@ function errorMessage(error: unknown): string {
 
 export default function DrivePage() {
   const { workspaceId = '' } = useParams();
+  return <DriveContent key={workspaceId} workspaceId={workspaceId} />;
+}
+
+function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   // ---------------------------------------------------
   // 1. 파일 및 연동 상태
@@ -173,6 +182,7 @@ export default function DrivePage() {
 
   const [uploadFolderId, setUploadFolderId] =
     useState('');
+  const [uploadCandidates, setUploadCandidates] = useState<DriveUploadCandidate[] | null>(null);
 
   // ---------------------------------------------------
   // 5. 미리보기 상태
@@ -420,6 +430,7 @@ export default function DrivePage() {
       : (folderIds[0] ?? '');
 
   const canSelectUpload = !loading && !isBusy && Boolean(chosenFolderId);
+  useEffect(() => { setUploadCandidates(null); }, [uploadFile, chosenFolderId]);
 
   // ===================================================
   // 9. 파일 검색 및 선택
@@ -668,7 +679,18 @@ export default function DrivePage() {
   // 13. Google Drive 파일 업로드
   // ===================================================
 
-  async function handleUpload() {
+  async function refreshUploadCandidates() {
+    if (!uploadFile || !chosenFolderId || workingRef.current) return;
+    workingRef.current = true;
+    setWorking('check-upload');
+    setError(null);
+    try {
+      setUploadCandidates(await getDriveUploadCandidates(workspaceId, chosenFolderId, uploadFile.name));
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { workingRef.current = false; setWorking(null); }
+  }
+
+  async function handleUpload(options: DriveUploadOptions = { mode: 'ASK' }) {
     if (
       !workspaceId ||
       !uploadFile ||
@@ -682,17 +704,23 @@ export default function DrivePage() {
     workingRef.current = true;
     dataVersionRef.current += 1;
 
-    setWorking('upload');
+    setWorking(options.mode === 'ASK' ? 'check-upload' : 'upload');
     setError(null);
     setNotice(null);
 
     const fileName = uploadFile.name;
 
     try {
+      if (options.mode === 'ASK') {
+        const matches = await getDriveUploadCandidates(workspaceId, chosenFolderId, fileName);
+        if (matches.length > 0) { setUploadCandidates(matches); return; }
+      }
+      setWorking('upload');
       const uploaded = await uploadDriveFile(
         workspaceId,
         chosenFolderId,
         uploadFile,
+        options,
       );
 
       // 업로드 성공 즉시 목록에 표시
@@ -710,13 +738,14 @@ export default function DrivePage() {
       setSelectedId(uploaded.contentRefId);
 
       setUploadFile(null);
+      setUploadCandidates(null);
 
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
 
       setNotice(
-        `'${fileName}' 파일 업로드가 완료됐습니다.`,
+        `'${fileName}' 파일 ${options.mode === 'OVERWRITE' ? '덮어쓰기' : '업로드'}가 완료됐습니다.`,
       );
 
       // 실제 DB 목록 재조회
@@ -729,6 +758,11 @@ export default function DrivePage() {
       }
     } catch (err) {
       setError(errorMessage(err));
+      if (err instanceof ApiError && (err.code === 'DRIVE_FILE_NAME_CONFLICT' || err.code === 'DRIVE_FILE_CHANGED')) {
+        try {
+          setUploadCandidates(await getDriveUploadCandidates(workspaceId, chosenFolderId, fileName));
+        } catch { /* 원래 오류와 선택 파일을 유지하고 사용자가 다시 확인할 수 있게 한다. */ }
+      }
     } finally {
       workingRef.current = false;
       setWorking(null);
@@ -966,7 +1000,7 @@ export default function DrivePage() {
       <div
         role="region"
         aria-label="Google Drive 파일 업로드 영역"
-        aria-busy={working === 'upload'}
+        aria-busy={working === 'upload' || working === 'check-upload'}
         className={`drive-drop${isDraggingFile && canSelectUpload ? ' dragging' : ''}`}
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -1035,7 +1069,7 @@ export default function DrivePage() {
               disabled={loading || isBusy || !uploadFile || !chosenFolderId}
               onClick={() => void handleUpload()}
             >
-              {working === 'upload' ? '업로드 중...' : '업로드'}
+              {working === 'upload' ? '업로드 중...' : working === 'check-upload' ? '파일 확인 중...' : '업로드'}
             </button>
           </div>
         ) : (
@@ -1046,6 +1080,14 @@ export default function DrivePage() {
           )
         )}
       </div>
+
+      {uploadFile && uploadCandidates && <DriveUploadConflict
+        key={uploadCandidates.map((candidate) => `${candidate.fileId}/${candidate.version}`).join('|')}
+        fileName={uploadFile.name} candidates={uploadCandidates} busy={isBusy}
+        onCreateNew={() => void handleUpload({ mode: 'CREATE_NEW' })}
+        onOverwrite={(candidate) => void handleUpload({ mode: 'OVERWRITE', targetFileId: candidate.fileId,
+          expectedVersion: candidate.version! })}
+        onCancel={() => setUploadCandidates(null)} onRefresh={() => void refreshUploadCandidates()} />}
 
       <div className="drive-board">
         {/* 파일 목록 */}
@@ -1102,9 +1144,9 @@ export default function DrivePage() {
             />
           </div>
 
-          <div className="drive-row drive-head">
-            <span>파일 이름</span>
-            <span>최근 수정</span>
+          <div className="drive-row drive-head max-sm:grid-cols-[minmax(0,1fr)_auto]">
+            <span>파일 이름 · 크기</span>
+            <span className="max-sm:hidden">최근 수정</span>
             <span>{showTrash ? '' : '연결'}</span>
           </div>
 
@@ -1131,17 +1173,18 @@ export default function DrivePage() {
                   onClick={() => setSelectedId(file.contentRefId)}
                   disabled={isBusy}
                   aria-pressed={selected}
-                  className={`drive-row drive-item${selected ? ' selected' : ''}`}
+                  className={`drive-row drive-item max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1${selected ? ' selected' : ''}`}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className={`drive-ext ext-${format.toLowerCase()}`}>{format.slice(0, 4)}</span>
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-bold">{file.title || '(제목 없음)'}</span>
+                      <span className="block text-xs text-[var(--muted)]">{formatDriveFileSize(file.fileSize)}</span>
                       {file.syncFailed && <span className="text-xs text-[var(--warning)]">동기화 실패</span>}
                     </span>
                   </span>
-                  <span className="text-sm">{formatDate(file.lastModifiedAt)}</span>
-                  <span className="text-xs font-bold text-[var(--primary)]">
+                  <span className="text-sm max-sm:col-span-2 max-sm:row-start-2 max-sm:pl-[50px]">{formatDate(file.lastModifiedAt)}</span>
+                  <span className="text-xs font-bold text-[var(--primary)] max-sm:col-start-2 max-sm:row-start-1">
                     {isWorkingFile
                       ? working === 'delete'
                         ? '삭제 중...'
@@ -1173,7 +1216,7 @@ export default function DrivePage() {
                 <div className="min-w-0">
                   <div className="break-all text-base font-bold">{selectedFile.title || '(제목 없음)'}</div>
                   <div className="text-[13px] text-[var(--muted)]">
-                    {fileFormat(selectedFile)} · 수정 {formatDate(selectedFile.lastModifiedAt)}
+                    {fileFormat(selectedFile)} · {formatDriveFileSize(selectedFile.fileSize)} · 수정 {formatDate(selectedFile.lastModifiedAt)}
                   </div>
                 </div>
               </div>

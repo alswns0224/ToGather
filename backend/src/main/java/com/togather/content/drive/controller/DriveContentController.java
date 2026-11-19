@@ -7,6 +7,8 @@ import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.ApiResponse;
 
 import com.togather.content.drive.client.DriveApiClient;
+import com.togather.content.drive.dto.DriveUploadCandidate;
+import com.togather.content.drive.dto.DriveUploadMode;
 import com.togather.content.drive.service.DriveContentService;
 import com.togather.content.drive.service.DriveContentService.DriveTransfer;
 import com.togather.content.dto.ContentRefDTO;
@@ -69,6 +71,15 @@ public class DriveContentController {
 
     private final DriveContentService driveContentService;
     private final WorkspaceAccessChecker workspaceAccessChecker;
+
+    @GetMapping("/upload-candidates")
+    public ApiResponse<List<DriveUploadCandidate>> getUploadCandidates(
+        @LoginUser Long userId, @PathVariable Long workspaceId,
+        @RequestParam String folderId, @RequestParam String name
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(driveContentService.getUploadCandidates(workspaceId, userId, folderId, name));
+    }
 
     /**
      * 1. Google Drive 연동 폴더 조회.
@@ -221,7 +232,10 @@ public class DriveContentController {
         @LoginUser Long userId,
         @PathVariable Long workspaceId,
         @RequestParam("folderId") String folderId,
-        @RequestPart("file") MultipartFile file
+        @RequestPart("file") MultipartFile file,
+        @RequestParam(defaultValue = "CREATE_NEW") DriveUploadMode mode,
+        @RequestParam(required = false) String targetFileId,
+        @RequestParam(required = false) String expectedVersion
     ) {
 
         // 1. 워크스페이스 권한 검증
@@ -279,7 +293,10 @@ public class DriveContentController {
                     folderId,
                     fileName,
                     file.getContentType(),
-                    tempFile
+                    tempFile,
+                    mode,
+                    targetFileId,
+                    expectedVersion
                 );
 
             log.info(
