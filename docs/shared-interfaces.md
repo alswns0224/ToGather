@@ -77,7 +77,27 @@ boolean hasConnection(Long workspaceId, Long userId, Provider provider);
 사용처: B(Slack, Notion), C(Drive, Gmail)
 규칙: 받은 토큰은 DTO, 응답, 로그에 넣지 않는다. (README 10번)
 
+### 연결 사용 중 해제 보호 (ConnectionOperationRegistry)
+
+```java
+// integration.service.ConnectionOperationRegistry
+// HTTP 요청에는 Filter가 자동 적용한다. 별도 스레드의 작업은 전체 작업 범위를 감싼다.
+ConnectionOperationRegistry.Scope openScope();  // Scope implements AutoCloseable
+```
+
+- B의 `SyncService`와 자동 `AnalysisScheduler`에서 `try (var scope = operations.openScope())`로 사용한다.
+- 기존 `IntegrationService` 토큰 조회 시 실제 선택한 연결을 자동 예약한다. 호출자가 토큰이나 다른 파트 Entity를 추적할 필요는 없다.
+- 작업 종료·실패 시 예약을 반납하며, 트랜잭션이 남아 있으면 종료 후 반납한다. HTTP 스트리밍은 비동기 응답 완료까지 유지한다.
+- 사용 중인 연결의 해제 또는 해제 중인 계정으로의 새 토큰 요청은 `409 CONNECTION_IN_USE`다. 서로 다른 계정은 독립적으로 동작한다.
+- Google은 같은 계정의 Drive·Calendar·Gmail 권한 폐기가 영향을 공유하므로 함께 보호한다. 폐기 성공 후 같은 계정의 나머지 연결은 `REAUTH_REQUIRED`로 표시한다.
+- 현재 서버 한 대에서 실행 중인 작업을 보호한다. 서버를 여러 대로 늘릴 때는 공유 저장소 기반 예약으로 확장해야 한다.
+- Registry의 `use(ServiceConnection)`와 `beginDisconnect(...)`는 A 파트 내부 구현이며 다른 파트에서 Entity를 넘기며 호출하지 않는다.
+
 ### Calendar (CalendarContentService)
+
+기존 팀 일정 수정·삭제는 `ContentRefService.getChannelId`로 저장된 캘린더를 확인하고
+`IntegrationService.findTargetAccess(workspaceId, provider, targetId)`로 그 대상을 선택한 연결을 사용한다.
+연결이 없으면 실패를 알리며 다른 캘린더로 바꿔 쓰지 않는다. 기존 두 인자 메서드는 유지한다.
 
 ```java
 // [결정 4] workspaceId, userId 추가. 팀 캘린더(연동 관리에서 선택)에 등록, 없으면 요청자의 기본 캘린더
@@ -115,6 +135,7 @@ record MeetingSummary(Long meetingId, String title, MeetingStatus status, LocalD
 ```java
 // ContentRefService
 ContentRefDTO upsert(ContentRefUpsert command);  // workspaceId + provider + originId 기준. 있으면 최신 원본으로 갱신
+ContentRefDTO upsertDriveFile(ContentRefUpsert command, Long fileSize); // GOOGLE_DRIVE/FILE 전용. 바이트 수, null=미확인
 // 기존 11개 인자 생성자도 그대로 쓸 수 있다. (수정 시각·작성자 없이 저장)
 record ContentRefUpsert(Long workspaceId, Long ownerUserId, Provider provider, ContentType contentType,
                         String originId, String channelId, Long parentRefId,
@@ -128,6 +149,7 @@ Map<Long, ContentState> getTeamContentStates(Long workspaceId, Collection<Long> 
 record ContentState(LocalDateTime createdAt, boolean originDeleted, boolean driveTrashed) {}
 Optional<ContentRefDTO> findByOrigin(Long workspaceId, Provider provider, String originId);
 ContentOwner getOwner(Long contentRefId);
+String getChannelId(Long contentRefId);  // Calendar: 원래 등록된 캘린더 ID. 소속·개인 권한 확인 후 사용
 void updateContent(Long contentRefId, String title, String content);
 void markOriginDeleted(Long contentRefId);
 void markSyncFailed(Long workspaceId, Provider provider, String originId);   // 동기화 중 이 콘텐츠 저장 실패 표시
@@ -145,7 +167,7 @@ List<ContentRefDTO> getPersonalContents(Long workspaceId, Long ownerUserId, Prov
 ```java
 record ContentRefDTO(Long contentRefId, Provider provider, ContentType contentType, String externalId,
                      String title, String content, String deepLink, String fileFormat,
-                     LocalDateTime lastModifiedAt, int messageCount, boolean syncFailed) {}
+                     LocalDateTime lastModifiedAt, int messageCount, boolean syncFailed, Long fileSize) {}
 
 record ContentDetailDTO(Long contentRefId, Provider provider, String title, String body, String deepLink,
                         String previewLink, LocalDateTime startAt, List<String> participants,
@@ -153,6 +175,24 @@ record ContentDetailDTO(Long contentRefId, Provider provider, String title, Stri
 ```
 
 위치: `content.dto` (콘텐츠 서비스가 모두 같이 사용)
+
+`fileSize`는 바이트 수이며 0과 null(크기 미확인)을 구분한다. 기존 11개 인자 `ContentRefDTO` 생성자는 유지한다.
+`ContentRefUpsert` 시그니처는 그대로이며 일반 `upsert`는 저장된 크기를 보존한다. Drive 수집·업로드만
+`upsertDriveFile`로 크기까지 갱신한다(null을 넘기면 미확인으로 갱신). V11은 크기 필드를 추가하고
+Drive의 동기화 커서를 초기화해 다음 동기화에서 기존 파일 크기도 채운다. 다른 제공자의 커서는 유지한다.
+
+### Drive 업로드 선택 (C-03)
+
+- `GET /api/workspaces/{workspaceId}/drive/upload-candidates?folderId=&name=`: 같은 이름의 선택 폴더 내 파일 목록.
+  응답은 `DriveUploadCandidate(fileId, name, mimeType, fileSize, lastModifiedAt, version, deepLink, overwriteAllowed)`.
+- `POST /api/workspaces/{workspaceId}/drive/files`: 기존 `folderId`, `file`에 `mode`를 추가했다.
+  생략 시 `CREATE_NEW`이며 기존 Task 산출물 업로드 호출은 그대로 사용한다.
+  `ASK`는 동명 파일이 있으면 `DRIVE_FILE_NAME_CONFLICT`(409), `CREATE_NEW`는 새 파일,
+  `OVERWRITE`는 필수 `targetFileId`, `expectedVersion`으로 선택한 기존 파일 내용을 교체한다.
+- 덮어쓰기는 파일 ID·ContentRef ID·Task 연결과 제출을 보존한다. 선택 후 버전·이름 변경은
+  `DRIVE_FILE_CHANGED`(409)이며 다시 조회·선택한다. 이동·휴지통, 수정 불가, Google 고유 문서 등은 거절한다.
+- 버전은 업로드 직전 확인하며 같은 서버의 동일 폴더·이름 업로드는 중복 실행을 막는다.
+  외부 편집이나 여러 서버까지 원자적으로 잠그는 기능은 아니다.
 
 ### Slack · Notion 콘텐츠
 
