@@ -81,7 +81,7 @@ public class SearchService {
         List<VectorHit> kept = new ArrayList<>();
         for (VectorHit hit : hits) {
             ContentRef ref = refs.get(hit.contentRefId());
-            if (ref != null && ref.getWorkspaceId().equals(workspaceId) && targets.contains(ref.getProvider())
+            if (ref != null && ref.getOwnerUserId() == null && ref.getWorkspaceId().equals(workspaceId) && targets.contains(ref.getProvider())
                     && !ref.isOriginDeleted() && !ref.isDriveTrashed() && score(hit) >= properties.minScore()
                     && !isTooShort(ref)) {
                 kept.add(hit);

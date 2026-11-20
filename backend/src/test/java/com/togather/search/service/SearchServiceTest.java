@@ -143,6 +143,19 @@ class SearchServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 개인_DM은_키워드와_잘못_남은_벡터에서도_팀_검색에_노출되지_않는다() {
+        var dm = contentRefService.upsert(new ContentRefUpsert(workspaceId, userId, Provider.SLACK, ContentType.MESSAGE,
+                "dm:private-message", "D1", null, "Slack DM", "발표 슬라이드 비공개 요청", null, T0, T0, "U2", "상대"));
+        contentIndexService.indexPending();
+        assertThat(vectorStore.docs).doesNotContainKey(dm.contentRefId());
+        vectorStore.upsert(List.of(new VectorStore.VectorDoc(dm.contentRefId(), workspaceId, "SLACK",
+                FakeSearchConfig.embed("발표 슬라이드 비공개 요청"))));
+        assertThat(searchService.search(workspaceId, userId, "발표 슬라이드", List.of(Provider.SLACK), 20).items())
+                .noneMatch(item -> dm.contentRefId().equals(item.contentRefId()));
+        assertThat(vectorStore.docs).containsKey(dm.contentRefId());
+    }
+
+    @Test
     void 출처_서비스로_거른다() {
         contentIndexService.indexPending();
 

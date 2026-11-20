@@ -35,7 +35,7 @@ public class SlackOAuthClient implements OAuthProviderClient {
 
     /** B 파트가 필요한 권한이 늘면 여기에 추가한다. */
     static final String USER_SCOPE = String.join(",",
-            "channels:read", "channels:history", "groups:read", "groups:history",
+            "channels:read", "channels:history", "groups:read", "groups:history", "im:read", "im:history",
             "chat:write", "users:read", "users:read.email", "files:read");
     private static final ParameterizedTypeReference<Map<String, Object>> JSON = new ParameterizedTypeReference<>() {
     };

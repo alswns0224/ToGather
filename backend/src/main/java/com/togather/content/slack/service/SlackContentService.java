@@ -278,7 +278,7 @@ public class SlackContentService {
         return contentRefService.toDtos(contentRefRepository
                 .findAllByWorkspaceIdAndProviderAndParentRefIdIsNullOrderByLastModifiedAtDesc(workspaceId,
                         Provider.SLACK)
-                .stream().filter(ref -> !ref.isOriginDeleted()).limit(RECENT_LIMIT).toList());
+                .stream().filter(ref -> ref.getOwnerUserId() == null && !ref.isOriginDeleted()).limit(RECENT_LIMIT).toList());
     }
 
     /**
@@ -306,13 +306,13 @@ public class SlackContentService {
                 "%<@" + slackId.get() + ">%", after));
         result.addAll(contentRefRepository.findByContentPattern(List.of(workspaceId), Provider.SLACK,
                 "%<@" + slackId.get() + "|%", after));
-        return result.stream().filter(ref -> !ref.isOriginDeleted()).toList();
+        return result.stream().filter(ref -> ref.getOwnerUserId() == null && !ref.isOriginDeleted()).toList();
     }
 
     /** 통합 검색·협업 맥락의 상세. 스레드면 참여자 이름을 함께 준다. */
     public ContentDetailDTO getContentDetail(Long contentRefId) {
         ContentRef ref = contentRefRepository.findById(contentRefId)
-                .filter(r -> r.getProvider() == Provider.SLACK)
+                .filter(r -> r.getProvider() == Provider.SLACK && r.getOwnerUserId() == null)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         List<ContentRef> thread = new ArrayList<>();
         thread.add(ref);
@@ -340,6 +340,7 @@ public class SlackContentService {
      */
     public List<ThreadMessage> getThreadMessages(Long threadId, LocalDateTime after) {
         ContentRef root = contentRefRepository.findById(threadId)
+                .filter(ref -> ref.getOwnerUserId() == null)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         List<ContentRef> messages = new ArrayList<>();
         messages.add(root);
