@@ -135,6 +135,8 @@ record MeetingSummary(Long meetingId, String title, MeetingStatus status, LocalD
 ```java
 // ContentRefService
 ContentRefDTO upsert(ContentRefUpsert command);  // workspaceId + provider + originId 기준. 있으면 최신 원본으로 갱신
+// 개인 Slack DM은 ownerUserId 필수, originId는 소유자·연결·Slack 계정별 접두사를 포함한다.
+// 같은 originId의 소유자를 바꾸는 Slack upsert는 거절한다. 팀 조회·자료 연결·검색·논의 분석에서 제외한다.
 ContentRefDTO upsertDriveFile(ContentRefUpsert command, Long fileSize); // GOOGLE_DRIVE/FILE 전용. 바이트 수, null=미확인
 // 기존 11개 인자 생성자도 그대로 쓸 수 있다. (수정 시각·작성자 없이 저장)
 record ContentRefUpsert(Long workspaceId, Long ownerUserId, Provider provider, ContentType contentType,
@@ -245,6 +247,17 @@ List<VectorHit> searchVectors(float[] vector, Long workspaceId, Collection<Strin
 - 검색(`SearchService`): `GET /api/workspaces/{id}/search?q=&providers=SLACK,NOTION&limit=20` → 관련도순 결과 + 연결된 Task(`TaskContextService.getTasksByContents`)
 
 ### 증분 동기화 (SyncAdapter) — C의 Drive·Gmail도 사용
+
+Slack 1:1 DM은 본인 사용자 토큰의 `im:read`, `im:history` 권한으로 별도 개인 수집 경로를 사용한다.
+`IntegrationService.findOwnAccess(workspaceId, userId, provider)`는 본인 연결의
+`Optional<OwnAccess(connectionId, externalAccountId, scope, accessToken)>`만 반환하며 팀원 토큰으로 대체하지 않는다.
+OwnAccess의 문자열 표현에는 토큰·권한을 넣지 않는다. 기존 토큰 선택 메서드의 동작은 유지한다.
+개인 DM 동기화 상태는 기존 `sync_state`에 ownerUserId와 계정·대화별 키로 저장하되 팀 Slack 상태 응답에는 포함하지 않는다.
+V12는 커서를 TEXT로 확장한다. 고정된 수집 구간·페이지 커서·확인한 메시지 목록을 보존해 이어받고 완료 시 삭제를 판정한다.
+AI 후보 탐지 전 첫 수집 후에는 5분 스케줄러가 이어서 수집한다. 수집량이 많으면 요청 예산 내에서 순환하며 계속한다.
+DM 권한·인증·통신·요청 한도 문제는 탐지 응답 `warnings`에 안내하고 다른 출처의 탐지는 계속한다.
+`DetectResultResponse(scannedMessages, created, warnings)`는 기존 2개 인자 생성자를 유지한다.
+AI의 분석 여부는 메시지 ID·수정 시각별로 기록해 나중에 수집된 과거 메시지도 처리한다. 이 기록은 서버 재시작 시 초기화된다.
 
 ```java
 // sync.service.SyncAdapter를 구현해 @Component로 등록하면 스케줄러(5분 간격)와 즉시 동기화가 자동으로 사용한다.

@@ -36,12 +36,17 @@ type Tab = 'SCHEDULE' | 'TASK' | 'TODO';
 
 export default function AssistantPage() {
   const { workspaceId = '' } = useParams();
+  return <AssistantContent key={workspaceId} workspaceId={workspaceId} />;
+}
+
+function AssistantContent({ workspaceId }: { workspaceId: string }) {
   const [tab, setTab] = useState<Tab>('SCHEDULE');
   const suggestions = useAsync(() => getSuggestions(workspaceId), [workspaceId]);
   const todos = useAsync(() => getMyTodoList(workspaceId), [workspaceId]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
   const [approved, setApproved] = useState<{ text: string; to: string | null; tab?: Tab } | null>(null);
   const [detecting, setDetecting] = useState(false);
+  const [sourceWarnings, setSourceWarnings] = useState<string[]>([]);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   const reload = () => {
@@ -52,8 +57,10 @@ export default function AssistantPage() {
   const detect = async () => {
     setDetecting(true);
     setNotice(null);
+    setSourceWarnings([]);
     try {
       const result = await detectCandidates(workspaceId);
+      setSourceWarnings(result.warnings ?? []);
       setNotice({
         ok: true,
         text:
@@ -89,8 +96,9 @@ export default function AssistantPage() {
         title="AI 업무 보조"
         description={
           <>
-            Slack·Gmail에서 찾은 일정과 할 일을 확인하고, 필요한 것만 반영하세요.
+            Slack 대화·본인 DM·Gmail에서 찾은 일정과 할 일을 확인하고, 필요한 것만 반영하세요.
             <span className="mt-0.5 block text-xs">ⓘ 승인하기 전에는 등록되지 않아요.</span>
+            <span className="mt-0.5 block text-xs">DM은 본인 계정의 최근 14일 대화를 살펴보며, 원문은 팀 자료·검색에 공유되지 않아요.</span>
           </>
         }
         actions={
@@ -100,6 +108,10 @@ export default function AssistantPage() {
         }
       />
       {notice && <div className={`alert ${notice.ok ? 'alert-success' : 'alert-error'}`}>{notice.text}</div>}
+      {sourceWarnings.length > 0 && <div role="status" className="alert bg-[var(--warning-soft)] text-[var(--warning)]">
+        <ul className="m-0 flex-1 pl-5">{sourceWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+        <Link className="btn btn-small" to={`/workspaces/${workspaceId}/integrations`}>연동 관리</Link>
+      </div>}
       {approved && (
         <div className="alert alert-success">
           <span>{approved.text}</span>
@@ -160,7 +172,7 @@ export default function AssistantPage() {
                     <span className="inline-flex h-4 w-4">
                       <ServiceLogo service="slack" />
                     </span>
-                    내가 작성하거나 멘션된 대화
+                    내가 작성하거나 멘션된 대화 · 본인 1:1 DM
                   </div>
                   <div className="flex items-center gap-2 text-[13px]">
                     <span className="inline-flex h-4 w-4">
@@ -246,6 +258,7 @@ function plusHour(datetime: string) {
 }
 
 function sourceName(s: SuggestionDTO) {
+  if (s.sourceProvider === 'SLACK' && s.sourceTitle === 'Slack DM') return 'Slack DM';
   return s.sourceProvider === 'GMAIL' ? 'Gmail' : 'Slack';
 }
 
