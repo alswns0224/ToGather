@@ -91,6 +91,8 @@ public interface ContentRefRepository
     /**
      * 채널의 최상위 메시지 (답글 제외).
      */
+    @Query("select c from ContentRef c where c.workspaceId = :workspaceId and c.provider = :provider "
+            + "and c.channelId = :channelId and c.parentRefId is null and c.ownerUserId is null order by c.createdAt desc")
     Page<ContentRef>
     findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullOrderByCreatedAtDesc(
         Long workspaceId,
@@ -103,6 +105,9 @@ public interface ContentRefRepository
      * 원본에서 삭제되지 않은 최상위 메시지.
      * Slack 채널 화면.
      */
+    @Query("select c from ContentRef c where c.workspaceId = :workspaceId and c.provider = :provider "
+            + "and c.channelId = :channelId and c.parentRefId is null and c.ownerUserId is null "
+            + "and c.isOriginDeleted = false order by c.createdAt desc")
     Page<ContentRef>
     findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseOrderByCreatedAtDesc(
         Long workspaceId,
@@ -160,6 +165,9 @@ public interface ContentRefRepository
      * 작성자 기준 콘텐츠 조회.
      * AI 업무 보조: 본인이 작성한 메시지.
      */
+    @Query("select c from ContentRef c where c.workspaceId in :workspaceIds and c.provider = :provider "
+            + "and c.authorExternalId in :authorExternalIds and c.createdAt > :after "
+            + "and c.ownerUserId is null order by c.createdAt desc")
     List<ContentRef>
     findAllByWorkspaceIdInAndProviderAndAuthorExternalIdInAndCreatedAtAfterOrderByCreatedAtDesc(
         Collection<Long> workspaceIds,
@@ -199,6 +207,7 @@ public interface ContentRefRepository
         from ContentRef c
         where c.workspaceId in :workspaceIds
           and c.provider = :provider
+          and c.ownerUserId is null
           and c.createdAt > :after
           and c.content like :mentionPattern
         order by c.createdAt desc
@@ -219,6 +228,7 @@ public interface ContentRefRepository
         from ContentRef p
         where p.workspaceId = :workspaceId
           and p.provider = :provider
+          and p.ownerUserId is null
           and p.parentRefId is null
           and p.isOriginDeleted = false
           and (
@@ -266,4 +276,9 @@ public interface ContentRefRepository
 
         Long getCount();
     }
+
+    @Query("select c from ContentRef c where c.workspaceId = :workspaceId and c.ownerUserId = :ownerUserId "
+            + "and c.provider = com.togather.common.enums.Provider.SLACK and c.originId like :originPattern "
+            + "and c.createdAt > :after and c.isOriginDeleted = false order by c.createdAt desc")
+    List<ContentRef> findPrivateSlackMessages(Long workspaceId, Long ownerUserId, String originPattern, LocalDateTime after);
 }

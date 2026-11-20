@@ -126,7 +126,9 @@ public class SyncService {
     }
 
     public List<SyncStatusResponse> getStatuses(Long workspaceId, Provider provider) {
-        return syncStateService.getStates(workspaceId, provider).stream().map(SyncStatusResponse::from).toList();
+        return syncStateService.getStates(workspaceId, provider).stream()
+                .filter(state -> provider != Provider.SLACK || state.getOwnerUserId() == null)
+                .map(SyncStatusResponse::from).toList();
     }
 
     /** 스케줄러: 한 번이라도 동기화한 워크스페이스·서비스를 다시 동기화한다. 연속 실패한 대상은 잠시 쉰다. */

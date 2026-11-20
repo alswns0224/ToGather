@@ -82,7 +82,7 @@ public class TaskContextController {
         ContentRefService.ContentOwner owner =
             contentRefService.getOwner(contentRefId);
 
-        if (!workspaceId.equals(owner.workspaceId())) {
+        if (!workspaceId.equals(owner.workspaceId()) || owner.ownerUserId() != null) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_NOT_FOUND
             );

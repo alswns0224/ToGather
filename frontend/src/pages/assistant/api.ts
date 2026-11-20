@@ -36,6 +36,7 @@ export interface MyTodoListDTO {
 export interface DetectResultResponse {
   scannedMessages: number;
   created: SuggestionDTO[];
+  warnings?: string[];
 }
 
 const base = (workspaceId: string, path: string) => ws(workspaceId, `/assistant${path}`);

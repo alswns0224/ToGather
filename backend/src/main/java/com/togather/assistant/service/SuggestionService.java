@@ -28,6 +28,7 @@ import com.togather.content.gmail.service.GmailContentService;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.content.slack.service.SlackContentService;
+import com.togather.content.slack.service.SlackDirectMessageService;
 import com.togather.content.slack.service.SlackMessageFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -73,6 +74,7 @@ public class SuggestionService {
     private final PersonalTaskRepository personalTaskRepository;
     private final ContentRefRepository contentRefRepository;
     private final SlackContentService slackContentService;
+    private final SlackDirectMessageService slackDirectMessages;
     private final GmailContentService gmailContentService;
     private final CalendarContentService calendarContentService;
     private final TaskGateway taskGateway;
@@ -81,10 +83,10 @@ public class SuggestionService {
     private final UserService userService;
 
     /**
-     * 워크스페이스·사용자별로 Gemini에 보낸 마지막 메시지의 작성 시각. 이보다 오래된 메시지는 다시 보내지 않는다.
-     * (후보가 없던 메시지를 매번 다시 분석하지 않도록. 서버를 다시 켜면 처음부터 본다)
+     * 워크스페이스·사용자별로 이미 분석한 콘텐츠와 수정 시각을 기록한다.
+     * 나중에 수집된 과거 DM도 분석하며 같은 버전은 다시 보내지 않는다. 서버 재시작 시 초기화된다.
      */
-    private final Map<String, LocalDateTime> scannedUntil = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, Map<Long, LocalDateTime>> scannedRevisions = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Gemini 응답 형식 (resources/prompts/assistant-candidates.txt) */
     public record AiResult(List<AiCandidate> candidates) {
@@ -102,9 +104,10 @@ public class SuggestionService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public DetectResultResponse detectCandidates(Long workspaceId, Long userId, SuggestionType type) {
-        List<ContentRef> messages = filterRelevantMessages(workspaceId, userId);
+        var direct = slackDirectMessages.collectForAssistant(workspaceId, userId);
+        List<ContentRef> messages = filterRelevantMessages(workspaceId, userId, direct.messages());
         if (messages.isEmpty()) {
-            return new DetectResultResponse(0, List.of());
+            return new DetectResultResponse(0, List.of(), direct.warnings());
         }
         Map<String, ContentRef> bySource = new LinkedHashMap<>();
         StringBuilder lines = new StringBuilder();
@@ -123,9 +126,9 @@ public class SuggestionService {
                 "calendar", PromptTemplates.calendar(LocalDate.now(SlackApiClient.ZONE).minusDays(14), 35),
                 "messages", lines.toString()));
         AiResult result = geminiClient.generateJson(prompt, AiResult.class);
-        messages.stream().map(ContentRef::getCreatedAt).filter(Objects::nonNull).max(Comparator.naturalOrder())
-                .ifPresent(latest -> scannedUntil.merge(scanKey(workspaceId, userId), latest,
-                        (a, b) -> a.isAfter(b) ? a : b));
+        Map<Long, LocalDateTime> revisions = scannedRevisions.computeIfAbsent(scanKey(workspaceId, userId),
+                ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        messages.forEach(message -> revisions.put(message.getContentRefId(), revision(message)));
 
         List<Suggestion> candidates = new ArrayList<>();
         for (AiCandidate c : result.candidates() == null ? List.<AiCandidate>of() : result.candidates()) {
@@ -144,7 +147,7 @@ public class SuggestionService {
         List<Suggestion> saved = saveNew(userId, excludeDuplicateCandidates(userId, candidates));
         log.info("후보 탐지: workspaceId={}, userId={}, messages={}, created={}", workspaceId, userId,
                 messages.size(), saved.size());
-        return new DetectResultResponse(messages.size(), toDtos(saved));
+        return new DetectResultResponse(messages.size(), toDtos(saved), direct.warnings());
     }
 
     // ===================== 조회 =====================
@@ -297,18 +300,26 @@ public class SuggestionService {
 
     /** 명세서 filterRelevantMessages: 본인이 쓰거나 멘션된 Slack 메시지 + 내 Gmail, 이미 살펴본 메시지 제외 */
     List<ContentRef> filterRelevantMessages(Long workspaceId, Long userId) {
+        return filterRelevantMessages(workspaceId, userId, List.of());
+    }
+
+    private List<ContentRef> filterRelevantMessages(Long workspaceId, Long userId, List<ContentRef> directMessages) {
         syncGmail(workspaceId, userId);
         LocalDateTime after = LocalDateTime.now(SlackApiClient.ZONE).minusDays(LOOKBACK_DAYS);
         List<ContentRef> all = new ArrayList<>(slackContentService.findMessagesByUser(workspaceId, userId));
+        directMessages.stream().filter(message -> workspaceId.equals(message.getWorkspaceId())
+                && userId.equals(message.getOwnerUserId()) && message.getProvider() == Provider.SLACK).forEach(all::add);
         all.addAll(contentRefRepository.findAllByWorkspaceIdAndOwnerUserIdAndProviderAndCreatedAtAfterOrderByCreatedAtDesc(
                 workspaceId, userId, Provider.GMAIL, after));
-        LocalDateTime scanned = scannedUntil.get(scanKey(workspaceId, userId));
+        Map<Long, LocalDateTime> scanned = scannedRevisions.computeIfAbsent(scanKey(workspaceId, userId),
+                ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        scanned.keySet().retainAll(all.stream().map(ContentRef::getContentRefId).toList());
         Set<Long> seen = suggestionRepository.findAllByOwnerUserIdAndSourceContentRefIdIn(userId,
                         all.stream().map(ContentRef::getContentRefId).toList()).stream()
                 .map(Suggestion::getSourceContentRefId).collect(Collectors.toSet());
         return all.stream()
                 .filter(m -> !m.isOriginDeleted() && !seen.contains(m.getContentRefId()))
-                .filter(m -> scanned == null || (m.getCreatedAt() != null && m.getCreatedAt().isAfter(scanned)))
+                .filter(m -> !revision(m).equals(scanned.get(m.getContentRefId())))
                 .collect(Collectors.toMap(ContentRef::getContentRefId, Function.identity(), (a, b) -> a,
                         LinkedHashMap::new))
                 .values().stream()
@@ -333,6 +344,11 @@ public class SuggestionService {
 
     private static String scanKey(Long workspaceId, Long userId) {
         return workspaceId + ":" + userId;
+    }
+
+    private static LocalDateTime revision(ContentRef source) {
+        return source.getLastModifiedAt() != null ? source.getLastModifiedAt()
+                : source.getCreatedAt() != null ? source.getCreatedAt() : LocalDateTime.MIN;
     }
 
     /** 명세서 excludeDuplicateCandidates: 대기 중 후보, 개인 할 일, 담당 Task와 제목이 겹치면 제외 */
@@ -419,6 +435,7 @@ public class SuggestionService {
     }
 
     private static String sourceName(ContentRef ref) {
+        if (ref.getProvider() == Provider.SLACK && ref.getOwnerUserId() != null) return "Slack DM";
         return ref.getProvider() == Provider.SLACK
                 ? "Slack " + Objects.requireNonNullElse(ref.getTitle(), "")
                 : "메일";

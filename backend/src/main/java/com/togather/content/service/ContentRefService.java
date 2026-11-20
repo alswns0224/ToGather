@@ -155,6 +155,10 @@ public class ContentRefService {
         ContentRef ref = stored
             .map(existing -> {
 
+                if (command.provider() == Provider.SLACK && !Objects.equals(existing.getOwnerUserId(), command.ownerUserId())) {
+                    throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                }
+
                 // 1. 기존 콘텐츠의 변경 사항 확인
                 boolean contentChanged =
                     !Objects.equals(

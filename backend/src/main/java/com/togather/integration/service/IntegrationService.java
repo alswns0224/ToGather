@@ -178,6 +178,10 @@ public class IntegrationService {
     public ConnectionStatusDTO selectTargets(Long workspaceId, Long userId, Long connectionId,
                                              TargetSelectRequest request) {
         ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId);
+        if (connection.getProvider() == Provider.SLACK
+                && request.targets().stream().anyMatch(target -> target.id().startsWith("D"))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Slack DM은 개인 AI 업무 보조에서만 수집합니다.");
+        }
         targetRepository.deleteAllByConnectionId(connectionId);
         targetRepository.flush();
         List<IntegrationTarget> saved = targetRepository.saveAll(request.targets().stream()
@@ -275,6 +279,31 @@ public class IntegrationService {
     @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = BusinessException.class)
     public Optional<String> findAccessToken(Long workspaceId, Long userId, Provider provider) {
         return findUsableConnection(workspaceId, userId, provider).map(this::validAccessToken);
+    }
+
+    /** 개인 입력 수집 전용. 팀원의 연결로 대체하지 않으며 채널 선택 여부와 무관하다. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = BusinessException.class)
+    public Optional<OwnAccess> findOwnAccess(Long workspaceId, Long userId, Provider provider) {
+        try {
+            workspaceAccessChecker.checkMember(workspaceId, userId);
+        } catch (BusinessException denied) {
+            // 내부 권한 검사에서 rollback-only가 된 경우에도 원래 접근 거절을 유지한다.
+            org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            throw denied;
+        }
+        return connectionRepository.findFirstByWorkspaceIdAndUserIdAndProviderAndStatusNot(
+                workspaceId, userId, provider, ConnectionStatus.DISCONNECTED)
+                .map(connection -> {
+                    String token = validAccessToken(connection);
+                    return new OwnAccess(connection.getConnectionId(), connection.getExternalAccountId(), connection.getScope(), token);
+                });
+    }
+
+    public record OwnAccess(Long connectionId, String externalAccountId, String scope, String accessToken) {
+        @Override
+        public String toString() {
+            return "OwnAccess[connectionId=" + connectionId + "]";
+        }
     }
 
     /** 본인이 이 서비스를 연결했는지 (재인증 필요 상태 포함) */

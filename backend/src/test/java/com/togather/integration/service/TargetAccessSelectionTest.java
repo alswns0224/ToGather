@@ -47,6 +47,30 @@ class TargetAccessSelectionTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 개인_Slack_수집은_본인_연결만_사용하고_채널선택을_요구하지_않는다() {
+        var connection = connections.save(new ServiceConnection(workspaceId, userId, Provider.SLACK, "T1:U1",
+                cipher.encrypt("private-token", null), "im:read,im:history", LocalDateTime.now().plusDays(1)));
+        try (var scope = operations.openScope()) {
+            assertThat(integrations.findOwnAccess(workspaceId, otherId, Provider.SLACK)).isEmpty();
+            var own = integrations.findOwnAccess(workspaceId, userId, Provider.SLACK).orElseThrow();
+            assertThat(own.connectionId()).isEqualTo(connection.getConnectionId());
+            assertThat(own.accessToken()).isEqualTo("private-token");
+            assertThat(own.toString()).doesNotContain("private-token", "im:read");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> operations.beginDisconnect(connection))
+                    .isInstanceOf(com.togather.common.exception.BusinessException.class);
+        }
+        connection.disconnect(); connections.save(connection);
+        assertThat(integrations.findOwnAccess(workspaceId, userId, Provider.SLACK)).isEmpty();
+    }
+
+    @Test
+    void 개인_토큰은_다른워크스페이스와_비멤버에게_주지_않는다() {
+        Long outsider = createUser("외부", UUID.randomUUID() + "@test.example");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> integrations.findOwnAccess(workspaceId, outsider, Provider.SLACK))
+                .isInstanceOf(com.togather.common.exception.BusinessException.class);
+    }
+
+    @Test
     void 대상이_없으면_다른_연결로_대체하지_않고_기존_두_인자_호출은_유지한다() {
         ServiceConnection first = save(userId, "current-calendar", "first-token");
         try (var scope = operations.openScope()) {
