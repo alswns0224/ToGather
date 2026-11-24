@@ -168,6 +168,50 @@ class ContentAccessServiceTest extends IntegrationTestSupport {
                 .contains(open.getContentRefId()).doesNotContain(secret.getContentRefId());
     }
 
+    @Test
+    void 원본에서_내보내져_토큰이_막히면_저장해_둔_결과가_있어도_바로_숨긴다() {
+        assertThat(access.visibleTargets(workspaceId, member, Provider.SLACK)).containsExactly("C-OPEN");
+        // Slack 워크스페이스에서 내보내짐 → 토큰 거절
+        when(slack.getMemberChannelIds("member-slack")).thenThrow(new BusinessException(ErrorCode.REAUTH_REQUIRED));
+        access.forgetAll();
+        assertThat(access.visibleTargets(workspaceId, member, Provider.SLACK)).isEmpty();
+    }
+
+    @Test
+    void 채널에서_나가면_다시_확인해_안_보인다() {
+        assertThat(access.visibleTargets(workspaceId, member, Provider.SLACK)).containsExactly("C-OPEN");
+        when(slack.getMemberChannelIds("member-slack")).thenReturn(Set.of("C-OTHER"));
+        access.forgetAll(); // Slack member_left_channel 이벤트를 받았을 때
+        assertThat(access.visibleTargets(workspaceId, member, Provider.SLACK)).isEmpty();
+    }
+
+    @Test
+    void 네트워크가_잠깐_실패하면_직전_결과를_쓴다() {
+        assertThat(access.visibleTargets(workspaceId, member, Provider.SLACK)).containsExactly("C-OPEN");
+        when(slack.getMemberChannelIds("member-slack")).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+        ReflectionTestUtils.setField(access, "cache", expired(access));
+        assertThat(access.visibleTargets(workspaceId, member, Provider.SLACK)).containsExactly("C-OPEN");
+    }
+
+    /** 저장해 둔 결과를 그대로 두되 확인 시각만 오래전으로 돌린다. */
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Object> expired(ContentAccessService access) {
+        var cache = (java.util.Map<String, Object>) ReflectionTestUtils.getField(access, "cache");
+        var copy = new java.util.concurrent.ConcurrentHashMap<String, Object>();
+        cache.forEach((key, entry) -> {
+            try {
+                var record = entry.getClass();
+                var ctor = record.getDeclaredConstructors()[0];
+                ctor.setAccessible(true);
+                copy.put(key, ctor.newInstance(record.getRecordComponents()[0].getAccessor().invoke(entry),
+                    record.getRecordComponents()[1].getAccessor().invoke(entry), java.time.Instant.EPOCH));
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        return copy;
+    }
+
     // ===================== 준비 =====================
 
     private void connect(Long userId, Provider provider, String token, String... targetIds) {

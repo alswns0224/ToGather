@@ -276,7 +276,23 @@ function ServiceCard({
                 재인증하기
               </a>
             ) : label.target ? (
-              <button type="button" className="btn btn-primary" onClick={() => onSelect(mine)}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() =>
+                  // 팀 자료 서비스는 팀 전체에 목록이 하나라, 지금 팀이 쓰는 대상을 체크한 채로 연다.
+                  onSelect(
+                    item.personal
+                      ? mine
+                      : {
+                          ...mine,
+                          targets: [
+                            ...new Map(item.connections.flatMap((c) => c.targets).map((t) => [t.id, t])).values(),
+                          ],
+                        },
+                  )
+                }
+              >
                 {label.target} 선택
               </button>
             ) : null}

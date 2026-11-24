@@ -187,6 +187,14 @@ public class IntegrationService {
         List<IntegrationTarget> saved = targetRepository.saveAll(request.targets().stream()
                 .map(t -> new IntegrationTarget(connectionId, t.id(), t.name()))
                 .toList());
+        if (!PERSONAL_PROVIDERS.contains(connection.getProvider())) {
+            // 팀 자료 서비스(Slack·Notion·Drive)의 연동 대상은 팀 전체에 하나다. 마지막으로 고른 목록이 팀 목록이 되고,
+            // 다른 팀원 연결에 남아 있던 대상은 지운다. (해제한 채널이 다른 사람 연결 때문에 계속 보이지 않게)
+            connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId,
+                            connection.getProvider(), ConnectionStatus.DISCONNECTED).stream()
+                    .filter(other -> !other.getConnectionId().equals(connectionId))
+                    .forEach(other -> targetRepository.deleteAllByConnectionId(other.getConnectionId()));
+        }
         if (connection.getStatus() == ConnectionStatus.TARGET_NOT_SELECTED) {
             connection.changeStatus(ConnectionStatus.CONNECTED);
         }

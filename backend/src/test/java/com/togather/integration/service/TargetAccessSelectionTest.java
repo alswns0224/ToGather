@@ -102,6 +102,29 @@ class TargetAccessSelectionTest extends IntegrationTestSupport {
                 e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.WORKSPACE_OWNER_REQUIRED));
     }
 
+    @Test
+    void 팀_자료_서비스는_마지막으로_고른_목록이_팀_목록이_되고_다른_연결의_대상은_지운다() {
+        ServiceConnection mine = slack(userId, "C-ALL", "C-SOCIAL", "C-NEW", "C-TEST");
+        ServiceConnection others = slack(otherId, "C-ALL", "C-SOCIAL", "C-NEW", "C-TEST");
+        integrations.selectTargets(workspaceId, userId, mine.getConnectionId(), new com.togather.integration.dto.TargetSelectRequest(
+            java.util.List.of(new com.togather.integration.dto.TargetSelectRequest.Target("C-ALL", "전체"),
+                new com.togather.integration.dto.TargetSelectRequest.Target("C-TEST", "test"))));
+        assertThat(integrations.getConnectionTargets(workspaceId, Provider.SLACK))
+            .as("해제한 채널이 다른 팀원 연결 때문에 남지 않는다").containsExactlyInAnyOrder("C-ALL", "C-TEST");
+        assertThat(targets.findAllByConnectionIdIn(java.util.List.of(others.getConnectionId()))).isEmpty();
+    }
+
+    private ServiceConnection slack(Long owner, String... channelIds) {
+        var connection = new ServiceConnection(workspaceId, owner, Provider.SLACK, UUID.randomUUID().toString(),
+            cipher.encrypt("slack-" + owner, "test-refresh"), "test-scope", LocalDateTime.now().plusDays(1));
+        connection.changeStatus(ConnectionStatus.CONNECTED);
+        connection = connections.save(connection);
+        for (String id : channelIds) {
+            targets.save(new IntegrationTarget(connection.getConnectionId(), id, id));
+        }
+        return connection;
+    }
+
     private ServiceConnection save(Long owner, String calendarId, String token) {
         var connection = new ServiceConnection(workspaceId, owner, Provider.GOOGLE_CALENDAR, UUID.randomUUID().toString(),
             cipher.encrypt(token, "test-refresh"), "test-scope", LocalDateTime.now().plusDays(1));

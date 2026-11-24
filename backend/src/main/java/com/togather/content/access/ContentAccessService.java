@@ -44,7 +44,8 @@ public class ContentAccessService {
     /** 팀원마다 따로 연동해 원본 권한대로 보는 팀 자료 서비스 */
     public static final Set<Provider> MEMBER_SCOPED = Set.of(Provider.SLACK, Provider.NOTION, Provider.GOOGLE_DRIVE);
 
-    private static final Duration TTL = Duration.ofMinutes(5);
+    /** 원본에서 내보내지면 이 시간 안에 ToGather에서도 안 보인다. (Slack 채널 이벤트를 받으면 바로) */
+    private static final Duration TTL = Duration.ofMinutes(1);
     private static final String NOTION_PAGE_PREFIX = "page:";
 
     private final IntegrationService integrationService;
@@ -103,8 +104,16 @@ public class ContentAccessService {
             cache.put(key, new Entry(own.get().connectionId(), visible, Instant.now()));
             return visible;
         } catch (RuntimeException e) {
-            log.info("원본 권한 확인 실패, 직전 결과 사용: workspaceId={}, userId={}, provider={}, error={}", workspaceId,
-                    userId, provider, e instanceof BusinessException be ? be.getErrorCode() : e.getClass().getSimpleName());
+            ErrorCode code = e instanceof BusinessException be ? be.getErrorCode() : ErrorCode.EXTERNAL_API_ERROR;
+            if (!TRANSIENT.contains(code)) {
+                // 토큰이 막혔다(워크스페이스·팀에서 내보내짐, 권한 회수) → 바로 아무것도 보여 주지 않는다.
+                log.info("원본 권한 확인 거절, 숨김: workspaceId={}, userId={}, provider={}, error={}", workspaceId, userId,
+                        provider, code);
+                cache.put(key, new Entry(own.get().connectionId(), Set.of(), Instant.now()));
+                return Set.of();
+            }
+            log.info("원본 권한 확인 일시 실패, 직전 결과 사용: workspaceId={}, userId={}, provider={}, error={}",
+                    workspaceId, userId, provider, code);
             return cached != null && cached.connectionId().equals(own.get().connectionId())
                     ? intersect(cached.visible(), targets) : Set.of();
         }
@@ -196,6 +205,14 @@ public class ContentAccessService {
         if (!hasOwnConnection(workspaceId, userId, provider)) {
             throw new BusinessException(ErrorCode.OWN_CONNECTION_REQUIRED);
         }
+    }
+
+    /** 네트워크·호출 제한처럼 잠깐 실패한 경우만 직전 결과를 쓴다. 나머지(재인증 필요 등)는 숨긴다. */
+    private static final Set<ErrorCode> TRANSIENT = Set.of(ErrorCode.EXTERNAL_API_ERROR, ErrorCode.SLACK_RATE_LIMITED);
+
+    /** 모든 팀원의 확인 결과를 버린다. (원본 멤버가 바뀌었다는 알림을 받았을 때) */
+    public void forgetAll() {
+        cache.clear();
     }
 
     /** 연결·해제·대상 변경 뒤 다시 확인하게 한다. */
