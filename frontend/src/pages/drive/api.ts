@@ -138,6 +138,15 @@ export const getDriveFolders = (
 export const getDriveFolderNames = (workspaceId: string) =>
   http.get<{ folderId: string; name: string | null }[]>(ws(workspaceId, '/drive/folders/names'));
 
+export interface DriveFolderHierarchy {
+  folderId: string;
+  name: string | null;
+  ancestors: { folderId: string; name: string | null }[];
+}
+
+export const getDriveFolderHierarchy = (workspaceId: string) =>
+  http.get<DriveFolderHierarchy[]>(ws(workspaceId, '/drive/folders/hierarchy'));
+
 // =====================================================
 // 1-b. Google Drive 하위 폴더 조회
 // =====================================================

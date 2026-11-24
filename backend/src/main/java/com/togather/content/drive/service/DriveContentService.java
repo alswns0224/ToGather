@@ -29,8 +29,14 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -121,6 +127,60 @@ public class DriveContentService {
 
     /** @param name 폴더 이름 (모르면 null) */
     public record DriveFolderResponse(String folderId, String name) {
+    }
+
+    /** ancestors는 가장 위의 연동 폴더부터 실제 직계 부모까지이며, 연동 범위 밖 경로는 내보내지 않는다. */
+    public record DriveFolderHierarchyResponse(String folderId, String name, List<DriveFolderResponse> ancestors) {
+    }
+
+    public List<DriveFolderHierarchyResponse> getFolderHierarchy(Long workspaceId, Long userId) {
+        List<DriveFolderResponse> folders = getFolderNames(workspaceId, userId);
+        if (folders.isEmpty()) return List.of();
+        String token = integrationService.getAccessToken(workspaceId, userId, PROVIDER);
+        Set<String> selected = folders.stream().map(DriveFolderResponse::folderId).collect(java.util.stream.Collectors.toSet());
+        Map<String, Optional<DriveFile>> metadata = new HashMap<>();
+        return folders.stream().map(folder -> {
+            DriveFile file = folderMetadata(token, folder.folderId(), metadata)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            return new DriveFolderHierarchyResponse(folder.folderId(),
+                    file.name() == null ? folder.name() : file.name(), folderAncestors(token, file, selected, metadata));
+        }).toList();
+    }
+
+    private List<DriveFolderResponse> folderAncestors(String token, DriveFile folder, Set<String> selected,
+                                                     Map<String, Optional<DriveFile>> metadata) {
+        List<DriveFolderResponse> reverse = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        visited.add(folder.id());
+        DriveFile current = folder;
+        int lastSelected = -1;
+        for (int depth = 0; depth < 32; depth++) {
+            if (current.parents().isEmpty()) break;
+            String parentId = current.parents().getFirst();
+            if (!visited.add(parentId)) return List.of();
+            Optional<DriveFile> parent = folderMetadata(token, parentId, metadata);
+            if (parent.isEmpty() || parent.get().trashed()
+                    || !"application/vnd.google-apps.folder".equals(parent.get().mimeType())) break;
+            current = parent.get();
+            reverse.add(new DriveFolderResponse(current.id(), current.name()));
+            if (selected.contains(current.id())) lastSelected = reverse.size() - 1;
+            if (depth == 31 && !current.parents().isEmpty()) return List.of();
+        }
+        if (lastSelected < 0) return List.of();
+        List<DriveFolderResponse> result = new ArrayList<>(reverse.subList(0, lastSelected + 1));
+        Collections.reverse(result);
+        return List.copyOf(result);
+    }
+
+    private Optional<DriveFile> folderMetadata(String token, String id, Map<String, Optional<DriveFile>> metadata) {
+        return metadata.computeIfAbsent(id, key -> {
+            try { return Optional.ofNullable(driveApiClient.getFileMetadata(token, key)); }
+            catch (BusinessException failure) {
+                if (failure.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND
+                        || failure.getErrorCode() == ErrorCode.CONTENT_ACCESS_DENIED) return Optional.empty();
+                throw failure;
+            }
+        });
     }
 
     public record DriveSubfolderResponse(String id, String name) {
