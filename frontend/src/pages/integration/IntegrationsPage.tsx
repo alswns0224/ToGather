@@ -181,11 +181,12 @@ function ServiceCard({
   const others = item.personal ? [] : item.connections.filter((c) => !c.mine);
   // 연결한 계정 이름(Slack 워크스페이스·메일 주소)은 내 연결일 때만 보여 준다.
   const account = mine?.accountLabel ?? mine?.externalAccountId;
-  const names = [...(mine ? ['내가'] : []), ...others.map((c) => `${c.connectedByName ?? '팀원'}님이`)];
+  // 예: "나, 백민준 님, 이찬서 님이 연결" / 나만이면 "내가 연결"
+  const names = [...new Set([...(mine ? ['나'] : []), ...others.map((c) => `${c.connectedByName ?? '팀원'} 님`)])];
   const connectedBy =
     names.length === 0
       ? '아직 연결한 사람이 없어요'
-      : `${account ? `${account} · ` : ''}${[...new Set(names)].join(', ')} 연결`;
+      : `${account ? `${account} · ` : ''}${names.length === 1 && names[0] === '나' ? '내가' : `${names.join(', ')}이`} 연결`;
 
   const statuses = useAsync(
     () => (mine ? getSyncStatuses(workspaceId, item.provider) : Promise.resolve([])),
