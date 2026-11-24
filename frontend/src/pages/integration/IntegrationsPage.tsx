@@ -177,6 +177,15 @@ function ServiceCard({
         c.targets.map((t) => ({ name: t.name ?? t.id, by: c.mine ? '나' : `${c.connectedByName ?? '팀원'}` })),
       );
 
+  // 누가 연결했는지: 팀 자료 서비스는 연결한 팀원들을, 개인 서비스는 내 계정만 보여 준다.
+  const others = item.personal ? [] : item.connections.filter((c) => !c.mine);
+  const account = (mine ?? others[0])?.accountLabel ?? (mine ?? others[0])?.externalAccountId;
+  const names = [...(mine ? ['내가'] : []), ...others.map((c) => `${c.connectedByName ?? '팀원'}님이`)];
+  const connectedBy =
+    names.length === 0
+      ? '아직 연결한 사람이 없어요'
+      : `${account ? `${account} · ` : ''}${[...new Set(names)].join(', ')} 연결`;
+
   const statuses = useAsync(
     () => (mine ? getSyncStatuses(workspaceId, item.provider) : Promise.resolve([])),
     [workspaceId, item.provider, mine?.connectionId],
@@ -222,9 +231,7 @@ function ServiceCard({
             <div className="flex flex-wrap items-baseline gap-1">
               <strong className="text-[19px]">{label.name}</strong>
             </div>
-            <div className="truncate text-xs text-[var(--muted)]">
-              {mine ? `${mine.accountLabel ?? mine.externalAccountId ?? '-'} · 내 계정` : '내 계정 연결 전'}
-            </div>
+            <div className="truncate text-xs text-[var(--muted)]">{connectedBy}</div>
           </div>
         </div>
         <span className={`badge ${badge.className}`}>{badge.text}</span>
