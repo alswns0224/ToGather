@@ -1,9 +1,12 @@
 package com.togather.integration.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.togather.common.enums.ConnectionStatus;
 import com.togather.common.enums.Provider;
+import com.togather.common.exception.BusinessException;
+import com.togather.common.exception.ErrorCode;
 import com.togather.integration.domain.IntegrationTarget;
 import com.togather.integration.domain.ServiceConnection;
 import com.togather.integration.repository.IntegrationTargetRepository;
@@ -89,6 +92,14 @@ class TargetAccessSelectionTest extends IntegrationTestSupport {
         try (var scope = operations.openScope()) {
             assertThat(integrations.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR, "original-calendar")).isEmpty();
         }
+    }
+
+    @Test
+    void 팀장이_아닌_팀원이_남의_연결_대상을_열면_500이_아니라_권한_오류로_알린다() {
+        ServiceConnection ownersConnection = save(userId, "team-calendar", "owner-token");
+        assertThatThrownBy(() -> integrations.getAvailableTargets(workspaceId, otherId, ownersConnection.getConnectionId()))
+            .isInstanceOfSatisfying(BusinessException.class,
+                e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.WORKSPACE_OWNER_REQUIRED));
     }
 
     private ServiceConnection save(Long owner, String calendarId, String token) {

@@ -299,6 +299,22 @@ class SlackDirectMessageServiceTest extends IntegrationTestSupport {
     private SlackMessage message(LocalDateTime at, String threadTs, String text, int replies) {
         return new SlackMessage(SlackApiClient.toTs(at), threadTs, "U2", text, replies, null, at, null, List.of(), null);
     }
+    @Test
+    void 읽을_수_없는_DM은_실패로_세지_않고_건너뛴다() {
+        when(slackApiClient.getDirectMessages("own-token"))
+                .thenReturn(List.of(new DirectMessage("D1", "U2"), new DirectMessage("D9", "USLACKBOT")));
+        when(slackApiClient.getDirectMessageHistory(eq("own-token"), eq("D9"), any(), any(), any()))
+                .thenThrow(new SlackApiClient.ConversationNotFoundException());
+
+        var result = direct.collectForAssistant(workspace, owner);
+
+        assertThat(result.warnings()).as("일부 실패 안내를 띄우지 않는다").isEmpty();
+        assertThat(result.messages()).as("읽을 수 있는 DM은 그대로 수집한다").hasSize(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM sync_state WHERE workspace_id=? AND failure_count > 0", Integer.class, workspace))
+                .as("실패 기록이 남지 않는다").isZero();
+    }
+
     private void history(List<SlackMessage> messages, String cursor) {
         when(slackApiClient.getDirectMessageHistory(eq("own-token"), eq("D1"), any(), any(), any()))
                 .thenReturn(new DirectMessagePage(messages, cursor));

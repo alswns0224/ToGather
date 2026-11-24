@@ -148,6 +148,10 @@ public class SlackDirectMessageService {
             fetched++;
             last = job.key();
             try { pending |= synchronizePage(workspaceId, userId, own, prefix, target, job, state, now); }
+            catch (SlackApiClient.ConversationNotFoundException unreadable) {
+                // 목록에는 있지만 기록을 읽을 수 없는 DM(비활성 사용자·시스템 봇 등)은 실패로 세지 않고 건너뛴다.
+                states.recordSuccess(state.getSyncStateId(), now, null, now);
+            }
             catch (RuntimeException error) {
                 states.recordFailure(state.getSyncStateId(), error instanceof BusinessException be
                         ? be.getErrorCode().name() : "EXTERNAL_API_ERROR", now);

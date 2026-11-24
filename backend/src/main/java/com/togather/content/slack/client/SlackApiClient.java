@@ -90,6 +90,16 @@ public class SlackApiClient {
     public record DirectMessagePage(List<SlackMessage> messages, String nextCursor) {
     }
 
+    /**
+     * 읽을 수 없는 대화(channel_not_found). 비활성 사용자·시스템 봇과의 DM처럼 목록에는 나오지만 기록은 못 읽는 대화가 있다.
+     * 다른 곳에서는 기존처럼 외부 API 오류로 다루고, 개인 DM 수집만 이 예외를 보고 그 대화를 건너뛴다.
+     */
+    public static class ConversationNotFoundException extends BusinessException {
+        public ConversationNotFoundException() {
+            super(ErrorCode.EXTERNAL_API_ERROR);
+        }
+    }
+
     /** 429의 Retry-After를 개인 수집의 재시도 시각에 반영한다. */
     public static class RateLimitException extends BusinessException {
         private final long retryAfterSeconds;
@@ -356,6 +366,10 @@ public class SlackApiClient {
         if (FORBIDDEN_ERRORS.contains(error)) {
             log.info("Slack {} 권한 없음: {}", method, error);
             throw new BusinessException(ErrorCode.SLACK_ACTION_FORBIDDEN);
+        }
+        if ("channel_not_found".equals(error)) {
+            log.info("Slack {}: 대화를 찾을 수 없음 (channel_not_found)", method);
+            throw new ConversationNotFoundException();
         }
         log.warn("Slack {} 오류: {}", method, error);
         throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
