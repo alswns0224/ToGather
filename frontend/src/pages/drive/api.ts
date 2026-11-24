@@ -139,6 +139,48 @@ export const getDriveFolderNames = (workspaceId: string) =>
   http.get<{ folderId: string; name: string | null }[]>(ws(workspaceId, '/drive/folders/names'));
 
 // =====================================================
+// 1-b. Google Drive 하위 폴더 조회
+// =====================================================
+
+export interface DriveSubfolder {
+  id: string;
+  name: string | null;
+}
+
+/**
+ * GET /api/workspaces/{workspaceId}/drive/folders/{folderId}/subfolders
+ */
+export const getDriveSubfolders = (
+  workspaceId: string,
+  folderId: string,
+): Promise<DriveSubfolder[]> =>
+  http.get<DriveSubfolder[]>(
+    ws(workspaceId, `/drive/folders/${encodeURIComponent(folderId)}/subfolders`),
+  );
+
+export interface DriveDirectFile {
+  id: string;
+  name: string | null;
+  mimeType: string | null;
+  webViewLink: string | null;
+  modifiedAt: string | null;
+  fileSize: number | null;
+}
+
+/**
+ * GET /api/workspaces/{workspaceId}/drive/folders/{folderId}/files
+ *
+ * Google Drive API에서 직접 조회 (하위 폴더 탐색용)
+ */
+export const getDriveDirectFiles = (
+  workspaceId: string,
+  folderId: string,
+): Promise<DriveDirectFile[]> =>
+  http.get<DriveDirectFile[]>(
+    ws(workspaceId, `/drive/folders/${encodeURIComponent(folderId)}/files`),
+  );
+
+// =====================================================
 // 2. Google Drive 파일 목록 조회
 // =====================================================
 

@@ -346,6 +346,86 @@ public class DriveApiClient {
     }
 
     // =====================================================
+    // 3-b. 하위 폴더 목록 조회
+    // =====================================================
+
+    public List<DriveFile> listSubfolders(
+        String accessToken,
+        String folderId
+    ) {
+
+        validateId(folderId);
+
+        List<DriveFile> folders = new ArrayList<>();
+        String pageToken = null;
+
+        for (int page = 0; page < MAX_PAGES; page++) {
+
+            UriComponentsBuilder uri =
+                UriComponentsBuilder.fromUriString(
+                        BASE + "/files"
+                    )
+                    .queryParam(
+                        "q",
+                        "'" + folderId
+                            + "' in parents and trashed = false"
+                            + " and mimeType = 'application/vnd.google-apps.folder'"
+                    )
+                    .queryParam(
+                        "fields",
+                        "nextPageToken,files("
+                            + FILE_FIELDS + ")"
+                    )
+                    .queryParam("pageSize", 100)
+                    .queryParam("supportsAllDrives", true)
+                    .queryParam(
+                        "includeItemsFromAllDrives",
+                        true
+                    );
+
+            if (pageToken != null) {
+                uri.queryParam(
+                    "pageToken",
+                    pageToken
+                );
+            }
+
+            Map<String, Object> body =
+                request(accessToken, uri);
+
+            for (Map<String, Object> item :
+                list(body, "files")) {
+
+                DriveFile file = toFile(item);
+
+                if (file != null
+                    && !file.trashed()
+                    && file.parents().contains(folderId)
+                    && "application/vnd.google-apps.folder"
+                    .equals(file.mimeType())) {
+
+                    folders.add(file);
+                }
+            }
+
+            pageToken = str(
+                body,
+                "nextPageToken"
+            );
+
+            if (pageToken == null
+                || pageToken.isBlank()) {
+
+                return List.copyOf(folders);
+            }
+        }
+
+        throw new BusinessException(
+            ErrorCode.EXTERNAL_API_ERROR
+        );
+    }
+
+    // =====================================================
     // 4. Google Drive 증분 동기화
     // =====================================================
 

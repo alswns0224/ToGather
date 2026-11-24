@@ -123,6 +123,36 @@ public class DriveContentController {
     }
 
     /**
+     * 하위 폴더 목록 조회.
+     *
+     * GET /api/workspaces/{workspaceId}/drive/folders/{folderId}/subfolders
+     */
+    @GetMapping("/folders/{folderId}/subfolders")
+    public ApiResponse<List<DriveContentService.DriveSubfolderResponse>> getSubfolders(
+        @LoginUser Long userId,
+        @PathVariable Long workspaceId,
+        @PathVariable String folderId
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(driveContentService.getSubfolders(workspaceId, userId, folderId));
+    }
+
+    /**
+     * 하위 폴더의 파일 목록 (Google Drive API 직접 조회).
+     *
+     * GET /api/workspaces/{workspaceId}/drive/folders/{folderId}/files
+     */
+    @GetMapping("/folders/{folderId}/files")
+    public ApiResponse<List<DriveContentService.DriveDirectFileResponse>> getDirectFiles(
+        @LoginUser Long userId,
+        @PathVariable Long workspaceId,
+        @PathVariable String folderId
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(driveContentService.getDirectFiles(workspaceId, userId, folderId));
+    }
+
+    /**
      * 2. Google Drive 파일 목록 조회.
      *
      * GET /api/workspaces/{workspaceId}/drive/files

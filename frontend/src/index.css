@@ -1634,6 +1634,52 @@ hr {
   font-size: 20px;
 }
 
+.drive-folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.drive-folder-chip:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.drive-folder-chip.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.drive-folder-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.drive-folder-chip.active .drive-folder-count {
+  background: var(--primary);
+  color: white;
+}
+
 .drive-board {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
@@ -1711,6 +1757,19 @@ hr {
 .drive-ext.ext-zip {
   background: var(--warning-soft);
   color: var(--warning);
+}
+
+.drive-ext.ext-folder {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.drive-subfolder-row {
+  background: var(--surface);
+}
+
+.drive-subfolder-row:hover {
+  background: var(--surface-2);
 }
 
 .drive-side {

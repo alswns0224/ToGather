@@ -20,8 +20,10 @@ import {
   canPreviewDriveFile,
   deleteDriveFile,
   formatDriveFileSize,
+  getDriveDirectFiles,
   getDriveDownloadUrl,
   getDriveFiles,
+  getDriveSubfolders,
   getDriveUploadCandidates,
   getDriveFolderNames,
   getDriveFolders,
@@ -32,7 +34,9 @@ import {
   restoreDriveFile,
   syncDrive,
   uploadDriveFile,
+  type DriveDirectFile,
   type DriveFile,
+  type DriveSubfolder,
   type DriveSyncStatus,
   type DriveUploadCandidate,
   type DriveUploadOptions,
@@ -137,6 +141,23 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     useState<number | null>(null);
 
   const [showTrash, setShowTrash] = useState(false);
+
+  // ---------------------------------------------------
+  // 1-b. 폴더 탐색기 상태
+  // ---------------------------------------------------
+
+  const [activeFolderId, setActiveFolderId] =
+    useState<string | null>(null);
+  const [folderPanelOpen, setFolderPanelOpen] =
+    useState(true);
+  const [folderPath, setFolderPath] =
+    useState<{ id: string; name: string }[]>([]);
+  const [subfolders, setSubfolders] =
+    useState<DriveSubfolder[]>([]);
+  const [subfoldersLoading, setSubfoldersLoading] =
+    useState(false);
+  const [directFiles, setDirectFiles] =
+    useState<DriveDirectFile[]>([]);
 
   // ---------------------------------------------------
   // 2. Task 상태
@@ -436,9 +457,75 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   // 9. 파일 검색 및 선택
   // ===================================================
 
+  // 폴더별 파일 조회
+  const [folderFiles, setFolderFiles] = useState<DriveFile[] | null>(null);
+  const [folderFilesLoading, setFolderFilesLoading] = useState(false);
+
+  const currentBrowseFolderId = folderPath.length > 0
+    ? folderPath[folderPath.length - 1].id
+    : activeFolderId;
+
+  useEffect(() => {
+    if (!workspaceId || !activeFolderId) {
+      setFolderFiles(null);
+      setSubfolders([]);
+      setDirectFiles([]);
+      return;
+    }
+    let active = true;
+    const browseFolderId = currentBrowseFolderId ?? activeFolderId;
+    const isSubfolder = folderPath.length > 0;
+    setFolderFilesLoading(true);
+    setSubfoldersLoading(true);
+    Promise.allSettled([
+      isSubfolder
+        ? getDriveDirectFiles(workspaceId, browseFolderId)
+        : getDriveFiles(workspaceId, browseFolderId),
+      getDriveSubfolders(workspaceId, browseFolderId),
+    ]).then(([filesResult, subfoldersResult]) => {
+      if (!active) return;
+      if (isSubfolder) {
+        setFolderFiles(null);
+        if (filesResult.status === 'fulfilled') setDirectFiles(filesResult.value as DriveDirectFile[]);
+        else setDirectFiles([]);
+      } else {
+        setDirectFiles([]);
+        if (filesResult.status === 'fulfilled') setFolderFiles(filesResult.value as DriveFile[]);
+        else setFolderFiles(null);
+      }
+      if (subfoldersResult.status === 'fulfilled') setSubfolders(subfoldersResult.value);
+      else setSubfolders([]);
+    }).finally(() => {
+      if (!active) return;
+      setFolderFilesLoading(false);
+      setSubfoldersLoading(false);
+    });
+    return () => { active = false; };
+  }, [workspaceId, activeFolderId, currentBrowseFolderId, files, folderPath.length]);
+
+  function navigateToSubfolder(subfolder: DriveSubfolder) {
+    setFolderPath(prev => [...prev, { id: subfolder.id, name: subfolder.name ?? subfolder.id }]);
+    setSelectedId(null);
+    setQuery('');
+  }
+
+  function navigateToPathIndex(index: number) {
+    if (index < 0) {
+      setFolderPath([]);
+    } else {
+      setFolderPath(prev => prev.slice(0, index + 1));
+    }
+    setSelectedId(null);
+    setQuery('');
+  }
+
+  const isInSubfolder = folderPath.length > 0 && activeFolderId != null;
+
   const currentFiles = showTrash
     ? trashFiles
-    : files;
+    : isInSubfolder
+      ? []
+      : (activeFolderId && folderFiles != null ? folderFiles : files);
 
   const visibleFiles = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -451,6 +538,24 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
         .includes(keyword),
     );
   }, [currentFiles, query]);
+
+  const visibleDirectFiles = useMemo(() => {
+    if (!isInSubfolder) return [];
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return directFiles;
+    return directFiles.filter(f =>
+      (f.name || '').toLowerCase().includes(keyword),
+    );
+  }, [directFiles, query, isInSubfolder]);
+
+  const visibleSubfolders = useMemo(() => {
+    if (showTrash || !activeFolderId) return [];
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return subfolders;
+    return subfolders.filter(f =>
+      (f.name || '').toLowerCase().includes(keyword),
+    );
+  }, [subfolders, query, showTrash, activeFolderId]);
 
   const selectedFile =
     visibleFiles.find(
@@ -1095,7 +1200,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
             <div className="flex items-center gap-1.5">
               <strong className="text-[17px]">{showTrash ? 'Drive 휴지통' : '파일 목록'}</strong>
-              <span className="badge">{showTrash ? trashFiles.length : files.length}</span>
+              <span className="badge">{showTrash ? trashFiles.length : isInSubfolder ? (directFiles.length + subfolders.length) : (activeFolderId && folderFiles ? folderFiles.length + subfolders.length : files.length)}</span>
             </div>
             <a
               href="https://drive.google.com/drive/my-drive"
@@ -1107,7 +1212,104 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
             </a>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-soft)] px-5 pb-4">
+          {/* 연결된 폴더 토글 패널 */}
+          {folderIds.length > 0 && !showTrash && (
+            <div className="border-b border-[var(--border-soft)] px-5 pb-3">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 text-[13px] font-bold text-[var(--muted)] hover:text-[var(--text)]"
+                onClick={() => setFolderPanelOpen(!folderPanelOpen)}
+              >
+                <span className={`inline-block transition-transform ${folderPanelOpen ? 'rotate-90' : ''}`}>▶</span>
+                연결된 폴더 ({folderIds.length})
+              </button>
+              {folderPanelOpen && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={`drive-folder-chip${!activeFolderId ? ' active' : ''}`}
+                    disabled={isBusy}
+                    onClick={() => {
+                      setActiveFolderId(null);
+                      setFolderPath([]);
+                      setSelectedId(null);
+                      setQuery('');
+                    }}
+                  >
+                    전체
+                    <span className="drive-folder-count">{files.length}</span>
+                  </button>
+                  {folderIds.map((id, index) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`drive-folder-chip${activeFolderId === id ? ' active' : ''}`}
+                      disabled={isBusy}
+                      onClick={() => {
+                        setActiveFolderId(id);
+                        setFolderPath([]);
+                        setSelectedId(null);
+                        setQuery('');
+                      }}
+                    >
+                      {folderNames[id] ?? `폴더 ${index + 1}`}
+                      {activeFolderId === id && folderFiles && (
+                        <span className="drive-folder-count">{folderFiles.length}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 현재 폴더 경로 (브레드크럼) */}
+          {activeFolderId && !showTrash && (
+            <div className="flex items-center gap-1.5 border-b border-[var(--border-soft)] px-5 py-2.5 text-[13px]">
+              <button
+                type="button"
+                className="text-[var(--primary)] hover:underline"
+                onClick={() => { setActiveFolderId(null); setFolderPath([]); setSelectedId(null); setQuery(''); }}
+              >
+                Drive
+              </button>
+              <span className="text-[var(--muted)]">/</span>
+              {folderPath.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    className="text-[var(--primary)] hover:underline"
+                    onClick={() => navigateToPathIndex(-1)}
+                  >
+                    {folderNames[activeFolderId] ?? activeFolderId}
+                  </button>
+                  {folderPath.map((entry, idx) => (
+                    <span key={entry.id} className="flex items-center gap-1.5">
+                      <span className="text-[var(--muted)]">/</span>
+                      {idx < folderPath.length - 1 ? (
+                        <button
+                          type="button"
+                          className="text-[var(--primary)] hover:underline"
+                          onClick={() => navigateToPathIndex(idx)}
+                        >
+                          {entry.name}
+                        </button>
+                      ) : (
+                        <span className="font-bold">{entry.name}</span>
+                      )}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <span className="font-bold">
+                  {folderNames[activeFolderId] ?? activeFolderId}
+                </span>
+              )}
+              {(folderFilesLoading || subfoldersLoading) && <span className="text-[var(--muted)]">불러오는 중...</span>}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-soft)] px-5 pb-4 pt-3">
             <div className="segmented">
               <button
                 type="button"
@@ -1119,7 +1321,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
                   setQuery('');
                 }}
               >
-                파일 ({files.length})
+                파일 ({isInSubfolder ? directFiles.length + subfolders.length : activeFolderId && folderFiles ? folderFiles.length + subfolders.length : files.length})
               </button>
               <button
                 type="button"
@@ -1152,7 +1354,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
           {loading ? (
             <div className="py-12 text-center text-[13px] text-[var(--muted)]">Google Drive 파일을 불러오는 중입니다...</div>
-          ) : visibleFiles.length === 0 ? (
+          ) : visibleFiles.length === 0 && visibleSubfolders.length === 0 && visibleDirectFiles.length === 0 ? (
             <div className="py-12 text-center text-[13px] text-[var(--muted)]">
               {query ? '검색 결과가 없습니다.' : showTrash ? '휴지통에 표시할 파일이 없습니다.' : '동기화된 파일이 없습니다.'}
               {!query && !showTrash && (
@@ -1162,7 +1364,31 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               )}
             </div>
           ) : (
-            visibleFiles.map((file) => {
+            <>
+            {visibleSubfolders.map((folder) => (
+              <button
+                key={`folder-${folder.id}`}
+                type="button"
+                onClick={() => navigateToSubfolder(folder)}
+                disabled={isBusy}
+                className="drive-row drive-item drive-subfolder-row max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="drive-ext ext-folder">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-bold">{folder.name || '(이름 없음)'}</span>
+                    <span className="block text-xs text-[var(--muted)]">폴더</span>
+                  </span>
+                </span>
+                <span className="text-sm max-sm:col-span-2 max-sm:row-start-2 max-sm:pl-[50px]" />
+                <span className="text-xs text-[var(--muted)] max-sm:col-start-2 max-sm:row-start-1">▸</span>
+              </button>
+            ))}
+            {!isInSubfolder && visibleFiles.map((file) => {
               const selected = selectedFile?.contentRefId === file.contentRefId;
               const format = fileFormat(file);
               const isWorkingFile = workingFileId === file.contentRefId;
@@ -1199,7 +1425,37 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
                   </span>
                 </button>
               );
-            })
+            })}
+            {isInSubfolder && visibleDirectFiles.map((file) => {
+              const ext = file.name?.match(/\.([a-z0-9]+)$/i)?.[1]?.toUpperCase() || 'FILE';
+              const mime = file.mimeType || '';
+              const format = mime.includes('spreadsheet') ? 'SHEET'
+                : mime.includes('presentation') ? 'SLIDES'
+                : mime.includes('document') ? 'DOC'
+                : mime.includes('pdf') ? 'PDF'
+                : mime.startsWith('image/') ? 'IMAGE'
+                : ext !== 'FILE' ? ext : 'FILE';
+              return (
+                <a
+                  key={file.id}
+                  href={file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="drive-row drive-item max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className={`drive-ext ext-${format.toLowerCase()}`}>{format.slice(0, 4)}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-bold">{file.name || '(제목 없음)'}</span>
+                      <span className="block text-xs text-[var(--muted)]">{formatDriveFileSize(file.fileSize)}</span>
+                    </span>
+                  </span>
+                  <span className="text-sm max-sm:col-span-2 max-sm:row-start-2 max-sm:pl-[50px]">{formatDate(file.modifiedAt)}</span>
+                  <span className="text-xs text-[var(--muted)] max-sm:col-start-2 max-sm:row-start-1">↗</span>
+                </a>
+              );
+            })}
+            </>
           )}
         </div>
 

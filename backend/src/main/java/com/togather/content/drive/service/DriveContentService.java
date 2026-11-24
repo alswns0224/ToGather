@@ -123,6 +123,100 @@ public class DriveContentService {
     public record DriveFolderResponse(String folderId, String name) {
     }
 
+    public record DriveSubfolderResponse(String id, String name) {
+    }
+
+    public record DriveDirectFileResponse(
+        String id, String name, String mimeType,
+        String webViewLink, String modifiedAt, Long fileSize
+    ) {
+    }
+
+    public List<DriveSubfolderResponse> getSubfolders(
+        Long workspaceId,
+        Long userId,
+        String parentFolderId
+    ) {
+
+        workspaceAccessChecker.checkMember(
+            workspaceId,
+            userId
+        );
+
+        List<String> selectedFolders =
+            getSelectedFolders(workspaceId, userId);
+
+        if (selectedFolders.isEmpty()) {
+            return List.of();
+        }
+
+        String rootFolderId = selectedFolders.stream()
+            .filter(id -> id.equals(parentFolderId))
+            .findFirst()
+            .orElse(null);
+
+        String token;
+        if (rootFolderId != null) {
+            token = teamTokenResolver.tokenFor(
+                workspaceId, PROVIDER, rootFolderId, userId
+            );
+        } else {
+            token = selectedFolders.stream()
+                .map(id -> {
+                    try {
+                        return teamTokenResolver.tokenFor(
+                            workspaceId, PROVIDER, id, userId
+                        );
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(t -> t != null)
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(
+                    ErrorCode.INTEGRATION_TARGET_NOT_SELECTED
+                ));
+        }
+
+        return driveApiClient.listSubfolders(token, parentFolderId).stream()
+            .map(f -> new DriveSubfolderResponse(f.id(), f.name()))
+            .toList();
+    }
+
+    public List<DriveDirectFileResponse> getDirectFiles(
+        Long workspaceId,
+        Long userId,
+        String folderId
+    ) {
+
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+
+        List<String> selectedFolders = getSelectedFolders(workspaceId, userId);
+        if (selectedFolders.isEmpty()) {
+            return List.of();
+        }
+
+        String token = selectedFolders.stream()
+            .map(id -> {
+                try {
+                    return teamTokenResolver.tokenFor(workspaceId, PROVIDER, id, userId);
+                } catch (Exception e) {
+                    return null;
+                }
+            })
+            .filter(t -> t != null)
+            .findFirst()
+            .orElseThrow(() -> new BusinessException(ErrorCode.INTEGRATION_TARGET_NOT_SELECTED));
+
+        return driveApiClient.listFolderFiles(token, folderId).stream()
+            .map(f -> new DriveDirectFileResponse(
+                f.id(), f.name(), f.mimeType(), f.webViewLink(),
+                f.modifiedAt() != null ? f.modifiedAt().toString() : null,
+                f.fileSize()
+            ))
+            .toList();
+    }
+
     /**
      * 2. Google Drive 파일 목록 조회.
      *
