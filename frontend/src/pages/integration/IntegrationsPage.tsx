@@ -221,7 +221,6 @@ function ServiceCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-1">
               <strong className="text-[19px]">{label.name}</strong>
-              <span className="text-[13px] text-[var(--muted)]">· 개인 연동</span>
             </div>
             <div className="truncate text-xs text-[var(--muted)]">
               {mine ? `${mine.accountLabel ?? mine.externalAccountId ?? '-'} · 내 계정` : '내 계정 연결 전'}
@@ -231,31 +230,19 @@ function ServiceCard({
         <span className={`badge ${badge.className}`}>{badge.text}</span>
       </div>
 
-      {!item.personal && (
-        <div className="text-[13px] text-[var(--muted)]">
-          팀이 쓰는 {label.target}:{' '}
-          {teamTargets.length > 0 ? (
-            <strong className="text-[var(--text)]">
-              {teamTargets.map((t) => `${t.name} (${t.by})`).join(', ')}
-            </strong>
-          ) : (
-            '아직 아무도 고르지 않았어요'
-          )}
-        </div>
-      )}
-
       {mine && (
         <div className="text-[13px] text-[var(--muted)]">
-          {item.personal ? '수집 대상' : `내가 고른 ${label.target}`}:{' '}
-          <strong className="text-[var(--text)]">{myTargetText}</strong> · 마지막 동기화:{' '}
+          {item.personal ? '수집 대상' : `연동한 ${label.target}`}:{' '}
+          <strong className="text-[var(--text)]">
+            {item.personal
+              ? myTargetText
+              : teamTargets.length > 0
+                ? [...new Set(teamTargets.map((t) => t.name))].join(', ')
+                : '미선택'}
+          </strong>{' '}
+          · 마지막 동기화:{' '}
           {lastSynced ? formatDateTime(lastSynced) : '-'}
           {syncFailed && <span className="text-[var(--warning)]"> (최근 실패)</span>}
-        </div>
-      )}
-
-      {!item.personal && !mine && (
-        <div className="integ-mine">
-          내 계정이 연결되지 않아 팀 자료가 보이지 않아요. 내 계정을 연결하면 내가 볼 수 있는 {label.target}만 보여요.
         </div>
       )}
 
