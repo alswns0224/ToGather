@@ -10,6 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.togather.auth.domain.User;
+import com.togather.auth.repository.UserRepository;
+import com.togather.auth.service.SessionManager;
 import com.togather.support.EmbeddedPostgresConfig;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -21,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -39,7 +43,6 @@ import org.springframework.web.context.WebApplicationContext;
         "spring.datasource.password=unused",
         "togather.app-url=http://localhost:5173",
         "togather.token-key=integration-test-key",
-        "togather.auth.dev-login=true",
         "togather.google.client-id=",
         "togather.google.client-secret=",
         "togather.slack.client-id=",
@@ -53,6 +56,12 @@ class PartAFlowIntegrationTest {
 
     @Autowired
     private WebApplicationContext context;
+
+    @Autowired
+    private UserRepository users;
+
+    @Autowired
+    private SessionManager sessionManager;
 
     private MockMvc mvc;
 
@@ -73,14 +82,25 @@ class PartAFlowIntegrationTest {
         mvc.perform(get("/api/auth/config"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.googleEnabled").value(false))
-                .andExpect(jsonPath("$.data.devLoginEnabled").value(true));
+                .andExpect(jsonPath("$.data.devLoginEnabled").doesNotExist());
+    }
+
+    @Test
+    void 이메일만으로_개발용_로그인을_할_수_없다() throws Exception {
+        MvcResult result = mvc.perform(post("/api/auth/dev-login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"blocked@test.com\",\"name\":\"차단 확인\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"))
+                .andReturn();
+        assertThat(result.getRequest().getSession(false)).isNull();
     }
 
     @Test
     void 워크스페이스_초대_팀원_연동_회의_흐름() throws Exception {
-        MockHttpSession owner = login("owner@test.com", "팀장");
-        MockHttpSession member = login("member@test.com", "팀원");
-        MockHttpSession outsider = login("outsider@test.com", "외부인");
+        MockHttpSession owner = createUserSession("owner@test.com", "팀장");
+        MockHttpSession member = createUserSession("member@test.com", "팀원");
+        MockHttpSession outsider = createUserSession("outsider@test.com", "외부인");
 
         // 내 정보
         call(get("/api/auth/me"), owner).andExpect(jsonPath("$.data.name").value("팀장"));
@@ -298,13 +318,12 @@ class PartAFlowIntegrationTest {
 
     // ===================== 도우미 =====================
 
-    private MockHttpSession login(String email, String name) throws Exception {
-        MvcResult result = mvc.perform(post("/api/auth/dev-login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"%s\",\"name\":\"%s\"}".formatted(email, name)))
-                .andExpect(status().isOk())
-                .andReturn();
-        return (MockHttpSession) result.getRequest().getSession(false);
+    /** 외부 로그인 API를 열지 않고 테스트 DB와 세션에서만 사용자를 준비한다. */
+    private MockHttpSession createUserSession(String email, String name) {
+        User user = users.save(new User("test:" + email, email, name, null));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        sessionManager.createSession(request, user.getUserId());
+        return (MockHttpSession) request.getSession(false);
     }
 
     private ResultActions call(MockHttpServletRequestBuilder request, MockHttpSession session) throws Exception {

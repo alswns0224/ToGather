@@ -58,12 +58,6 @@ togather:
 
   token-key: ${TOGATHER_TOKEN_KEY:}
 
-  auth:
-    # true면 Google 로그인 없이 이메일만으로
-    # 로그인하는 개발용 API를 연다
-    # 운영에서는 false
-    dev-login: ${DEV_LOGIN_ENABLED:false}
-
   # 통합 검색 (C-07·08): BGE-M3 임베딩(Ollama) + Chroma 벡터 검색
   # Ollama·Chroma가 없는 환경에서는 SEARCH_ENABLED=false
   search:

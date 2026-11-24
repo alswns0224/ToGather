@@ -35,7 +35,7 @@
 3. 프론트엔드: `cd frontend && npm install && npm run dev` → http://localhost:5173
    - `/api`로 시작하는 요청은 8080으로 프록시됩니다.
 4. 브라우저에서 http://localhost:5173 접속
-   - `.env`에 `DEV_LOGIN_ENABLED=true`면 Google 설정 없이 이메일·이름만으로 로그인할 수 있습니다. (로컬 전용)
+   - Google 계정으로 로그인합니다. `.env`에 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 설정해 주세요.
 
 DB를 처음 상태로 되돌리려면 `docker compose down -v` 후 다시 `up` 합니다. (로컬 데이터가 모두 지워집니다)
 

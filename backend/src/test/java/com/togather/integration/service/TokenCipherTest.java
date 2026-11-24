@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class TokenCipherTest {
 
     private TokenCipher cipher(String key) {
-        return new TokenCipher(new TogatherProperties("http://localhost", key, null, null, null, null));
+        return new TokenCipher(new TogatherProperties("http://localhost", key, null, null, null));
     }
 
     @Test
