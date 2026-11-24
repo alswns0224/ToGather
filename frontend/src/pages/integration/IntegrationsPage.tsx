@@ -167,15 +167,19 @@ function ServiceCard({
   removingId: number | null;
 }) {
   const label = PROVIDER_LABELS[item.provider];
+  // 모든 서비스는 개인 연동이다. 카드의 상태·버튼은 "내 연결" 기준으로 보여 준다.
   const mine = item.connections.find((c) => c.mine);
-  // 대표 연결: 개인 서비스는 내 연결, 팀 서비스는 첫 연결
-  const primary = item.personal ? mine : item.connections[0];
-  const status = primary?.status ?? 'DISCONNECTED';
-  const badge = STATUS_BADGE[status];
+  const badge = STATUS_BADGE[mine?.status ?? 'DISCONNECTED'];
+  // 팀 자료 서비스(Slack·Notion·Drive): 팀원들이 고른 연동 대상을 모아 보여 준다.
+  const teamTargets = item.personal
+    ? []
+    : item.connections.flatMap((c) =>
+        c.targets.map((t) => ({ name: t.name ?? t.id, by: c.mine ? '나' : `${c.connectedByName ?? '팀원'}` })),
+      );
 
   const statuses = useAsync(
-    () => (primary ? getSyncStatuses(workspaceId, item.provider) : Promise.resolve([])),
-    [workspaceId, item.provider, primary?.connectionId],
+    () => (mine ? getSyncStatuses(workspaceId, item.provider) : Promise.resolve([])),
+    [workspaceId, item.provider, mine?.connectionId],
   );
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -199,13 +203,13 @@ function ServiceCard({
     }
   };
 
-  const targetText = primary
-    ? primary.targets.length > 0
-      ? primary.targets.map((t) => t.name ?? t.id).join(', ')
+  const myTargetText = mine
+    ? mine.targets.length > 0
+      ? mine.targets.map((t) => t.name ?? t.id).join(', ')
       : label.target
         ? '미선택'
         : '내 메일함'
-    : '미선택';
+    : '-';
 
   return (
     <div className="card integ-card">
@@ -217,89 +221,78 @@ function ServiceCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-1">
               <strong className="text-[19px]">{label.name}</strong>
-              <span className="text-[13px] text-[var(--muted)]">· {item.personal ? '개인 연동' : '팀 공용'}</span>
+              <span className="text-[13px] text-[var(--muted)]">· 개인 연동</span>
             </div>
-            {primary && (
-              <div className="truncate text-xs text-[var(--muted)]">
-                {primary.accountLabel ?? primary.externalAccountId ?? '-'} ·{' '}
-                {primary.mine ? '내가 연결' : `${primary.connectedByName}님이 연결`}
-              </div>
-            )}
+            <div className="truncate text-xs text-[var(--muted)]">
+              {mine ? `${mine.accountLabel ?? mine.externalAccountId ?? '-'} · 내 계정` : '내 계정 연결 전'}
+            </div>
           </div>
         </div>
         <span className={`badge ${badge.className}`}>{badge.text}</span>
       </div>
 
-      <div className="text-[13px] text-[var(--muted)]">
-        수집 대상: <strong className="text-[var(--text)]">{targetText}</strong> · 마지막 동기화:{' '}
-        {primary ? (lastSynced ? formatDateTime(lastSynced) : '-') : '-'}
-        {syncFailed && <span className="text-[var(--warning)]"> (최근 실패)</span>}
-      </div>
-
       {!item.personal && (
-        <div className={`integ-mine${mine ? ' on' : ''}`}>
-          {mine ? (
-            <>
-              ✓ 내 계정 연결됨
-              <span className="text-[var(--muted)]"> · {mine.accountLabel ?? mine.externalAccountId ?? '-'}</span>
-            </>
+        <div className="text-[13px] text-[var(--muted)]">
+          팀이 쓰는 {label.target}:{' '}
+          {teamTargets.length > 0 ? (
+            <strong className="text-[var(--text)]">
+              {teamTargets.map((t) => `${t.name} (${t.by})`).join(', ')}
+            </strong>
           ) : (
-            <>내 계정이 연결되지 않아 팀 자료가 보이지 않아요. 내 계정을 연결해 주세요.</>
+            '아직 아무도 고르지 않았어요'
           )}
         </div>
       )}
 
-      {item.connections.length > 1 && (
-        <div className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-          {item.connections
-            .filter((c) => c !== primary)
-            .map((c) => (
-              <div key={c.connectionId} className="flex items-center gap-2">
-                <span className={`badge ${STATUS_BADGE[c.status].className} !text-[10px]`}>{STATUS_BADGE[c.status].text}</span>
-                {c.accountLabel ?? c.externalAccountId ?? '-'} · {c.mine ? '내가 연결' : `${c.connectedByName}님이 연결`}
-                {c.mine && (
-                  <button type="button" className="link-button" onClick={() => onRemove(c)}>
-                    해제
-                  </button>
-                )}
-              </div>
-            ))}
+      {mine && (
+        <div className="text-[13px] text-[var(--muted)]">
+          {item.personal ? '수집 대상' : `내가 고른 ${label.target}`}:{' '}
+          <strong className="text-[var(--text)]">{myTargetText}</strong> · 마지막 동기화:{' '}
+          {lastSynced ? formatDateTime(lastSynced) : '-'}
+          {syncFailed && <span className="text-[var(--warning)]"> (최근 실패)</span>}
+        </div>
+      )}
+
+      {!item.personal && !mine && (
+        <div className="integ-mine">
+          내 계정이 연결되지 않아 팀 자료가 보이지 않아요. 내 계정을 연결하면 내가 볼 수 있는 {label.target}만 보여요.
         </div>
       )}
 
       {syncError && <div className="alert alert-error small">동기화하지 못했습니다. {syncError}</div>}
 
       <div className="flex flex-wrap gap-2">
-        {primary && (
-          <button type="button" className="btn" onClick={sync} disabled={syncing}>
-            {syncing ? '동기화 중...' : '수동 동기화'}
-          </button>
-        )}
-        {primary?.status === 'REAUTH_REQUIRED' && primary.mine ? (
-          <a className="btn btn-primary" href={reauthUrl(workspaceId, primary.connectionId)}>
-            재인증하기
-          </a>
-        ) : primary && label.target ? (
-          <button type="button" className="btn btn-primary" onClick={() => onSelect(primary)}>
-            {label.target} 선택
-          </button>
-        ) : item.configured ? (
-          <a className="btn btn-primary" href={connectUrl(workspaceId, item.provider)}>
-            {mine ? '다른 계정으로 다시 연결' : '연결하기'}
-          </a>
+        {!mine ? (
+          item.configured ? (
+            <a className="btn btn-primary" href={connectUrl(workspaceId, item.provider)}>
+              내 계정 연결
+            </a>
+          ) : (
+            <span className="self-center text-xs text-[var(--muted)]">서버 설정 필요</span>
+          )
         ) : (
-          <span className="self-center text-xs text-[var(--muted)]">서버 설정 필요</span>
-        )}
-        {primary && !item.personal && !mine && item.configured && (
-          <a className="btn btn-primary" href={connectUrl(workspaceId, item.provider)}>
-            내 계정 연결
-          </a>
-        )}
-        {primary && (
-          <button type="button" className="btn btn-danger" onClick={() => onRemove(primary)}
-            disabled={syncing || removingId !== null}>
-            {removingId === primary.connectionId ? '연결 해제 중...' : syncing ? '동기화 중' : '연결 해제'}
-          </button>
+          <>
+            <button type="button" className="btn" onClick={sync} disabled={syncing}>
+              {syncing ? '동기화 중...' : '수동 동기화'}
+            </button>
+            {mine.status === 'REAUTH_REQUIRED' ? (
+              <a className="btn btn-primary" href={reauthUrl(workspaceId, mine.connectionId)}>
+                재인증하기
+              </a>
+            ) : label.target ? (
+              <button type="button" className="btn btn-primary" onClick={() => onSelect(mine)}>
+                {label.target} 선택
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => onRemove(mine)}
+              disabled={syncing || removingId !== null}
+            >
+              {removingId === mine.connectionId ? '연결 해제 중...' : syncing ? '동기화 중' : '연결 해제'}
+            </button>
+          </>
         )}
       </div>
     </div>
