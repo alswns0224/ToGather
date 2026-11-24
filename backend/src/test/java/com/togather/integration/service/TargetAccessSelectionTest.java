@@ -24,6 +24,8 @@ class TargetAccessSelectionTest extends IntegrationTestSupport {
     @Autowired private ServiceConnectionRepository connections;
     @Autowired private IntegrationTargetRepository targets;
     @Autowired private TokenCipher cipher;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.togather.integration.client.SlackOAuthClient slackOAuth;
 
     private Long userId;
     private Long otherId;
@@ -103,15 +105,42 @@ class TargetAccessSelectionTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 팀_자료_서비스는_마지막으로_고른_목록이_팀_목록이_되고_다른_연결의_대상은_지운다() {
-        ServiceConnection mine = slack(userId, "C-ALL", "C-SOCIAL", "C-NEW", "C-TEST");
-        ServiceConnection others = slack(otherId, "C-ALL", "C-SOCIAL", "C-NEW", "C-TEST");
-        integrations.selectTargets(workspaceId, userId, mine.getConnectionId(), new com.togather.integration.dto.TargetSelectRequest(
-            java.util.List.of(new com.togather.integration.dto.TargetSelectRequest.Target("C-ALL", "전체"),
-                new com.togather.integration.dto.TargetSelectRequest.Target("C-TEST", "test"))));
+    void 내_선택_창에_보인_대상만_바꾸고_나에게_안_보이는_다른_사람의_대상은_그대로_둔다() {
+        ServiceConnection mine = slack(userId);
+        slack(otherId, "C-ALL", "C-SOCIAL", "C-NEW", "C-PRIVATE");
+        // 내 Slack 계정으로 고를 수 있는 채널: C-PRIVATE는 내가 없는 비공개 채널이라 선택 창에 안 나온다.
+        org.mockito.Mockito.when(slackOAuth.supports(Provider.SLACK)).thenReturn(true);
+        org.mockito.Mockito.when(slackOAuth.isConfigured()).thenReturn(true);
+        org.mockito.Mockito.when(slackOAuth.getAvailableTargets(org.mockito.ArgumentMatchers.eq(Provider.SLACK),
+                org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(java.util.List.of(new com.togather.integration.client.OAuthProviderClient.TargetOption("C-ALL", "전체"),
+                new com.togather.integration.client.OAuthProviderClient.TargetOption("C-SOCIAL", "소셜"),
+                new com.togather.integration.client.OAuthProviderClient.TargetOption("C-NEW", "새-채널"),
+                new com.togather.integration.client.OAuthProviderClient.TargetOption("C-TEST", "test")));
+        try (var scope = operations.openScope()) {
+            integrations.selectTargets(workspaceId, userId, mine.getConnectionId(), new com.togather.integration.dto.TargetSelectRequest(
+                java.util.List.of(new com.togather.integration.dto.TargetSelectRequest.Target("C-ALL", "전체"),
+                    new com.togather.integration.dto.TargetSelectRequest.Target("C-TEST", "test"))));
+        }
         assertThat(integrations.getConnectionTargets(workspaceId, Provider.SLACK))
-            .as("해제한 채널이 다른 팀원 연결 때문에 남지 않는다").containsExactlyInAnyOrder("C-ALL", "C-TEST");
-        assertThat(targets.findAllByConnectionIdIn(java.util.List.of(others.getConnectionId()))).isEmpty();
+            .as("내가 해제한 소셜·새-채널은 빠지고, 내게 안 보이는 C-PRIVATE는 남는다")
+            .containsExactlyInAnyOrder("C-ALL", "C-TEST", "C-PRIVATE");
+    }
+
+    @Test
+    void 선택_가능한_대상을_확인하지_못하면_다른_사람의_대상은_지우지_않는다() {
+        ServiceConnection mine = slack(userId);
+        slack(otherId, "C-ALL", "C-SOCIAL");
+        org.mockito.Mockito.when(slackOAuth.supports(Provider.SLACK)).thenReturn(true);
+        org.mockito.Mockito.when(slackOAuth.isConfigured()).thenReturn(true);
+        org.mockito.Mockito.when(slackOAuth.getAvailableTargets(org.mockito.ArgumentMatchers.eq(Provider.SLACK),
+                org.mockito.ArgumentMatchers.anyString()))
+            .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+        try (var scope = operations.openScope()) {
+            integrations.selectTargets(workspaceId, userId, mine.getConnectionId(), new com.togather.integration.dto.TargetSelectRequest(
+                java.util.List.of(new com.togather.integration.dto.TargetSelectRequest.Target("C-ALL", "전체"))));
+        }
+        assertThat(integrations.getConnectionTargets(workspaceId, Provider.SLACK)).containsExactlyInAnyOrder("C-ALL", "C-SOCIAL");
     }
 
     private ServiceConnection slack(Long owner, String... channelIds) {

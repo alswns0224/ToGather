@@ -188,17 +188,40 @@ public class IntegrationService {
                 .map(t -> new IntegrationTarget(connectionId, t.id(), t.name()))
                 .toList());
         if (!PERSONAL_PROVIDERS.contains(connection.getProvider())) {
-            // 팀 자료 서비스(Slack·Notion·Drive)의 연동 대상은 팀 전체에 하나다. 마지막으로 고른 목록이 팀 목록이 되고,
-            // 다른 팀원 연결에 남아 있던 대상은 지운다. (해제한 채널이 다른 사람 연결 때문에 계속 보이지 않게)
-            connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId,
-                            connection.getProvider(), ConnectionStatus.DISCONNECTED).stream()
-                    .filter(other -> !other.getConnectionId().equals(connectionId))
-                    .forEach(other -> targetRepository.deleteAllByConnectionId(other.getConnectionId()));
+            // 팀 자료 서비스(Slack·Notion·Drive)의 연동 대상은 팀 전체에 하나다. 내 선택 창에 보였던 대상만 내 선택대로
+            // 바꾸고(다른 팀원 연결에 있던 같은 대상은 지움), 내 계정으로 볼 수 없어 선택 창에 없던 다른 사람의 대상은 그대로 둔다.
+            Set<String> chosen = request.targets().stream().map(TargetSelectRequest.Target::id).collect(Collectors.toSet());
+            Set<String> visibleToMe = visibleTargetOptions(connection);
+            for (ServiceConnection other : connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(
+                    workspaceId, connection.getProvider(), ConnectionStatus.DISCONNECTED)) {
+                if (other.getConnectionId().equals(connectionId)) {
+                    continue;
+                }
+                targetRepository.findAllByConnectionIdIn(List.of(other.getConnectionId())).stream()
+                        .filter(t -> chosen.contains(t.getExternalTargetId())
+                                || (visibleToMe != null && visibleToMe.contains(t.getExternalTargetId())))
+                        .forEach(targetRepository::delete);
+            }
         }
         if (connection.getStatus() == ConnectionStatus.TARGET_NOT_SELECTED) {
             connection.changeStatus(ConnectionStatus.CONNECTED);
         }
         return toDto(connection, userId, userService.getUser(connection.getUserId()), saved);
+    }
+
+    /**
+     * 이 연결의 계정으로 고를 수 있는(선택 창에 나오는) 대상 ID. 조회에 실패하면 null:
+     * 그때는 다른 팀원의 대상을 하나도 지우지 않는다. (볼 수 있었는지 모르는 대상을 지우지 않도록)
+     */
+    private Set<String> visibleTargetOptions(ServiceConnection connection) {
+        try {
+            return clientFor(connection.getProvider())
+                    .getAvailableTargets(connection.getProvider(), validAccessToken(connection)).stream()
+                    .map(TargetOption::id).collect(Collectors.toSet());
+        } catch (RuntimeException e) {
+            log.info("선택 가능한 대상을 확인하지 못해 다른 팀원의 대상은 유지: connectionId={}", connection.getConnectionId());
+            return null;
+        }
     }
 
     /** 대상 선택 없이 연결을 완료한다. (Calendar 등 대상이 선택 사항인 서비스) */
