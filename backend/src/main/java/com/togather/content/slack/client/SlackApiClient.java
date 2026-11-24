@@ -84,6 +84,107 @@ public class SlackApiClient {
     public record HistoryPage(List<SlackMessage> messages, boolean truncated) {
     }
 
+    public record DirectMessage(String id, String userId) {
+    }
+
+    public record DirectMessagePage(List<SlackMessage> messages, String nextCursor) {
+    }
+
+    /**
+     * 읽을 수 없는 대화(channel_not_found). 비활성 사용자·시스템 봇과의 DM처럼 목록에는 나오지만 기록은 못 읽는 대화가 있다.
+     * 다른 곳에서는 기존처럼 외부 API 오류로 다루고, 개인 DM 수집만 이 예외를 보고 그 대화를 건너뛴다.
+     */
+    public static class ConversationNotFoundException extends BusinessException {
+        public ConversationNotFoundException() {
+            super(ErrorCode.EXTERNAL_API_ERROR);
+        }
+    }
+
+    /** 429의 Retry-After를 개인 수집의 재시도 시각에 반영한다. */
+    public static class RateLimitException extends BusinessException {
+        private final long retryAfterSeconds;
+
+        public RateLimitException(long retryAfterSeconds) {
+            super(ErrorCode.SLACK_RATE_LIMITED);
+            this.retryAfterSeconds = retryAfterSeconds;
+        }
+
+        public long retryAfterSeconds() { return retryAfterSeconds; }
+    }
+
+    /**
+     * 토큰 주인이 멤버로 들어가 있는 공개·비공개 채널 ID (users.conversations).
+     * 팀원별로 ToGather에서 볼 수 있는 채널을 Slack 권한과 똑같이 맞출 때 쓴다.
+     */
+    public Set<String> getMemberChannelIds(String token) {
+        Map<String, String> query = new HashMap<>(Map.of(
+                "types", "public_channel,private_channel", "exclude_archived", "true", "limit", "200"));
+        Set<String> ids = new java.util.LinkedHashSet<>();
+        for (int page = 0; page < 20; page++) {
+            Map<String, Object> json = get(token, "users.conversations", query);
+            for (Map<String, Object> item : list(json, "channels")) {
+                String id = str(item, "id");
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+            String cursor = str(obj(json, "response_metadata"), "next_cursor");
+            if (cursor == null || cursor.isBlank()) {
+                return ids;
+            }
+            query.put("cursor", cursor);
+        }
+        return ids;
+    }
+
+    /** 본인 사용자 토큰으로 접근 가능한 1:1 DM만 조회한다. 대화를 열거나 메시지를 보내지 않는다. */
+    public List<DirectMessage> getDirectMessages(String token) {
+        Map<String, String> query = new HashMap<>(Map.of("types", "im", "limit", "200"));
+        Map<String, DirectMessage> result = new java.util.LinkedHashMap<>();
+        for (int page = 0; page < 20; page++) {
+            Map<String, Object> json = get(token, "conversations.list", query);
+            for (Map<String, Object> item : list(json, "channels")) {
+                String id = str(item, "id");
+                if (id != null && id.startsWith("D") && bool(item, "is_im") && !bool(item, "is_mpim")) {
+                    result.put(id, new DirectMessage(id, str(item, "user")));
+                }
+            }
+            String cursor = str(obj(json, "response_metadata"), "next_cursor");
+            if (cursor == null || cursor.isBlank()) return List.copyOf(result.values());
+            query.put("cursor", cursor);
+        }
+        throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    /** 고정된 시간 구간과 커서로 이어받는다. 잘린 페이지를 완료로 취급하지 않는다. */
+    public DirectMessagePage getDirectMessageHistory(String token, String conversationId,
+                                                     LocalDateTime oldest, LocalDateTime latest, String cursor) {
+        return getDirectMessagePage(token, conversationId, null, oldest, latest, cursor);
+    }
+
+    public DirectMessagePage getDirectMessageReplies(String token, String conversationId, String threadTs,
+                                                     LocalDateTime oldest, LocalDateTime latest, String cursor) {
+        return getDirectMessagePage(token, conversationId, threadTs, oldest, latest, cursor);
+    }
+
+    private DirectMessagePage getDirectMessagePage(String token, String conversationId, String threadTs,
+                                                  LocalDateTime oldest, LocalDateTime latest, String cursor) {
+        if (conversationId == null || !conversationId.matches("D[A-Z0-9]+")) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        Map<String, String> query = new HashMap<>(Map.of("channel", conversationId, "limit", "100",
+                "oldest", toTs(oldest), "latest", toTs(latest), "inclusive", "true"));
+        if (cursor != null && !cursor.isBlank()) query.put("cursor", cursor);
+        if (threadTs != null) query.put("ts", threadTs);
+        Map<String, Object> json = get(token, threadTs == null ? "conversations.history" : "conversations.replies", query);
+        String next = str(obj(json, "response_metadata"), "next_cursor");
+        if (bool(json, "has_more") && (next == null || next.isBlank())) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return new DirectMessagePage(list(json, "messages").stream().map(item -> toMessage(item, null)).toList(),
+                next == null || next.isBlank() ? null : next);
+    }
+
     // ===================== 조회 =====================
 
     /**
@@ -238,8 +339,8 @@ public class SlackApiClient {
 
     private Map<String, Object> get(String token, String method, Map<String, String> params) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(BASE + "/" + method);
-        params.forEach(builder::queryParam);
-        java.net.URI uri = builder.encode().build().toUri();
+        params.forEach((name, value) -> builder.queryParam(name, "{" + name + "}"));
+        java.net.URI uri = builder.encode().buildAndExpand(params).toUri();
         return call(method, () -> externalRestClient.get()
                 .uri(uri)
                 .headers(h -> h.setBearerAuth(token))
@@ -261,8 +362,11 @@ public class SlackApiClient {
             json = request.get();
         } catch (HttpStatusCodeException e) {
             if (e.getStatusCode() == HttpStatus.TOO_MANY_REQUESTS) {
-                log.warn("Slack {} 호출 한도 초과: retryAfter={}", method, e.getResponseHeaders() == null
-                        ? null : e.getResponseHeaders().getFirst("Retry-After"));
+                long retryAfter = 60;
+                try {
+                    retryAfter = Math.max(1, Long.parseLong(e.getResponseHeaders().getFirst("Retry-After")));
+                } catch (RuntimeException ignored) { }
+                throw new RateLimitException(retryAfter);
             } else {
                 log.warn("Slack {} HTTP 오류: status={}", method, e.getStatusCode().value());
             }
@@ -275,6 +379,9 @@ public class SlackApiClient {
             return json;
         }
         String error = str(json, "error");
+        if ("missing_scope".equals(error)) {
+            throw new BusinessException(ErrorCode.SLACK_SCOPE_REQUIRED);
+        }
         if (AUTH_ERRORS.contains(error)) {
             throw new BusinessException(ErrorCode.REAUTH_REQUIRED);
         }
@@ -284,6 +391,10 @@ public class SlackApiClient {
         if (FORBIDDEN_ERRORS.contains(error)) {
             log.info("Slack {} 권한 없음: {}", method, error);
             throw new BusinessException(ErrorCode.SLACK_ACTION_FORBIDDEN);
+        }
+        if ("channel_not_found".equals(error)) {
+            log.info("Slack {}: 대화를 찾을 수 없음 (channel_not_found)", method);
+            throw new ConversationNotFoundException();
         }
         log.warn("Slack {} 오류: {}", method, error);
         throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);

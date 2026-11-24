@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { Link, useParams } from 'react-router';
+import { ApiError } from '../api/client';
 
 /** 모든 화면에서 쓰는 세 가지 상태: 불러오는 중, 실패(재시도), 데이터 없음 (README 프론트엔드 규칙) */
 
@@ -7,6 +9,23 @@ export function Loading({ text = '불러오는 중...' }: { text?: string }) {
 }
 
 export function ErrorBox({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+  const { workspaceId } = useParams();
+  // Slack·Notion·Drive는 각자 자기 계정으로 연동해야 팀 자료가 보인다.
+  if (error instanceof ApiError && error.code === 'OWN_CONNECTION_REQUIRED') {
+    return (
+      <div className="alert">
+        <span>{error.message}</span>
+        {workspaceId && (
+          <Link to={`/workspaces/${workspaceId}/integrations`} className="btn btn-small btn-primary">
+            연동 관리로 이동
+          </Link>
+        )}
+      </div>
+    );
+  }
+  if (error instanceof ApiError && error.code === 'CONTENT_ACCESS_DENIED') {
+    return <div className="alert">{error.message}</div>;
+  }
   return (
     <div className="alert alert-error">
       <span>{error.message || '문제가 발생했습니다.'}</span>

@@ -15,6 +15,8 @@ public record TaskContext(
     AnalysisItemDTO originDecision,
     List<ContentRefDTO> originEvidence,
     List<MeetingSummary> meetings,
-    Map<Long, ContentState> contentStates
+    Map<Long, ContentState> contentStates,
+    /** 내 계정으로는 원본을 볼 수 없어 숨긴 연결 자료·근거 발언 수 */
+    int hiddenContentCount
 ) {
 }

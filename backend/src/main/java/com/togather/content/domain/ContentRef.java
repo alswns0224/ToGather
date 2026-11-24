@@ -107,6 +107,9 @@ public class ContentRef {
 
     private String deepLink;
 
+    /** 원본 파일 크기(bytes). 제공되지 않은 경우 null이며 0바이트와 구분한다. */
+    private Long fileSize;
+
     /**
      * 외부 원본 생성 시각.
      */
@@ -154,7 +157,8 @@ public class ContentRef {
         LocalDateTime createdAt,
         LocalDateTime lastModifiedAt,
         String authorExternalId,
-        String authorName
+        String authorName,
+        Long fileSize
     ) {
 
         this.workspaceId = workspaceId;
@@ -162,6 +166,7 @@ public class ContentRef {
         this.provider = provider;
         this.contentType = contentType;
         this.originId = originId;
+        this.fileSize = fileSize;
         this.channelId = channelId;
         this.parentRefId = parentRefId;
         this.content = content;
@@ -190,6 +195,10 @@ public class ContentRef {
 
         this.title = title;
         this.content = content;
+    }
+
+    public void updateFileSize(Long fileSize) {
+        this.fileSize = fileSize;
     }
 
     /**

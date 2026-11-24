@@ -13,6 +13,7 @@ import com.togather.common.enums.Provider;
 import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
+import com.togather.integration.service.ConnectionOperationRegistry;
 import com.togather.sync.domain.SyncState;
 import com.togather.sync.service.SyncAdapter.SyncContext;
 import com.togather.sync.service.SyncAdapter.SyncResult;
@@ -38,7 +39,8 @@ class SyncServiceTest {
     void setUp() {
         DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
         factory.registerSingleton("fakeAdapter", adapter);
-        syncService = new SyncService(factory.getBeanProvider(SyncAdapter.class), stateService, events);
+        syncService = new SyncService(factory.getBeanProvider(SyncAdapter.class), stateService, events,
+            new ConnectionOperationRegistry());
         state = new SyncState(1L, Provider.SLACK, "C1", null);
         when(stateService.getOrCreate(eq(1L), eq(Provider.SLACK), eq("C1"), any())).thenReturn(state);
     }

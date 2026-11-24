@@ -19,6 +19,7 @@ import com.togather.integration.domain.ServiceConnection;
 import com.togather.integration.dto.ConnectionStatusDTO;
 import com.togather.integration.dto.ConnectionStatusDTO.TargetResponse;
 import com.togather.integration.dto.IntegrationStatusResponse;
+import com.togather.integration.dto.DisconnectResult;
 import com.togather.integration.dto.TargetSelectRequest;
 import com.togather.integration.repository.IntegrationTargetRepository;
 import com.togather.integration.repository.ServiceConnectionRepository;
@@ -63,6 +64,7 @@ public class IntegrationService {
     private final WorkspaceAccessChecker workspaceAccessChecker;
     private final UserService userService;
     private final TogatherProperties properties;
+    private final ConnectionOperationRegistry operations;
 
     // ===================== 연결 (인증) =====================
 
@@ -176,15 +178,50 @@ public class IntegrationService {
     public ConnectionStatusDTO selectTargets(Long workspaceId, Long userId, Long connectionId,
                                              TargetSelectRequest request) {
         ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId);
+        if (connection.getProvider() == Provider.SLACK
+                && request.targets().stream().anyMatch(target -> target.id().startsWith("D"))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Slack DM은 개인 AI 업무 보조에서만 수집합니다.");
+        }
         targetRepository.deleteAllByConnectionId(connectionId);
         targetRepository.flush();
         List<IntegrationTarget> saved = targetRepository.saveAll(request.targets().stream()
                 .map(t -> new IntegrationTarget(connectionId, t.id(), t.name()))
                 .toList());
+        if (!PERSONAL_PROVIDERS.contains(connection.getProvider())) {
+            // 팀 자료 서비스(Slack·Notion·Drive)의 연동 대상은 팀 전체에 하나다. 내 선택 창에 보였던 대상만 내 선택대로
+            // 바꾸고(다른 팀원 연결에 있던 같은 대상은 지움), 내 계정으로 볼 수 없어 선택 창에 없던 다른 사람의 대상은 그대로 둔다.
+            Set<String> chosen = request.targets().stream().map(TargetSelectRequest.Target::id).collect(Collectors.toSet());
+            Set<String> visibleToMe = visibleTargetOptions(connection);
+            for (ServiceConnection other : connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(
+                    workspaceId, connection.getProvider(), ConnectionStatus.DISCONNECTED)) {
+                if (other.getConnectionId().equals(connectionId)) {
+                    continue;
+                }
+                targetRepository.findAllByConnectionIdIn(List.of(other.getConnectionId())).stream()
+                        .filter(t -> chosen.contains(t.getExternalTargetId())
+                                || (visibleToMe != null && visibleToMe.contains(t.getExternalTargetId())))
+                        .forEach(targetRepository::delete);
+            }
+        }
         if (connection.getStatus() == ConnectionStatus.TARGET_NOT_SELECTED) {
             connection.changeStatus(ConnectionStatus.CONNECTED);
         }
         return toDto(connection, userId, userService.getUser(connection.getUserId()), saved);
+    }
+
+    /**
+     * 이 연결의 계정으로 고를 수 있는(선택 창에 나오는) 대상 ID. 조회에 실패하면 null:
+     * 그때는 다른 팀원의 대상을 하나도 지우지 않는다. (볼 수 있었는지 모르는 대상을 지우지 않도록)
+     */
+    private Set<String> visibleTargetOptions(ServiceConnection connection) {
+        try {
+            return clientFor(connection.getProvider())
+                    .getAvailableTargets(connection.getProvider(), validAccessToken(connection)).stream()
+                    .map(TargetOption::id).collect(Collectors.toSet());
+        } catch (RuntimeException e) {
+            log.info("선택 가능한 대상을 확인하지 못해 다른 팀원의 대상은 유지: connectionId={}", connection.getConnectionId());
+            return null;
+        }
     }
 
     /** 대상 선택 없이 연결을 완료한다. (Calendar 등 대상이 선택 사항인 서비스) */
@@ -205,18 +242,128 @@ public class IntegrationService {
 
     /** 연결 해제 (UC-03-04). 연결한 본인 또는 팀장만 가능하다. */
     @Transactional
-    public void disconnectService(Long workspaceId, Long userId, Long connectionId) {
-        ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId);
-        try {
-            String accessToken = tokenCipher.decrypt(connection.getEncryptedTokens()).accessToken();
-            if (accessToken != null) {
-                clientFor(connection.getProvider()).revoke(accessToken);
-            }
-        } catch (BusinessException e) {
-            log.info("연결 해제 중 토큰 revoke 생략: connectionId={}", connectionId);
+    public DisconnectResult disconnectService(Long workspaceId, Long userId, Long connectionId) {
+        ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId, true);
+        if (!connection.isActive()) {
+            // 로컬 해제 기록만으로 과거 외부 폐기 성공 여부를 단정하지 않는다.
+            return new DisconnectResult(true, false);
         }
-        targetRepository.deleteAllByConnectionId(connectionId);
-        connection.disconnect();
+        try (var lease = operations.beginDisconnect(connection)) {
+            if (connectionRepository.findCurrentStatus(connectionId).orElse(ConnectionStatus.DISCONNECTED)
+                    == ConnectionStatus.DISCONNECTED) {
+                return new DisconnectResult(true, false);
+            }
+            boolean manualRevocationRequired = false;
+            boolean shared = isTokenShared(connection);
+            try {
+                String accessToken = tokenCipher.decrypt(connection.getEncryptedTokens()).accessToken();
+                if (shared) {
+                    // 같은 계정을 다른 워크스페이스·서비스 연결이 쓰고 있다. 외부에서 폐기하면 그 연결까지 끊기므로 여기서만 지운다.
+                    log.info("같은 계정의 다른 연결이 있어 외부 토큰 폐기를 건너뜀: connectionId={}", connectionId);
+                } else if (accessToken == null || accessToken.isBlank()) {
+                    manualRevocationRequired = true;
+                } else {
+                    clientFor(connection.getProvider()).revoke(accessToken);
+                }
+            } catch (BusinessException e) {
+                manualRevocationRequired = true;
+                log.info("외부 토큰 폐기를 확인하지 못함: connectionId={}, code={}", connectionId, e.getErrorCode());
+            }
+            targetRepository.deleteAllByConnectionId(connectionId);
+            connection.disconnect();
+            boolean relatedReauth = !shared && !manualRevocationRequired && markRelatedGoogleConnections(connection);
+            return new DisconnectResult(manualRevocationRequired, relatedReauth);
+        }
+    }
+
+    /**
+     * 내보낸 팀원의 연결을 모두 지운다. 외부 토큰은 폐기를 시도하고(실패해도 진행), 연결 기록은 남기지 않는다.
+     * 그 사람이 고른 연동 대상(팀 채널·페이지·폴더)은 같은 서비스를 연결한 다른 팀원에게 넘기고,
+     * 넘길 사람이 없으면 지운다. (팀이 다시 골라야 한다)
+     *
+     * @return 지운 연결 수
+     */
+    @Transactional
+    public int purgeMemberConnections(Long workspaceId, Long userId) {
+        List<ServiceConnection> mine = connectionRepository.findAllByWorkspaceIdAndUserId(workspaceId, userId);
+        for (ServiceConnection connection : mine) {
+            if (connection.isActive() && !isTokenShared(connection)) {
+                try {
+                    String accessToken = tokenCipher.decrypt(connection.getEncryptedTokens()).accessToken();
+                    if (accessToken != null && !accessToken.isBlank()) {
+                        clientFor(connection.getProvider()).revoke(accessToken);
+                    }
+                } catch (RuntimeException e) {
+                    log.info("내보낸 팀원의 토큰 폐기를 확인하지 못함(연결은 지움): connectionId={}, error={}",
+                            connection.getConnectionId(),
+                            e instanceof BusinessException be ? be.getErrorCode() : e.getClass().getSimpleName());
+                }
+            }
+            handOverTargets(workspaceId, userId, connection);
+            targetRepository.deleteAllByConnectionId(connection.getConnectionId());
+        }
+        connectionRepository.deleteAll(mine);
+        connectionRepository.flush();
+        return mine.size();
+    }
+
+    private void handOverTargets(Long workspaceId, Long leavingUserId, ServiceConnection connection) {
+        List<IntegrationTarget> chosen = targetRepository.findAllByConnectionIdIn(List.of(connection.getConnectionId()));
+        if (chosen.isEmpty()) {
+            return;
+        }
+        Optional<ServiceConnection> heir = connectionRepository
+                .findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId, connection.getProvider(),
+                        ConnectionStatus.DISCONNECTED).stream()
+                .filter(other -> !other.getUserId().equals(leavingUserId))
+                .findFirst();
+        if (heir.isEmpty()) {
+            return;
+        }
+        Set<String> already = targetRepository.findAllByConnectionIdIn(List.of(heir.get().getConnectionId())).stream()
+                .map(IntegrationTarget::getExternalTargetId).collect(Collectors.toSet());
+        for (IntegrationTarget target : chosen) {
+            if (!already.contains(target.getExternalTargetId())) {
+                targetRepository.save(new IntegrationTarget(heir.get().getConnectionId(), target.getExternalTargetId(),
+                        target.getName()));
+            }
+        }
+    }
+
+    /**
+     * 같은 외부 계정을 다른 연결이 쓰고 있는지. Slack·Notion은 같은 사람이 여러 워크스페이스에서 연결해도 토큰이 하나라,
+     * 한 곳에서 외부 폐기(auth.revoke 등)를 하면 다른 워크스페이스의 연결까지 끊긴다. Google은 Drive·Calendar·Gmail이 한 계정을 함께 쓴다.
+     */
+    private boolean isTokenShared(ServiceConnection connection) {
+        if (connection.getExternalAccountId() == null) {
+            return false;
+        }
+        Set<Provider> family = Set.of(Provider.GOOGLE_DRIVE, Provider.GOOGLE_CALENDAR, Provider.GMAIL)
+                .contains(connection.getProvider())
+                ? Set.of(Provider.GOOGLE_DRIVE, Provider.GOOGLE_CALENDAR, Provider.GMAIL)
+                : Set.of(connection.getProvider());
+        return connectionRepository.findAllByProviderInAndExternalAccountIdAndStatusNot(family,
+                        connection.getExternalAccountId(), ConnectionStatus.DISCONNECTED).stream()
+                .anyMatch(other -> !other.getConnectionId().equals(connection.getConnectionId()));
+    }
+
+    /** Google 폐기는 같은 계정의 프로젝트 권한 전체에 적용되므로 다른 연결을 정상 연결로 남기지 않는다. */
+    private boolean markRelatedGoogleConnections(ServiceConnection disconnected) {
+        Set<Provider> googleProviders = Set.of(Provider.GOOGLE_DRIVE, Provider.GOOGLE_CALENDAR, Provider.GMAIL);
+        if (!googleProviders.contains(disconnected.getProvider())) {
+            return false;
+        }
+        boolean changed = false;
+        List<ServiceConnection> relatedConnections = connectionRepository
+                .findAllByProviderInAndExternalAccountIdAndStatusNot(googleProviders,
+                        disconnected.getExternalAccountId(), ConnectionStatus.DISCONNECTED);
+        for (ServiceConnection related : relatedConnections) {
+            if (!related.getConnectionId().equals(disconnected.getConnectionId())) {
+                related.changeStatus(ConnectionStatus.REAUTH_REQUIRED);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     // ===================== 다른 파트 제공 (docs/shared-interfaces.md) =====================
@@ -238,6 +385,31 @@ public class IntegrationService {
     @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = BusinessException.class)
     public Optional<String> findAccessToken(Long workspaceId, Long userId, Provider provider) {
         return findUsableConnection(workspaceId, userId, provider).map(this::validAccessToken);
+    }
+
+    /** 개인 입력 수집 전용. 팀원의 연결로 대체하지 않으며 채널 선택 여부와 무관하다. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = BusinessException.class)
+    public Optional<OwnAccess> findOwnAccess(Long workspaceId, Long userId, Provider provider) {
+        try {
+            workspaceAccessChecker.checkMember(workspaceId, userId);
+        } catch (BusinessException denied) {
+            // 내부 권한 검사에서 rollback-only가 된 경우에도 원래 접근 거절을 유지한다.
+            org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            throw denied;
+        }
+        return connectionRepository.findFirstByWorkspaceIdAndUserIdAndProviderAndStatusNot(
+                workspaceId, userId, provider, ConnectionStatus.DISCONNECTED)
+                .map(connection -> {
+                    String token = validAccessToken(connection);
+                    return new OwnAccess(connection.getConnectionId(), connection.getExternalAccountId(), connection.getScope(), token);
+                });
+    }
+
+    public record OwnAccess(Long connectionId, String externalAccountId, String scope, String accessToken) {
+        @Override
+        public String toString() {
+            return "OwnAccess[connectionId=" + connectionId + "]";
+        }
     }
 
     /** 본인이 이 서비스를 연결했는지 (재인증 필요 상태 포함) */
@@ -299,6 +471,16 @@ public class IntegrationService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = BusinessException.class)
     public Optional<TargetAccess> findTargetAccess(Long workspaceId, Provider provider) {
+        return resolveTargetAccess(workspaceId, provider, null);
+    }
+
+    /** 특정 캘린더 등 기존 원본의 대상을 실제 선택한 연결만 반환한다. 다른 대상으로 대체하지 않는다. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = BusinessException.class)
+    public Optional<TargetAccess> findTargetAccess(Long workspaceId, Provider provider, String targetId) {
+        return resolveTargetAccess(workspaceId, provider, targetId);
+    }
+
+    private Optional<TargetAccess> resolveTargetAccess(Long workspaceId, Provider provider, String targetId) {
         List<ServiceConnection> connections = connectionRepository
                 .findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId, provider, ConnectionStatus.DISCONNECTED);
         Map<Long, List<String>> targets = targetRepository
@@ -306,7 +488,8 @@ public class IntegrationService {
                 .stream().collect(Collectors.groupingBy(IntegrationTarget::getConnectionId,
                         Collectors.mapping(IntegrationTarget::getExternalTargetId, Collectors.toList())));
         return connections.stream()
-                .filter(c -> targets.containsKey(c.getConnectionId()))
+                .filter(c -> targets.containsKey(c.getConnectionId())
+                        && (targetId == null || targets.get(c.getConnectionId()).contains(targetId)))
                 .findFirst()
                 .map(c -> new TargetAccess(c.getConnectionId(), c.getUserId(), validAccessToken(c),
                         targets.get(c.getConnectionId())));
@@ -332,7 +515,13 @@ public class IntegrationService {
 
     /** 토큰을 꺼내고 만료됐으면 갱신한다. 갱신할 수 없으면 REAUTH_REQUIRED로 표시하고 예외를 던진다. */
     String validAccessToken(ServiceConnection connection) {
-        if (connection.getStatus() == ConnectionStatus.REAUTH_REQUIRED) {
+        operations.use(connection);
+        ConnectionStatus currentStatus = connectionRepository.findCurrentStatus(connection.getConnectionId())
+                .orElse(ConnectionStatus.DISCONNECTED);
+        if (currentStatus == ConnectionStatus.DISCONNECTED) {
+            throw new BusinessException(ErrorCode.CONNECTION_NOT_FOUND);
+        }
+        if (currentStatus == ConnectionStatus.REAUTH_REQUIRED || connection.getStatus() == ConnectionStatus.REAUTH_REQUIRED) {
             throw new BusinessException(ErrorCode.REAUTH_REQUIRED);
         }
         TokenCipher.Tokens tokens = tokenCipher.decrypt(connection.getEncryptedTokens());
@@ -371,8 +560,17 @@ public class IntegrationService {
 
     /** 연결한 본인 또는 팀장만 대상 선택·해제를 할 수 있다. */
     private ServiceConnection getEditableConnection(Long workspaceId, Long userId, Long connectionId) {
+        return getEditableConnection(workspaceId, userId, connectionId, false);
+    }
+
+    private ServiceConnection getEditableConnection(Long workspaceId, Long userId, Long connectionId,
+                                                    boolean includeDisconnected) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        ServiceConnection connection = findConnection(workspaceId, connectionId);
+        ServiceConnection connection = includeDisconnected
+                ? connectionRepository.findById(connectionId)
+                    .filter(c -> c.getWorkspaceId().equals(workspaceId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.CONNECTION_NOT_FOUND))
+                : findConnection(workspaceId, connectionId);
         if (!connection.getUserId().equals(userId)) {
             workspaceAccessChecker.checkOwner(workspaceId, userId);
         }

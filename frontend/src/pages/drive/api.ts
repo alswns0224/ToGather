@@ -16,6 +16,7 @@ export interface DriveFile {
   lastModifiedAt: string | null;
   messageCount: number;
   syncFailed: boolean;
+  fileSize: number | null;
 }
 
 /**
@@ -40,8 +41,9 @@ export const MAX_DRIVE_UPLOAD_SIZE =
  * 파일 크기를 읽기 쉬운 문자열로 변환
  */
 export function formatDriveFileSize(
-  bytes: number,
+  bytes: number | null | undefined,
 ): string {
+  if (bytes == null || !Number.isSafeInteger(bytes) || bytes < 0) return '크기 정보 없음';
   if (bytes < 1024) {
     return `${bytes} B`;
   }
@@ -50,6 +52,8 @@ export function formatDriveFileSize(
     return `${(bytes / 1024).toFixed(1)} KB`;
   }
 
+  if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
   return `${(
     bytes /
     (1024 * 1024)
@@ -229,10 +233,33 @@ export const getDriveSyncStatuses = (
  *
  * 최대 100MB
  */
+export interface DriveUploadCandidate {
+  fileId: string;
+  name: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  lastModifiedAt: string | null;
+  version: string | null;
+  deepLink: string | null;
+  overwriteAllowed: boolean;
+}
+
+export interface DriveUploadOptions {
+  mode: 'ASK' | 'CREATE_NEW' | 'OVERWRITE';
+  targetFileId?: string;
+  expectedVersion?: string;
+}
+
+export const getDriveUploadCandidates = (workspaceId: string, folderId: string, name: string) => {
+  const params = new URLSearchParams({ folderId, name });
+  return http.get<DriveUploadCandidate[]>(ws(workspaceId, `/drive/upload-candidates?${params}`));
+};
+
 export const uploadDriveFile = async (
   workspaceId: string,
   folderId: string,
   file: File,
+  options?: DriveUploadOptions,
 ): Promise<DriveFile> => {
 
   // 빈 파일 검사
@@ -282,6 +309,11 @@ export const uploadDriveFile = async (
     file,
     file.name,
   );
+  if (options) {
+    formData.append('mode', options.mode);
+    if (options.targetFileId) formData.append('targetFileId', options.targetFileId);
+    if (options.expectedVersion) formData.append('expectedVersion', options.expectedVersion);
+  }
 
   // FormData 사용 시 Content-Type을 직접 지정하지 않음
   // client.ts의 api()가 boundary를 자동 처리

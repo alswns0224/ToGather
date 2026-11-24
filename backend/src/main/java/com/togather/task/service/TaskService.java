@@ -63,6 +63,7 @@ public class TaskService {
             );
         }
 
+        task.refreshStatusByDeliverables();
         return taskRepository.save(task).getTaskId();
     }
 
@@ -131,6 +132,14 @@ public class TaskService {
         Task task = taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
+        if (!task.getDeliverables().isEmpty() && status != null) {
+            TaskStatus submissionStatus = task.calculateProgress() == 100
+                ? TaskStatus.DONE : TaskStatus.IN_PROGRESS;
+            if (status != submissionStatus) {
+                throw new BusinessException(ErrorCode.TASK_STATUS_MANAGED_BY_DELIVERABLES);
+            }
+        }
+
         if (assigneeId != null
             && !workspaceMemberService.isMember(workspaceId, assigneeId)) {
             throw new BusinessException(ErrorCode.MEMBER_NOT_FOUND);
@@ -146,20 +155,13 @@ public class TaskService {
             task.assignTo(assigneeId);
         }
 
-        if (status != null) {
+        if (!task.getDeliverables().isEmpty()) {
+            task.refreshStatusByDeliverables();
+        } else if (status != null) {
             task.changeStatus(status);
         }
 
         return TaskSummary.from(task, currentTaskDate());
-    }
-
-    /** Task 삭제 */
-    @Transactional
-    public void deleteTask(Long workspaceId, Long taskId) {
-        Task task = taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
-
-        taskRepository.delete(task);
     }
 
     /** 화면용 Task 상세 조회 */

@@ -30,6 +30,7 @@ export interface TaskDetail {
   status: TaskStatus;
   progress: number;
   riskLevel: RiskLevel;
+  statusManagedByDeliverables: boolean;
 }
 
 export type TaskReferenceProvider = 'SLACK' | 'NOTION' | 'GOOGLE_DRIVE';
@@ -76,6 +77,8 @@ export interface TaskContext {
     startAt: string | null;
   }[];
   contentStates: Record<string, TaskContextContentState>;
+  /** 내 계정으로 원본을 볼 수 없어 숨긴 연결 자료·근거 발언 수 */
+  hiddenContentCount?: number;
 }
 
 export interface TaskContextContentState {
@@ -108,23 +111,62 @@ export interface PageResponse<T> {
   total: number;
 }
 
+export interface TaskFilters {
+  mine?: boolean;
+  assigneeId?: number;
+  unassigned?: boolean;
+  status?: TaskStatus;
+  query?: string;
+  dueBefore?: string;
+  sort?: 'RECENT' | 'DUE_DATE';
+}
+
+export interface TaskProgressSummary {
+  totalCount: number;
+  inProgressCount: number;
+  doneCount: number;
+  progress: number;
+  normalCount: number;
+  warningCount: number;
+  dangerCount: number;
+}
+
+export interface TaskProgressResponse {
+  asOfDate: string;
+  overall: TaskProgressSummary;
+  byAssignee: { assigneeId: number | null; summary: TaskProgressSummary }[];
+}
+
+const filterParams = (filters: TaskFilters) => {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  });
+  return params;
+};
+
 export const getTasks = (
   workspaceId: string | number,
   page = 0,
   size = 20,
-) =>
-  http.get<PageResponse<TaskSummary>>(
-    ws(workspaceId, `/tasks?page=${page}&size=${size}`),
-  );
+  filters: TaskFilters = {},
+) => {
+  const params = filterParams(filters);
+  params.set('page', String(page));
+  params.set('size', String(size));
+  return http.get<PageResponse<TaskSummary>>(ws(workspaceId, `/tasks?${params}`));
+};
 
 export const getMyTasks = (
   workspaceId: string | number,
   page = 0,
   size = 20,
+  filters: TaskFilters = {},
 ) =>
-  http.get<PageResponse<TaskSummary>>(
-    ws(workspaceId, `/tasks?mine=true&page=${page}&size=${size}`),
-  );
+  getTasks(workspaceId, page, size, { ...filters, mine: true });
+
+export const getTaskProgress = (workspaceId: string | number, filters: TaskFilters = {}) =>
+  http.get<TaskProgressResponse>(ws(workspaceId, `/tasks/progress?${filterParams(filters)}`));
 
 export const getTask = (
   workspaceId: string | number,
@@ -151,6 +193,9 @@ export const deleteTask = (
 ) =>
   http.delete<void>(ws(workspaceId, `/tasks/${taskId}`));
 
+export const getTaskDeletionBlockers = (workspaceId: string, taskId: number) =>
+  http.get<TaskContext['meetings']>(ws(workspaceId, `/tasks/${taskId}/deletion-blockers`));
+
 const taskPath = (workspaceId: string, taskId: string) => ws(workspaceId, `/tasks/${taskId}`);
 
 export const getTaskContext = (workspaceId: string, taskId: string) =>
@@ -171,6 +216,12 @@ export const linkTaskReference = (workspaceId: string, taskId: string, contentRe
 
 export const unlinkTaskReference = (workspaceId: string, taskId: string, contentRefId: number) =>
   http.delete<void>(`${taskPath(workspaceId, taskId)}/references/${contentRefId}`);
+
+export const addTaskDeliverable = (workspaceId: string, taskId: string, body: DeliverableInput) =>
+  http.post<TaskDeliverable>(`${taskPath(workspaceId, taskId)}/deliverables`, body);
+
+export const removeTaskDeliverable = (workspaceId: string, taskId: string, deliverableId: number) =>
+  http.delete<void>(`${taskPath(workspaceId, taskId)}/deliverables/${deliverableId}`);
 
 export const submitTaskDeliverable = (
   workspaceId: string, taskId: string, deliverableId: number, contentRefId: number,

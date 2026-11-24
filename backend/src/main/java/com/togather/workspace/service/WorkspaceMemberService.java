@@ -30,6 +30,7 @@ public class WorkspaceMemberService {
     private final WorkspaceAccessChecker workspaceAccessChecker;
     private final UserService userService;
     private final InviteLinkService inviteLinkService;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     /** 팀원 목록. 팀장, 관리자, 팀원 순, 같은 역할은 참여 순서 */
     public List<MemberResponse> getMembers(Long workspaceId) {
@@ -85,7 +86,7 @@ public class WorkspaceMemberService {
 
     /**
      * 팀장·관리자 확인 후 일반 팀원을 내보낸다. 팀장·관리자는 내보낼 수 없다.
-     * 내보낸 사람이 다시 못 들어오게 초대 링크를 새로 만든다.
+     * 내보낸 사람이 다시 못 들어오게 초대 링크를 새로 만들고, 그 사람의 연동과 개인 자료를 지운다.
      */
     @Transactional
     public List<MemberResponse> removeMember(Long workspaceId, Long userId, Long targetUserId) {
@@ -98,6 +99,8 @@ public class WorkspaceMemberService {
         workspaceMemberRepository.delete(target);
         workspaceMemberRepository.flush();
         inviteLinkService.renewInviteLinks(workspaceId);
+        // 내보낸 사람의 연동(토큰)과 개인 자료(DM·메일·개인 일정·후보)를 같은 트랜잭션에서 지운다.
+        events.publishEvent(new com.togather.workspace.event.WorkspaceMemberRemovedEvent(workspaceId, targetUserId));
         return getMembers(workspaceId);
     }
 

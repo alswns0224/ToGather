@@ -6,6 +6,7 @@ import com.togather.content.service.ContentRefService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.integration.service.IntegrationService;
+import com.togather.integration.service.ConnectionOperationRegistry;
 import com.togather.sync.domain.SyncState;
 import com.togather.sync.dto.SyncStatusResponse;
 import com.togather.sync.service.SyncAdapter.SyncContext;
@@ -48,14 +49,16 @@ public class SyncService {
     private final Map<Provider, SyncAdapter> adapters;
     private final SyncStateService syncStateService;
     private final WorkspaceEventService workspaceEventService;
+    private final ConnectionOperationRegistry operations;
     private final Set<String> running = ConcurrentHashMap.newKeySet();
 
     public SyncService(ObjectProvider<SyncAdapter> adapters, SyncStateService syncStateService,
-                       WorkspaceEventService workspaceEventService) {
+                       WorkspaceEventService workspaceEventService, ConnectionOperationRegistry operations) {
         this.adapters = adapters.orderedStream()
                 .collect(Collectors.toMap(SyncAdapter::provider, Function.identity()));
         this.syncStateService = syncStateService;
         this.workspaceEventService = workspaceEventService;
+        this.operations = operations;
     }
 
     public boolean supports(Provider provider) {
@@ -123,7 +126,9 @@ public class SyncService {
     }
 
     public List<SyncStatusResponse> getStatuses(Long workspaceId, Provider provider) {
-        return syncStateService.getStates(workspaceId, provider).stream().map(SyncStatusResponse::from).toList();
+        return syncStateService.getStates(workspaceId, provider).stream()
+                .filter(state -> provider != Provider.SLACK || state.getOwnerUserId() == null)
+                .map(SyncStatusResponse::from).toList();
     }
 
     /** 스케줄러: 한 번이라도 동기화한 워크스페이스·서비스를 다시 동기화한다. 연속 실패한 대상은 잠시 쉰다. */
@@ -181,7 +186,7 @@ public class SyncService {
         if (!running.add(lockKey)) {
             return false; // 이미 동기화 중
         }
-        try {
+        try (var scope = operations.openScope()) {
             SyncState state = syncStateService.getOrCreate(workspaceId, adapter.provider(), target.targetId(),
                     target.ownerUserId());
             LocalDateTime now = LocalDateTime.now();

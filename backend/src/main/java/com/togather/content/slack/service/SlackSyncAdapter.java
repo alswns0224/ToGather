@@ -69,6 +69,7 @@ public class SlackSyncAdapter implements SyncAdapter {
     @Override
     public List<SyncTarget> findTargets(Long workspaceId, Long requestedBy) {
         return integrationService.getConnectionTargets(workspaceId, Provider.SLACK).stream()
+                .filter(channelId -> !channelId.startsWith("D"))
                 .map(SyncTarget::team)
                 .toList();
     }
@@ -77,6 +78,9 @@ public class SlackSyncAdapter implements SyncAdapter {
     public SyncResult sync(SyncContext context) {
         LocalDateTime startedAt = LocalDateTime.now(SlackApiClient.ZONE);
         String channelId = context.targetId();
+        if (channelId.startsWith("D")) {
+            throw new BusinessException(com.togather.common.exception.ErrorCode.SLACK_CHANNEL_NOT_LINKED);
+        }
         String token = teamTokenResolver.tokenFor(context.workspaceId(), Provider.SLACK, channelId,
                 context.requestedBy());
         LocalDateTime oldest = context.since() == null

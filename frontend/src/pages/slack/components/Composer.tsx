@@ -50,7 +50,7 @@ export default function Composer({
     }
   };
 
-  const needsOwnConnection = error instanceof ApiError && error.code === 'SLACK_OWN_CONNECTION_REQUIRED';
+  const needsOwnConnection = error instanceof ApiError && (error.code === 'SLACK_OWN_CONNECTION_REQUIRED' || error.code === 'OWN_CONNECTION_REQUIRED');
 
   return (
     <form className="slack-composer stack" onSubmit={send}>

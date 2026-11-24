@@ -361,6 +361,121 @@ legend {
   border-color: var(--primary);
 }
 
+/* 모든 단일 선택 메뉴에 같은 테마를 적용한다. 폼·키보드 동작은 select가 처리한다. */
+select:not([multiple]):not([size]) {
+  max-inline-size: 100%;
+  cursor: pointer;
+}
+
+select:not([multiple]):not([size]):disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 미지원 브라우저는 기존 선택 메뉴를 사용한다. */
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+
+  select:not([multiple]):not([size]) {
+    align-items: center;
+    gap: 12px;
+    text-align: start;
+  }
+
+  select:not([multiple]):not([size]):open {
+    border-color: var(--primary);
+    outline: 2px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+
+  select:not([multiple]):not([size])::picker-icon {
+    content: '';
+    inline-size: 12px;
+    block-size: 12px;
+    flex: 0 0 12px;
+    margin-inline-start: auto;
+    color: var(--muted);
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8' d='m4 6 4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+    transition: transform 0.15s ease;
+  }
+
+  select:not([multiple]):not([size]):open::picker-icon {
+    color: var(--primary);
+    transform: rotate(180deg);
+  }
+
+  select:not([multiple]):not([size])::picker(select) {
+    min-inline-size: anchor-size(self-inline);
+    max-inline-size: min(28rem, calc(100vw - 24px));
+    max-block-size: min(20rem, 60dvh);
+    margin-block: 6px;
+    padding: 5px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow), 0 12px 32px rgb(0 0 0 / 14%);
+    font: inherit;
+    font-size: 14px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) var(--surface);
+  }
+
+  select:not([multiple]):not([size]) option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-block-size: 36px;
+    padding: 8px 11px;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text);
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  select:not([multiple]):not([size]) option + option {
+    margin-block-start: 4px;
+  }
+
+  select:not([multiple]):not([size]) option:checked {
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  select:not([multiple]):not([size]) option:not(:disabled):not(:checked):hover,
+  select:not([multiple]):not([size]) option:not(:disabled):not(:checked):focus-visible {
+    background: color-mix(in srgb, var(--text) 6%, var(--surface));
+    color: var(--text);
+  }
+
+  select:not([multiple]):not([size]) option::checkmark {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--primary);
+  }
+
+  select:not([multiple]):not([size]) option:disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    select:not([multiple]):not([size])::picker-icon {
+      transition: none;
+    }
+  }
+}
+
 textarea.input {
   min-height: 80px;
   resize: vertical;
@@ -1750,4 +1865,19 @@ hr {
   .home-board {
     grid-template-columns: 1fr;
   }
+}
+
+/* 연동 관리: 팀 자료 서비스의 내 계정 연결 상태 */
+.integ-mine {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.integ-mine.on {
+  background: var(--success-soft);
+  color: var(--success);
 }

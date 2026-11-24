@@ -17,7 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
         "togather.app-url=http://localhost:5173",
         "togather.token-key=integration-test-key",
         "togather.scheduling.enabled=false",
-        "togather.gemini.api-key="
+        "togather.gemini.api-key=",
+        "togather.member-access.enabled=false"
 })
 @Import(EmbeddedPostgresConfig.class)
 public abstract class IntegrationTestSupport {

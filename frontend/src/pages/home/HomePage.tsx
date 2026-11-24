@@ -5,7 +5,7 @@ import PageHeader from '../../components/PageHeader';
 import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
 import NavIcon, { type IconName } from '../../layouts/NavIcon';
 import { getWorkspace, getMembers } from '../workspace/api';
-import { getTasks } from '../task/api';
+import { getTaskProgress, getTasks } from '../task/api';
 import { getDriveFiles } from '../drive/api';
 import { getPages } from '../notion/api';
 import { getChannels } from '../slack/api';
@@ -17,6 +17,18 @@ import { formatDate, formatDateTime } from '../../utils/date';
 
 /** 실패해도 화면은 그린다 (해당 칸만 비움) */
 const safe = <T,>(p: Promise<T>) => p.catch(() => null);
+
+const seoulDate = () => {
+  const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
+
+const sevenDaysAfter = (day: string) => {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 7);
+  return date.toISOString().slice(0, 10);
+};
 
 const CONN_BADGE: Record<ConnectionStatus, [string, string]> = {
   CONNECTED: ['연결됨', 'badge-success'],
@@ -58,12 +70,16 @@ export default function HomePage() {
   const { workspaceId = '' } = useParams();
   const navigate = useNavigate();
   const base = `/workspaces/${workspaceId}`;
+  const dateKey = seoulDate();
+  const dueBefore = sevenDaysAfter(dateKey);
 
   const data = useAsync(async () => {
-    const [ws, members, tasks, drive, notion, channels, analyses, meetings, suggestions, integrations, todos] = await Promise.all([
+    const [ws, members, tasks, progress, dueTasks, drive, notion, channels, analyses, meetings, suggestions, integrations, todos] = await Promise.all([
       safe(getWorkspace(workspaceId)),
       safe(getMembers(workspaceId)),
-      safe(getTasks(workspaceId, 0, 100)),
+      safe(getTasks(workspaceId, 0, 5)),
+      safe(getTaskProgress(workspaceId)),
+      safe(getTasks(workspaceId, 0, 5, { status: 'IN_PROGRESS', dueBefore, sort: 'DUE_DATE' })),
       safe(getDriveFiles(workspaceId)),
       safe(getPages(workspaceId)),
       safe(getChannels(workspaceId)),
@@ -73,13 +89,12 @@ export default function HomePage() {
       safe(getIntegrations(workspaceId)),
       safe(getMyTodoList(workspaceId)),
     ]);
-    return { ws, members, tasks, drive, notion, channels, analyses, meetings, suggestions, integrations, todos };
-  }, [workspaceId]);
+    return { ws, members, tasks, progress, dueTasks, drive, notion, channels, analyses, meetings, suggestions, integrations, todos };
+  }, [workspaceId, dateKey]);
 
   const d = data.data;
   const taskItems = d?.tasks?.items ?? [];
-  const inProgress = taskItems.filter((t) => t.status !== 'DONE');
-  const doneCount = taskItems.length - inProgress.length;
+  const overall = d?.progress?.overall;
   const now = Date.now();
   const upcomingMeetings = (d?.meetings ?? []).filter(
     (m) => m.status !== 'CANCELED' && (m.startAt ? new Date(m.startAt).getTime() >= now : new Date(m.candidateEndAt).getTime() >= now),
@@ -89,13 +104,9 @@ export default function HomePage() {
 
   // 최근 AI 정리 · 회의 일정: 검토할 일정 후보, 검토 대기 논의 정리, 다가오는 회의
   // 이번 주 마감: 끝나지 않은 팀 작업 + 개인 할 일 중 마감이 7일 안이거나 이미 지난 것
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(today.getTime() + 7 * 86_400_000);
-  const dueDate = (v: string) => new Date(`${v}T00:00:00`);
+  const today = d?.progress?.asOfDate ?? dateKey;
   const dueThisWeek = [
-    ...inProgress
-      .filter((t) => t.dueDate && dueDate(t.dueDate) < weekEnd)
+    ...(d?.dueTasks?.items ?? [])
       .map((t) => ({
         key: `t-${t.taskId}`,
         title: t.title,
@@ -105,7 +116,7 @@ export default function HomePage() {
         to: `${base}/tasks/${t.taskId}`,
       })),
     ...(d?.todos?.personalTasks ?? [])
-      .filter((t) => t.status !== 'DONE' && t.dueDate && dueDate(t.dueDate) < weekEnd)
+      .filter((t) => t.status !== 'DONE' && t.dueDate && t.dueDate < dueBefore)
       .map((t) => ({
         key: `p-${t.personalTaskId}`,
         title: t.title,
@@ -171,11 +182,11 @@ export default function HomePage() {
               to={`${base}/tasks`}
               value={
                 <>
-                  {inProgress.length}건{' '}
-                  <span className="text-base font-bold text-[var(--success)]">/ 완료 {doneCount}</span>
+                  {overall?.inProgressCount ?? '—'}건{' '}
+                  <span className="text-base font-bold text-[var(--success)]">/ 완료 {overall?.doneCount ?? '—'}</span>
                 </>
               }
-              sub={`전체 ${d.tasks?.total ?? 0}건 · 클릭하여 관리`}
+              sub={`전체 ${overall?.totalCount ?? d.tasks?.total ?? '—'}건 · 클릭하여 관리`}
             />
             <Kpi
               label="연결된 Drive 자료"
@@ -210,7 +221,20 @@ export default function HomePage() {
                   전체 보기 →
                 </Link>
               </div>
-              {taskItems.length === 0 && <p className="m-0 text-sm text-[var(--muted)]">아직 팀 작업이 없어요.</p>}
+              {overall ? (
+                <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <strong>팀 전체 평균 진행률 {overall.progress}%</strong>
+                    <span className="text-xs text-[var(--muted)]">정상 {overall.normalCount} · 주의 {overall.warningCount} · 위험 {overall.dangerCount}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface)]">
+                    <div className="h-full rounded-full bg-[image:var(--brand-grad)]" style={{ width: `${overall.progress}%` }} />
+                  </div>
+                </div>
+              ) : <div className="alert alert-error"><span>팀 작업 집계를 불러오지 못했습니다.</span>
+                <button type="button" className="btn btn-small" onClick={data.reload}>다시 시도</button></div>}
+              {d.tasks === null && <p className="m-0 text-sm text-[var(--danger)]">최근 팀 작업을 불러오지 못했습니다.</p>}
+              {d.tasks && taskItems.length === 0 && <p className="m-0 text-sm text-[var(--muted)]">아직 팀 작업이 없어요.</p>}
               {taskItems.slice(0, 5).map((t) => {
                 const done = t.status === 'DONE';
                 const name = memberName(t.assigneeId);
@@ -244,11 +268,13 @@ export default function HomePage() {
                   <strong className="text-[17px]">이번 주 마감</strong>
                   <span className="text-xs text-[var(--muted)]">팀 작업 · 개인 할 일</span>
                 </div>
-                {dueThisWeek.length === 0 && (
+                {d.dueTasks === null && <div className="alert alert-error"><span>팀 작업 마감 목록을 불러오지 못했습니다.</span>
+                  <button type="button" className="btn btn-small" onClick={data.reload}>다시 시도</button></div>}
+                {d.dueTasks && dueThisWeek.length === 0 && (
                   <p className="m-0 text-sm text-[var(--muted)]">7일 안에 마감인 팀 작업이나 개인 할 일이 없어요.</p>
                 )}
                 {dueThisWeek.map((item) => {
-                  const overdue = dueDate(item.due) < today;
+                  const overdue = item.due < today;
                   return (
                     <Link key={item.key} to={item.to} className="home-conn no-underline">
                       <span className={`badge ${item.kind === '팀 작업' ? 'badge-primary' : 'badge-success'} flex-shrink-0`}>
@@ -265,6 +291,11 @@ export default function HomePage() {
                     </Link>
                   );
                 })}
+                {d.dueTasks && d.dueTasks.total > d.dueTasks.items.length && (
+                  <Link to={`${base}/tasks?status=IN_PROGRESS&dueBefore=${dueBefore}&sort=DUE_DATE`} className="text-xs">
+                    마감 대상 팀 작업 {d.dueTasks.total}건 전체 보기 →
+                  </Link>
+                )}
               </div>
 
               {/* 연동 상태 */}

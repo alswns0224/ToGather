@@ -92,6 +92,10 @@ public class Meeting extends BaseTimeEntity {
         return startAt == null ? null : startAt.plusMinutes(durationMinutes);
     }
 
+    public void reschedule(LocalDateTime startAt) {
+        this.startAt = startAt;
+    }
+
     public boolean isScheduling() {
         return status == MeetingStatus.SCHEDULING;
     }

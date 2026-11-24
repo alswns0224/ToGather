@@ -123,6 +123,20 @@ public class ContentRefService {
     public ContentRefDTO upsert(
         ContentRefUpsert command
     ) {
+        return upsertInternal(command, null, false);
+    }
+
+    /** Drive 원본 크기를 같은 트랜잭션에서 반영한다. null은 원본이 크기를 제공하지 않은 경우다. */
+    @Transactional
+    public ContentRefDTO upsertDriveFile(ContentRefUpsert command, Long fileSize) {
+        if (command.provider() != Provider.GOOGLE_DRIVE || command.contentType() != ContentType.FILE
+                || (fileSize != null && fileSize < 0)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return upsertInternal(command, fileSize, true);
+    }
+
+    private ContentRefDTO upsertInternal(ContentRefUpsert command, Long fileSize, boolean updateFileSize) {
 
         boolean driveFile = command.provider() == Provider.GOOGLE_DRIVE
             && command.contentType() == ContentType.FILE;
@@ -140,6 +154,10 @@ public class ContentRefService {
 
         ContentRef ref = stored
             .map(existing -> {
+
+                if (command.provider() == Provider.SLACK && !Objects.equals(existing.getOwnerUserId(), command.ownerUserId())) {
+                    throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                }
 
                 // 1. 기존 콘텐츠의 변경 사항 확인
                 boolean contentChanged =
@@ -168,7 +186,8 @@ public class ContentRefService {
                 );
 
                 // 3. 내용 변경 또는 복원 시 변경 횟수 증가
-                if (contentChanged || wasDeleted || locationChanged) {
+                if (contentChanged || wasDeleted || locationChanged
+                        || (updateFileSize && !Objects.equals(existing.getFileSize(), fileSize))) {
                     changed();
                 }
 
@@ -181,6 +200,7 @@ public class ContentRefService {
                     command.authorExternalId(),
                     command.authorName()
                 );
+                if (updateFileSize) existing.updateFileSize(fileSize);
 
                 // 5. 상위 콘텐츠 연결
                 existing.attachToParent(
@@ -201,6 +221,7 @@ public class ContentRefService {
 
                 return contentRefRepository.save(
                     ContentRef.builder()
+                        .fileSize(updateFileSize ? fileSize : null)
                         .workspaceId(
                             command.workspaceId()
                         )
@@ -660,9 +681,12 @@ public class ContentRefService {
         }
     }
 
-    /**
-     * 콘텐츠 소유자 정보.
-     */
+    /** Calendar 등 외부 원본이 속한 채널·컨테이너 ID. 접근 권한 검사는 호출 서비스에서 먼저 수행한다. */
+    public String getChannelId(Long contentRefId) {
+        return find(contentRefId).getChannelId();
+    }
+
+    /** 콘텐츠 소유자 정보. */
     public record ContentOwner(
         Long workspaceId,
         Long ownerUserId,

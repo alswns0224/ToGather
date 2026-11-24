@@ -5,6 +5,7 @@ import static com.togather.common.util.JsonValues.str;
 
 import com.togather.common.enums.Provider;
 import com.togather.common.event.WorkspaceEventService;
+import com.togather.content.access.ContentAccessService;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.integration.service.IntegrationService;
@@ -46,6 +47,7 @@ public class SlackEventService {
     private final SyncService syncService;
     private final SlackContentService slackContentService;
     private final WorkspaceEventService workspaceEventService;
+    private final ContentAccessService contentAccess;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "slack-events");
         t.setDaemon(true);
@@ -54,13 +56,19 @@ public class SlackEventService {
 
     public SlackEventService(@Value("${togather.slack.signing-secret:}") String signingSecret,
                              IntegrationService integrationService, SyncService syncService,
-                             SlackContentService slackContentService, WorkspaceEventService workspaceEventService) {
+                             SlackContentService slackContentService, WorkspaceEventService workspaceEventService,
+                             ContentAccessService contentAccess) {
         this.signingSecret = signingSecret;
         this.integrationService = integrationService;
         this.syncService = syncService;
         this.slackContentService = slackContentService;
         this.workspaceEventService = workspaceEventService;
+        this.contentAccess = contentAccess;
     }
+
+    /** 채널 멤버가 바뀌는 이벤트 (Slack 앱의 Event Subscriptions에서 구독해야 온다) */
+    private static final java.util.Set<String> MEMBERSHIP_EVENTS = java.util.Set.of(
+            "member_left_channel", "member_joined_channel", "channel_left", "group_left");
 
     public boolean isConfigured() {
         return signingSecret != null && !signingSecret.isBlank();
@@ -90,7 +98,18 @@ public class SlackEventService {
     /** event_callback 한 건을 뒤에서 처리한다. */
     public void handleAsync(Map<String, Object> payload) {
         Map<String, Object> event = obj(payload, "event");
-        if (!"message".equals(str(event, "type"))) {
+        String type = str(event, "type");
+        if (MEMBERSHIP_EVENTS.contains(type)) {
+            // 누가 채널에서 나가거나 들어왔다 → 원본 권한 확인을 다시 하게 하고, 그 채널을 보는 화면을 새로고침한다.
+            contentAccess.forgetAll();
+            String channelId = str(event, "channel");
+            if (channelId != null) {
+                integrationService.findWorkspacesByTarget(Provider.SLACK, channelId)
+                        .forEach(workspaceId -> workspaceEventService.publish(workspaceId, Provider.SLACK.name(), channelId));
+            }
+            return;
+        }
+        if (!"message".equals(type)) {
             return;
         }
         executor.submit(() -> {

@@ -53,7 +53,7 @@ public class NotionContentController {
     @GetMapping("/pages")
     public ApiResponse<List<NotionPageResponse>> getContents(@LoginUser Long userId, @PathVariable Long workspaceId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(notionContentService.getPages(workspaceId));
+        return ApiResponse.ok(notionContentService.getPages(workspaceId, userId));
     }
 
     @GetMapping("/pages/{contentRefId}")

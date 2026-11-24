@@ -19,6 +19,7 @@ import {
 } from './api';
 import { MEETING_BADGE, STATUS_TEXT } from './MeetingListPage';
 import MeetingEditForm from './MeetingEditForm';
+import MeetingAgendaCard from './MeetingAgendaCard';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorBox, Loading } from '../../components/Status';
 import { MUTED } from '../../components/ui';
@@ -26,16 +27,17 @@ import PageHeader from '../../components/PageHeader';
 import NavIcon from '../../layouts/NavIcon';
 import { addDays, formatDate, formatDateTime, formatTime, fromLocalIso, startOfDay, toLocalIso } from '../../utils/date';
 
-const RISK_TEXT = { NORMAL: '정상', WARNING: '주의', DANGER: '위험' } as const;
-
 export default function MeetingDetailPage() {
   const { workspaceId = '', meetingId = '' } = useParams();
   const meeting = useAsync(() => getMeeting(workspaceId, meetingId), [workspaceId, meetingId]);
   const [actionError, setActionError] = useState<Error>();
   const [editing, setEditing] = useState(false);
+  const [acting, setActing] = useState(false);
   const m = meeting.data;
 
   const run = async (fn: () => Promise<MeetingDetailResponse | void>) => {
+    if (acting) return;
+    setActing(true);
     setActionError(undefined);
     try {
       const result = await fn();
@@ -43,6 +45,8 @@ export default function MeetingDetailPage() {
       else meeting.reload();
     } catch (err) {
       setActionError(err as Error);
+    } finally {
+      setActing(false);
     }
   };
 
@@ -103,8 +107,8 @@ export default function MeetingDetailPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              {m.canManage && scheduling && !editing && (
-                <button type="button" className="btn btn-small" onClick={() => setEditing(true)}>
+              {m.canManage && m.status !== 'CANCELED' && !editing && (
+                <button type="button" className="btn btn-small" disabled={acting} onClick={() => setEditing(true)}>
                   수정
                 </button>
               )}
@@ -112,6 +116,7 @@ export default function MeetingDetailPage() {
                 <button
                   type="button"
                   className="btn btn-small btn-danger"
+                  disabled={acting || editing}
                   onClick={() =>
                     window.confirm('회의를 취소할까요? 확정된 회의면 캘린더 일정도 삭제됩니다.') &&
                     run(() => cancelMeeting(workspaceId, m.meetingId))
@@ -139,10 +144,13 @@ export default function MeetingDetailPage() {
               </div>
               {m.calendarSyncFailed && (
                 <div className="alert alert-error">
-                  Google Calendar 등록에 실패했습니다. 연동 상태를 확인한 뒤 다시 시도하세요.
+                  회의는 저장됐지만 Google Calendar에 최신 내용을 반영하지 못했습니다. 연동 상태를 확인한 뒤 다시 시도하세요.
+                  <span className="block text-xs">기존 일정은 원래 캘린더를 다시 연결해 주세요. 개인 일정은 그 일정의 소유자가 재시도할 수 있어요.</span>
                   {m.canManage && (
-                    <button className="btn btn-small" onClick={() => run(() => retryCalendar(workspaceId, m.meetingId))}>
-                      다시 등록
+                    <button className="btn btn-small" disabled={acting || editing} onClick={() =>
+                      window.confirm('Calendar에 최신 회의 정보를 다시 반영할까요? 원본 일정이 삭제됐다면 새 일정으로 등록합니다.') &&
+                      run(() => retryCalendar(workspaceId, m.meetingId))}>
+                      {acting ? '반영 중...' : '다시 반영'}
                     </button>
                   )}
                 </div>
@@ -225,60 +233,15 @@ function Agendas({
         )}
       </div>
       {meeting.agendas.length === 0 && <span className="text-[13px] text-[var(--muted)]">안건이 없습니다.</span>}
-      {meeting.agendas.map((a) => {
-        const done = a.task?.status === 'DONE' || a.task?.progress === 100;
-        return (
-          <div key={a.agendaId} className="meeting-agenda">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="text-[var(--muted)]">
-                <NavIcon name="tasks" />
-              </span>
-              {a.task ? (
-                <Link to={`/workspaces/${workspaceId}/tasks/${a.taskId}`} className="truncate text-sm font-semibold text-[var(--text)] no-underline">
-                  {a.task.title}
-                </Link>
-              ) : (
-                <span className="text-sm text-[var(--muted)]">(삭제된 팀 작업)</span>
-              )}
-              {a.task && a.task.riskLevel !== 'NORMAL' && !done && (
-                <span className={`badge ${a.task.riskLevel === 'DANGER' ? 'badge-danger' : 'badge-warning'} !text-[10px]`}>
-                  {RISK_TEXT[a.task.riskLevel]}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-shrink-0 items-center gap-2.5">
-              {a.task && (
-                <>
-                  <span className={`text-xs font-bold ${done ? 'text-[var(--success)]' : 'text-[var(--muted)]'}`}>
-                    {done ? '완료 · 100%' : `진행 중 · ${a.task.progress}%`}
-                  </span>
-                  <div className="h-2 w-[88px] overflow-hidden rounded-full bg-[var(--surface-2)]">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${done ? 100 : a.task.progress}%`,
-                        background: done ? 'var(--success)' : 'var(--brand-grad)',
-                      }}
-                    />
-                  </div>
-                </>
-              )}
-              {editable && (
-                <button
-                  type="button"
-                  className="analysis-ghost"
-                  onClick={() => onChange(() => deleteAgenda(workspaceId, meeting.meetingId, a.agendaId))}
-                >
-                  빼기
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {meeting.agendas.map((agenda) => (
+        <MeetingAgendaCard key={`${workspaceId}/${meeting.meetingId}/${agenda.agendaId}/${agenda.taskId}`}
+          workspaceId={workspaceId} agenda={agenda} editable={editable}
+          onRemove={() => onChange(() => deleteAgenda(workspaceId, meeting.meetingId, agenda.agendaId))} />
+      ))}
       {adding && (
         <div className="tags">
           {candidates.loading && <Loading />}
+          {candidates.error && <ErrorBox error={candidates.error} onRetry={candidates.reload} />}
           {candidates.data
             ?.filter((t) => !used.has(t.taskId))
             .map((t) => (

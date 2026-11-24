@@ -2,6 +2,7 @@ package com.togather.analysis.service;
 
 import com.togather.common.enums.Provider;
 import com.togather.content.slack.client.SlackApiClient;
+import com.togather.integration.service.ConnectionOperationRegistry;
 import com.togather.sync.domain.SyncState;
 import com.togather.sync.service.SyncStateService;
 import java.time.Duration;
@@ -35,6 +36,7 @@ public class AnalysisScheduler {
 
     private final AnalysisService analysisService;
     private final SyncStateService syncStateService;
+    private final ConnectionOperationRegistry operations;
     private final Map<Long, LocalDateTime> lastChecked = new ConcurrentHashMap<>();
 
     @Scheduled(initialDelayString = "${togather.analysis.initial-delay:PT3M}",
@@ -49,7 +51,7 @@ public class AnalysisScheduler {
             // 논의가 끝났는지 판단하는 시간만큼 겹쳐서 본다. (그 사이 조용해진 스레드를 놓치지 않도록)
             LocalDateTime since = lastChecked.getOrDefault(workspaceId, now.minus(FIRST_LOOKBACK))
                     .minus(AnalysisService.SETTLE_TIME);
-            try {
+            try (var scope = operations.openScope()) {
                 int count = analysisService.collectAndAnalyze(workspaceId, since, MAX_THREADS_PER_RUN);
                 if (count > 0) {
                     log.info("자동 논의 분석: workspaceId={}, threads={}", workspaceId, count);

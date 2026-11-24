@@ -3,7 +3,6 @@ package com.togather.task.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -140,33 +139,6 @@ class TaskServiceTest {
     }
 
     @Test
-    void deleteTask_deletesTask() {
-        // given
-        Long workspaceId = 1L;
-        Long taskId = 100L;
-
-        Task task = new Task(
-            workspaceId,
-            "삭제할 Task",
-            "설명",
-            LocalDate.of(2026, 10, 30),
-            TaskStatus.IN_PROGRESS
-        );
-
-        when(taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId))
-            .thenReturn(Optional.of(task));
-
-        // when
-        taskService.deleteTask(
-            workspaceId,
-            taskId
-        );
-
-        // then
-        verify(taskRepository).delete(task);
-    }
-
-    @Test
     void updateTask_rejectsTaskFromAnotherWorkspace() {
         // given
         Long requestedWorkspaceId = 1L;
@@ -201,24 +173,4 @@ class TaskServiceTest {
             .isEqualTo("다른 워크스페이스 Task");
     }
 
-    @Test
-    void deleteTask_rejectsTaskFromAnotherWorkspace() {
-        // given
-        Long requestedWorkspaceId = 1L;
-        Long taskId = 100L;
-
-        when(taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, requestedWorkspaceId))
-            .thenReturn(Optional.empty());
-
-        // when & then
-        assertThatThrownBy(() ->
-            taskService.deleteTask(
-                requestedWorkspaceId,
-                taskId
-            )
-        ).isInstanceOf(BusinessException.class);
-
-        verify(taskRepository, never())
-            .delete(any(Task.class));
-    }
 }

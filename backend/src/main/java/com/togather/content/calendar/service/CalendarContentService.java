@@ -246,7 +246,13 @@ public class CalendarContentService {
             }
             return personalAccess(workspaceId, userId);
         }
-        return teamAccess(workspaceId);
+        String calendarId = contentRefService.getChannelId(contentRefId);
+        if (calendarId == null || calendarId.isBlank()) {
+            throw new BusinessException(ErrorCode.CALENDAR_EVENT_NOT_FOUND);
+        }
+        return integrationService.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR, calendarId)
+                .map(target -> new Access(target.accessToken(), calendarId, null))
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONNECTION_NOT_FOUND));
     }
 
     private CalendarEvent fetchOrMarkDeleted(Access access, Long contentRefId) {
