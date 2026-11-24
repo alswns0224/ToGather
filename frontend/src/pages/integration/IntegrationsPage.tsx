@@ -93,7 +93,7 @@ export default function IntegrationsPage() {
       <PageHeader
         icon={<NavIcon name="integrations" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="외부 서비스 연동 관리"
-        description="수집 대상을 고르고, 수동 동기화·재인증·연결 해제를 할 수 있어요. Slack · Notion · Drive는 팀 공용, Gmail · Calendar는 각자 연결해요."
+        description="모든 서비스는 각자 내 계정으로 연결해요. Slack · Notion · Drive는 팀이 고른 채널·페이지·폴더 중 내 계정으로 볼 수 있는 것만 보여요."
       />
 
       {connectedProvider && !errorCode && (
@@ -236,6 +236,19 @@ function ServiceCard({
         {syncFailed && <span className="text-[var(--warning)]"> (최근 실패)</span>}
       </div>
 
+      {!item.personal && (
+        <div className={`integ-mine${mine ? ' on' : ''}`}>
+          {mine ? (
+            <>
+              ✓ 내 계정 연결됨
+              <span className="text-[var(--muted)]"> · {mine.accountLabel ?? mine.externalAccountId ?? '-'}</span>
+            </>
+          ) : (
+            <>내 계정이 연결되지 않아 팀 자료가 보이지 않아요. 내 계정을 연결해 주세요.</>
+          )}
+        </div>
+      )}
+
       {item.connections.length > 1 && (
         <div className="flex flex-col gap-1 text-xs text-[var(--muted)]">
           {item.connections
@@ -278,8 +291,8 @@ function ServiceCard({
           <span className="self-center text-xs text-[var(--muted)]">서버 설정 필요</span>
         )}
         {primary && !item.personal && !mine && item.configured && (
-          <a className="btn" href={connectUrl(workspaceId, item.provider)}>
-            내 계정 추가 연결
+          <a className="btn btn-primary" href={connectUrl(workspaceId, item.provider)}>
+            내 계정 연결
           </a>
         )}
         {primary && (

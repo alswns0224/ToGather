@@ -1866,3 +1866,18 @@ hr {
     grid-template-columns: 1fr;
   }
 }
+
+/* 연동 관리: 팀 자료 서비스의 내 계정 연결 상태 */
+.integ-mine {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.integ-mine.on {
+  background: var(--success-soft);
+  color: var(--success);
+}

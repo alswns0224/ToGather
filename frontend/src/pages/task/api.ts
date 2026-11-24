@@ -77,6 +77,8 @@ export interface TaskContext {
     startAt: string | null;
   }[];
   contentStates: Record<string, TaskContextContentState>;
+  /** 내 계정으로 원본을 볼 수 없어 숨긴 연결 자료·근거 발언 수 */
+  hiddenContentCount?: number;
 }
 
 export interface TaskContextContentState {

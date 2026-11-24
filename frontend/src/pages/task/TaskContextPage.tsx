@@ -177,6 +177,12 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
           </div>
 
           {/* 논의 → 결정 → 팀 작업 */}
+          {(context.hiddenContentCount ?? 0) > 0 && (
+            <div className="alert">
+              내 계정으로는 원본을 볼 수 없는 자료 {context.hiddenContentCount}건은 숨겼어요. (Slack 채널 멤버가 아니거나, Notion·Drive에서 공유받지 않은 자료)
+            </div>
+          )}
+
           {context.originDecision && (
             <div className="taskctx-origin">
               <div className="text-sm font-bold text-[var(--primary)]">논의 → 결정 → 팀 작업 연결 맥락</div>
