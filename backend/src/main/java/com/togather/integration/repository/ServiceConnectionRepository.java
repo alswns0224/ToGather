@@ -23,6 +23,9 @@ public interface ServiceConnectionRepository extends JpaRepository<ServiceConnec
 
     List<ServiceConnection> findAllByWorkspaceIdAndStatusNot(Long workspaceId, ConnectionStatus status);
 
+    /** 한 팀원이 이 워크스페이스에서 만든 연결 (해제된 것 포함) */
+    List<ServiceConnection> findAllByWorkspaceIdAndUserId(Long workspaceId, Long userId);
+
     /** 외부 계정(예: Notion 워크스페이스 ID)으로 연결을 찾는다. 외부 서비스 웹훅을 워크스페이스에 나눠 줄 때 쓴다. */
     List<ServiceConnection> findAllByProviderAndExternalAccountIdAndStatusNot(
             Provider provider, String externalAccountId, ConnectionStatus status);

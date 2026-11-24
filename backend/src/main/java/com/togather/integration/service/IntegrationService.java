@@ -241,6 +241,60 @@ public class IntegrationService {
         }
     }
 
+    /**
+     * 내보낸 팀원의 연결을 모두 지운다. 외부 토큰은 폐기를 시도하고(실패해도 진행), 연결 기록은 남기지 않는다.
+     * 그 사람이 고른 연동 대상(팀 채널·페이지·폴더)은 같은 서비스를 연결한 다른 팀원에게 넘기고,
+     * 넘길 사람이 없으면 지운다. (팀이 다시 골라야 한다)
+     *
+     * @return 지운 연결 수
+     */
+    @Transactional
+    public int purgeMemberConnections(Long workspaceId, Long userId) {
+        List<ServiceConnection> mine = connectionRepository.findAllByWorkspaceIdAndUserId(workspaceId, userId);
+        for (ServiceConnection connection : mine) {
+            if (connection.isActive()) {
+                try {
+                    String accessToken = tokenCipher.decrypt(connection.getEncryptedTokens()).accessToken();
+                    if (accessToken != null && !accessToken.isBlank()) {
+                        clientFor(connection.getProvider()).revoke(accessToken);
+                    }
+                } catch (RuntimeException e) {
+                    log.info("내보낸 팀원의 토큰 폐기를 확인하지 못함(연결은 지움): connectionId={}, error={}",
+                            connection.getConnectionId(),
+                            e instanceof BusinessException be ? be.getErrorCode() : e.getClass().getSimpleName());
+                }
+            }
+            handOverTargets(workspaceId, userId, connection);
+            targetRepository.deleteAllByConnectionId(connection.getConnectionId());
+        }
+        connectionRepository.deleteAll(mine);
+        connectionRepository.flush();
+        return mine.size();
+    }
+
+    private void handOverTargets(Long workspaceId, Long leavingUserId, ServiceConnection connection) {
+        List<IntegrationTarget> chosen = targetRepository.findAllByConnectionIdIn(List.of(connection.getConnectionId()));
+        if (chosen.isEmpty()) {
+            return;
+        }
+        Optional<ServiceConnection> heir = connectionRepository
+                .findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId, connection.getProvider(),
+                        ConnectionStatus.DISCONNECTED).stream()
+                .filter(other -> !other.getUserId().equals(leavingUserId))
+                .findFirst();
+        if (heir.isEmpty()) {
+            return;
+        }
+        Set<String> already = targetRepository.findAllByConnectionIdIn(List.of(heir.get().getConnectionId())).stream()
+                .map(IntegrationTarget::getExternalTargetId).collect(Collectors.toSet());
+        for (IntegrationTarget target : chosen) {
+            if (!already.contains(target.getExternalTargetId())) {
+                targetRepository.save(new IntegrationTarget(heir.get().getConnectionId(), target.getExternalTargetId(),
+                        target.getName()));
+            }
+        }
+    }
+
     /** Google 폐기는 같은 계정의 프로젝트 권한 전체에 적용되므로 다른 연결을 정상 연결로 남기지 않는다. */
     private boolean markRelatedGoogleConnections(ServiceConnection disconnected) {
         Set<Provider> googleProviders = Set.of(Provider.GOOGLE_DRIVE, Provider.GOOGLE_CALENDAR, Provider.GMAIL);
