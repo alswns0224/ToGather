@@ -7,6 +7,7 @@ import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 
+import com.togather.content.access.ContentAccessService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.domain.ContentRef.DriveFileState;
 import com.togather.content.drive.client.DriveApiClient;
@@ -70,6 +71,7 @@ public class DriveContentService {
     private final ContentRefRepository contentRefRepository;
     private final ContentRefService contentRefService;
     private final IntegrationService integrationService;
+    private final ContentAccessService contentAccess;
     private final WorkspaceAccessChecker workspaceAccessChecker;
     private final DriveApiClient driveApiClient;
     private final TeamTokenResolver teamTokenResolver;
@@ -102,13 +104,7 @@ public class DriveContentService {
             userId
         );
 
-        return integrationService.getConnectionTargets(
-                workspaceId,
-                PROVIDER
-            )
-            .stream()
-            .distinct()
-            .toList();
+        return getSelectedFolders(workspaceId, userId).stream().distinct().toList();
     }
 
     /**
@@ -116,7 +112,9 @@ public class DriveContentService {
      */
     public List<DriveFolderResponse> getFolderNames(Long workspaceId, Long userId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
+        List<String> visible = getSelectedFolders(workspaceId, userId);
         return integrationService.getConnectionTargetNames(workspaceId, PROVIDER).entrySet().stream()
+            .filter(e -> visible.contains(e.getKey()))
             .map(e -> new DriveFolderResponse(e.getKey(), e.getValue()))
             .toList();
     }
@@ -145,7 +143,7 @@ public class DriveContentService {
         );
 
         List<String> selectedFolders =
-            getSelectedFolders(workspaceId);
+            getSelectedFolders(workspaceId, userId);
 
         if (selectedFolders.isEmpty()) {
             return List.of();
@@ -238,7 +236,7 @@ public class DriveContentService {
         );
 
         List<String> selectedFolders =
-            getSelectedFolders(workspaceId);
+            getSelectedFolders(workspaceId, userId);
 
         if (selectedFolders.isEmpty()) {
             return List.of();
@@ -786,7 +784,7 @@ public class DriveContentService {
             );
         }
 
-        if (!getSelectedFolders(workspaceId)
+        if (!getSelectedFolders(workspaceId, userId)
             .contains(file.getChannelId())) {
 
             throw new BusinessException(
@@ -816,7 +814,7 @@ public class DriveContentService {
 
         if (folderId == null
             || folderId.isBlank()
-            || !getSelectedFolders(workspaceId)
+            || !getSelectedFolders(workspaceId, userId)
             .contains(folderId)) {
 
             throw new BusinessException(
@@ -835,14 +833,18 @@ public class DriveContentService {
     /**
      * 13. 연동 관리에서 선택한 Drive 폴더 조회.
      */
+    /** 팀이 고른 폴더 중 내 Google 계정으로 열 수 있는 폴더 (원본 권한과 같게). 내 계정을 연동해야 한다. */
     private List<String> getSelectedFolders(
-        Long workspaceId
+        Long workspaceId,
+        Long userId
     ) {
 
+        contentAccess.requireOwnConnection(workspaceId, userId, PROVIDER);
+        Set<String> visible = contentAccess.visibleTargets(workspaceId, userId, PROVIDER);
         return integrationService.getConnectionTargets(
             workspaceId,
             PROVIDER
-        );
+        ).stream().filter(visible::contains).toList();
     }
 
     /**

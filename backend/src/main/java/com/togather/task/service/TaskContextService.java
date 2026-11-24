@@ -135,7 +135,8 @@ public class TaskContextService {
             originDecision,
             originEvidence,
             meetings,
-            contentStates
+            contentStates,
+            0
         );
     }
 

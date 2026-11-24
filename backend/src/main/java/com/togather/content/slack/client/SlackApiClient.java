@@ -112,6 +112,31 @@ public class SlackApiClient {
         public long retryAfterSeconds() { return retryAfterSeconds; }
     }
 
+    /**
+     * 토큰 주인이 멤버로 들어가 있는 공개·비공개 채널 ID (users.conversations).
+     * 팀원별로 ToGather에서 볼 수 있는 채널을 Slack 권한과 똑같이 맞출 때 쓴다.
+     */
+    public Set<String> getMemberChannelIds(String token) {
+        Map<String, String> query = new HashMap<>(Map.of(
+                "types", "public_channel,private_channel", "exclude_archived", "true", "limit", "200"));
+        Set<String> ids = new java.util.LinkedHashSet<>();
+        for (int page = 0; page < 20; page++) {
+            Map<String, Object> json = get(token, "users.conversations", query);
+            for (Map<String, Object> item : list(json, "channels")) {
+                String id = str(item, "id");
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+            String cursor = str(obj(json, "response_metadata"), "next_cursor");
+            if (cursor == null || cursor.isBlank()) {
+                return ids;
+            }
+            query.put("cursor", cursor);
+        }
+        return ids;
+    }
+
     /** 본인 사용자 토큰으로 접근 가능한 1:1 DM만 조회한다. 대화를 열거나 메시지를 보내지 않는다. */
     public List<DirectMessage> getDirectMessages(String token) {
         Map<String, String> query = new HashMap<>(Map.of("types", "im", "limit", "200"));

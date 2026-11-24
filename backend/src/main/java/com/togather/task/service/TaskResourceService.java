@@ -6,6 +6,7 @@ import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.drive.service.DriveContentService;
+import com.togather.content.access.ContentAccessService;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.notion.service.NotionContentService;
 import com.togather.content.service.ContentRefService;
@@ -40,6 +41,7 @@ public class TaskResourceService {
     private final SlackContentService slackContentService;
     private final NotionContentService notionContentService;
     private final DriveContentService driveContentService;
+    private final ContentAccessService contentAccess;
 
     public List<TaskReferenceCandidate> getCandidates(Long workspaceId, Long userId, Long taskId,
                                                       Provider provider, String query) {
@@ -141,11 +143,18 @@ public class TaskResourceService {
 
     private List<ContentRefDTO> candidates(Long workspaceId, Long userId, Provider provider) {
         return switch (provider) {
-            case SLACK -> slackContentService.getContents(workspaceId);
-            case NOTION -> notionContentService.getContents(workspaceId);
+            case SLACK -> visible(workspaceId, userId, slackContentService.getContents(workspaceId));
+            case NOTION -> visible(workspaceId, userId, notionContentService.getContents(workspaceId));
             case GOOGLE_DRIVE -> driveContentService.getFiles(workspaceId, userId, null);
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT);
         };
+    }
+
+    /** 내 계정으로 원본을 볼 수 있는 자료만 연결 후보로 보여 준다. */
+    private List<ContentRefDTO> visible(Long workspaceId, Long userId, List<ContentRefDTO> contents) {
+        Set<Long> ids = contentAccess.visibleIds(workspaceId, userId,
+            contents.stream().map(ContentRefDTO::contentRefId).toList());
+        return contents.stream().filter(content -> ids.contains(content.contentRefId())).toList();
     }
 
     private static TaskDeliverable findDeliverable(Task task, Long deliverableId) {

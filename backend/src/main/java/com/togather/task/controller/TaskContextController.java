@@ -6,6 +6,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.ApiResponse;
 import com.togather.content.service.ContentRefService;
+import com.togather.content.access.ContentAccessService;
 import com.togather.task.dto.TaskContext;
 import com.togather.task.dto.TaskSummary;
 import com.togather.task.service.TaskContextService;
@@ -26,6 +27,34 @@ public class TaskContextController {
     private final TaskService taskService;
     private final ContentRefService contentRefService;
     private final WorkspaceAccessChecker workspaceAccessChecker;
+    private final ContentAccessService contentAccess;
+
+    /** 내 계정으로 원본을 볼 수 없는 Slack·Notion·Drive 자료는 빼고, 몇 건인지만 알려 준다. */
+    private TaskContext visibleOnly(Long workspaceId, Long userId, TaskContext context) {
+        java.util.Set<Long> all = new java.util.LinkedHashSet<>();
+        context.contentsByProvider().values().forEach(list -> list.forEach(c -> all.add(c.contentRefId())));
+        context.originEvidence().forEach(c -> all.add(c.contentRefId()));
+        java.util.Set<Long> visible = contentAccess.visibleIds(workspaceId, userId, all);
+        java.util.Map<com.togather.common.enums.Provider, List<com.togather.content.dto.ContentRefDTO>> byProvider =
+            new java.util.LinkedHashMap<>();
+        context.contentsByProvider().forEach((provider, list) -> {
+            List<com.togather.content.dto.ContentRefDTO> kept =
+                list.stream().filter(c -> visible.contains(c.contentRefId())).toList();
+            if (!kept.isEmpty()) {
+                byProvider.put(provider, kept);
+            }
+        });
+        List<com.togather.content.dto.ContentRefDTO> evidence =
+            context.originEvidence().stream().filter(c -> visible.contains(c.contentRefId())).toList();
+        java.util.Map<Long, ContentRefService.ContentState> states = new java.util.LinkedHashMap<>();
+        context.contentStates().forEach((id, state) -> {
+            if (visible.contains(id)) {
+                states.put(id, state);
+            }
+        });
+        return new TaskContext(context.task(), byProvider, context.deliverables(), context.originDecision(),
+            evidence, context.meetings(), states, all.size() - visible.size());
+    }
 
     /** Task에 연결된 대화·문서·파일·결정사항·회의를 통합 조회 */
     @GetMapping("/tasks/{taskId}/context")
@@ -39,7 +68,7 @@ public class TaskContextController {
         validateTaskWorkspace(workspaceId, taskId);
 
         return ApiResponse.ok(
-            taskContextService.getTaskContext(taskId)
+            visibleOnly(workspaceId, userId, taskContextService.getTaskContext(taskId))
         );
     }
 

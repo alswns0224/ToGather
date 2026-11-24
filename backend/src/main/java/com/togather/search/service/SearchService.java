@@ -4,6 +4,7 @@ import com.togather.common.auth.WorkspaceAccessChecker;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
+import com.togather.content.access.ContentAccessService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.slack.service.SlackMessageFormat;
@@ -55,6 +56,7 @@ public class SearchService {
     private final TaskContextService taskContextService;
     private final ContentIndexService contentIndexService;
     private final SearchProperties properties;
+    private final ContentAccessService contentAccess;
 
     public SearchResponse search(Long workspaceId, Long userId, String query, Collection<Provider> providers,
                                  int limit) {
@@ -82,6 +84,7 @@ public class SearchService {
         for (VectorHit hit : hits) {
             ContentRef ref = refs.get(hit.contentRefId());
             if (ref != null && ref.getOwnerUserId() == null && ref.getWorkspaceId().equals(workspaceId) && targets.contains(ref.getProvider())
+                    && contentAccess.canView(workspaceId, userId, ref)
                     && !ref.isOriginDeleted() && !ref.isDriveTrashed() && score(hit) >= properties.minScore()
                     && !isTooShort(ref)) {
                 kept.add(hit);
@@ -94,7 +97,8 @@ public class SearchService {
         // 낱말 찾기: 문맥 검색은 글 앞부분만 보므로, 긴 문서·파일 속에 검색어가 그대로 있는 것도 함께 찾는다.
         Map<Long, Double> scores = new LinkedHashMap<>();
         kept.forEach(hit -> scores.put(hit.contentRefId(), score(hit)));
-        for (ContentRef ref : keywordMatches(workspaceId, targets, q, size)) {
+        for (ContentRef ref : contentAccess.filter(workspaceId, userId, keywordMatches(workspaceId, targets, q, size),
+                ref -> ref)) {
             refs.putIfAbsent(ref.getContentRefId(), ref);
             scores.merge(ref.getContentRefId(), KEYWORD_SCORE, Math::max);
         }

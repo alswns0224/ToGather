@@ -11,6 +11,7 @@ import com.togather.analysis.dto.EvidenceLinkRequest;
 import com.togather.analysis.service.AnalysisService;
 import com.togather.common.auth.LoginUser;
 import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.content.access.ContentAccessService;
 import com.togather.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,12 +37,14 @@ public class AnalysisController {
 
     private final AnalysisService analysisService;
     private final WorkspaceAccessChecker workspaceAccessChecker;
+    private final ContentAccessService contentAccess;
 
     /** 스레드 즉시 분석. 새 메시지가 없으면 기존 분석을 돌려준다. (최대 30초) */
     @PostMapping("/analyses")
     public ApiResponse<AnalysisResultDTO> analyzeThread(@LoginUser Long userId, @PathVariable Long workspaceId,
                                                         @Valid @RequestBody AnalyzeRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
+        contentAccess.requireContent(workspaceId, userId, request.contentRefId());
         return ApiResponse.ok(analysisService.analyzeThread(workspaceId, request.contentRefId(), userId));
     }
 
@@ -52,7 +55,11 @@ public class AnalysisController {
                                                                     @RequestParam(defaultValue = "false")
                                                                     boolean includeConfirmed) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(analysisService.getAnalyses(workspaceId, includeConfirmed));
+        // 내 Slack 계정으로 볼 수 있는 채널의 스레드를 분석한 것만 보여 준다.
+        List<AnalysisSummaryDTO> all = analysisService.getAnalyses(workspaceId, includeConfirmed);
+        java.util.Set<Long> visible = contentAccess.visibleIds(workspaceId, userId,
+                all.stream().map(AnalysisSummaryDTO::contentRefId).toList());
+        return ApiResponse.ok(all.stream().filter(a -> visible.contains(a.contentRefId())).toList());
     }
 
     /** 스레드의 최신 분석 ID. 없으면 {"analysisId": null} */
@@ -60,6 +67,7 @@ public class AnalysisController {
     public ApiResponse<Map<String, Long>> getLatestAnalysis(@LoginUser Long userId, @PathVariable Long workspaceId,
                                                             @RequestParam Long contentRefId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
+        contentAccess.requireContent(workspaceId, userId, contentRefId);
         Map<String, Long> body = new java.util.HashMap<>();
         body.put("analysisId", analysisService.findLatestAnalysisId(workspaceId, contentRefId).orElse(null));
         return ApiResponse.ok(body);
@@ -69,7 +77,9 @@ public class AnalysisController {
     public ApiResponse<AnalysisResultDTO> getAnalysis(@LoginUser Long userId, @PathVariable Long workspaceId,
                                                       @PathVariable Long analysisId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(analysisService.getAnalysis(workspaceId, analysisId));
+        AnalysisResultDTO result = analysisService.getAnalysis(workspaceId, analysisId);
+        contentAccess.requireContent(workspaceId, userId, result.contentRefId());
+        return ApiResponse.ok(result);
     }
 
     @PostMapping("/analyses/{analysisId}/items")

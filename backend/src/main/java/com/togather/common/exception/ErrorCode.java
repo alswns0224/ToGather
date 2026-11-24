@@ -52,6 +52,8 @@ public enum ErrorCode {
     ANALYSIS_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 결과를 찾을 수 없습니다."),
     AI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "AI 분석 호출에 실패했습니다."),
     SLACK_ACTION_FORBIDDEN(HttpStatus.FORBIDDEN, "Slack에서 허용되지 않은 작업입니다. 본인 메시지인지, 채널에 참여 중인지 확인해 주세요."),
+    OWN_CONNECTION_REQUIRED(HttpStatus.FORBIDDEN, "이 서비스를 내 계정으로 연동해야 볼 수 있습니다. 연동 관리에서 연결해 주세요."),
+    CONTENT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "원본 서비스에서 이 자료를 볼 권한이 없습니다."),
     SLACK_OWN_CONNECTION_REQUIRED(HttpStatus.FORBIDDEN, "메시지를 작성하려면 본인 Slack 계정을 먼저 연동해 주세요."),
     SLACK_CHANNEL_NOT_LINKED(HttpStatus.BAD_REQUEST, "연동 대상으로 선택한 채널이 아닙니다."),
     SLACK_SCOPE_REQUIRED(HttpStatus.FORBIDDEN, "Slack 읽기 권한이 부족합니다. 본인 Slack 계정을 다시 연결해 주세요."),

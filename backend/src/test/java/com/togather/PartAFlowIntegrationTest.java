@@ -45,7 +45,8 @@ import org.springframework.web.context.WebApplicationContext;
         "togather.slack.client-id=",
         "togather.slack.client-secret=",
         "togather.notion.client-id=",
-        "togather.notion.client-secret="
+        "togather.notion.client-secret=",
+        "togather.member-access.enabled=false"
 })
 @Import(EmbeddedPostgresConfig.class)
 class PartAFlowIntegrationTest {

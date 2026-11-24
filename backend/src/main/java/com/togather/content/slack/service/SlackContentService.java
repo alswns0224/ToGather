@@ -5,6 +5,7 @@ import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.PageResponse;
+import com.togather.content.access.ContentAccessService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.dto.ContentDetailDTO;
 import com.togather.content.dto.ContentRefDTO;
@@ -65,13 +66,18 @@ public class SlackContentService {
     private final SlackSyncAdapter slackSyncAdapter;
     private final SyncService syncService;
     private final WorkspaceEventService workspaceEventService;
+    private final ContentAccessService contentAccess;
 
     // ===================== 화면 (UI-04) =====================
 
     /** 연동 대상으로 선택한 채널 목록과 동기화 상태 */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<SlackChannelResponse> getChannels(Long workspaceId, Long userId) {
-        List<String> channelIds = integrationService.getConnectionTargets(workspaceId, Provider.SLACK);
+        // 내 Slack 계정으로 연동해야 하고, 그 계정이 멤버인 채널만 보인다. (Slack 권한과 같게)
+        contentAccess.requireOwnConnection(workspaceId, userId, Provider.SLACK);
+        Set<String> visible = contentAccess.visibleTargets(workspaceId, userId, Provider.SLACK);
+        List<String> channelIds = integrationService.getConnectionTargets(workspaceId, Provider.SLACK).stream()
+                .filter(visible::contains).toList();
         Optional<String> token = findToken(workspaceId, userId);
         Map<String, SyncStatusResponse> statuses = syncService.getStatuses(workspaceId, Provider.SLACK).stream()
                 .collect(Collectors.toMap(SyncStatusResponse::targetId, Function.identity(), (a, b) -> a));
@@ -89,6 +95,7 @@ public class SlackContentService {
     public PageResponse<SlackMessageResponse> getChannelMessages(Long workspaceId, Long userId, String channelId,
                                                                  Pageable pageable) {
         checkLinkedChannel(workspaceId, channelId);
+        contentAccess.requireTarget(workspaceId, userId, Provider.SLACK, channelId);
         // Slack에서 지운 메시지는 채널 화면에서 빼고, 분석 근거·Task 연결에서만 보관된 사본을 보여준다.
         Page<ContentRef> page = contentRefRepository
                 .findByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseOrderByCreatedAtDesc(
@@ -107,6 +114,7 @@ public class SlackContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ThreadDetailResponse getThreadDetail(Long workspaceId, Long userId, String channelId, String messageTs) {
         checkLinkedChannel(workspaceId, channelId);
+        contentAccess.requireTarget(workspaceId, userId, Provider.SLACK, channelId);
         ContentRef root = contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.SLACK,
                         SlackMessageFormat.originId(channelId, messageTs))
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -154,6 +162,7 @@ public class SlackContentService {
     public SlackMessageResponse updateMessage(Long workspaceId, Long userId, String channelId, String messageTs,
                                               String body) {
         validateInput(body);
+        contentAccess.requireTarget(workspaceId, userId, Provider.SLACK, channelId);
         ContentRef ref = getMessage(workspaceId, channelId, messageTs);
         slackApiClient.updateMessage(ownToken(workspaceId, userId), channelId, messageTs, body);
         List<SlackFile> files = SlackMessageFormat.parse(ref.getContent()).attachments().stream()
@@ -214,6 +223,7 @@ public class SlackContentService {
     /** 본인 메시지만 삭제할 수 있다. content_ref는 지우지 않고 원본 삭제로 표시한다. (근거 발언·Task 연결 보존) */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public boolean deleteMessage(Long workspaceId, Long userId, String channelId, String messageTs) {
+        contentAccess.requireTarget(workspaceId, userId, Provider.SLACK, channelId);
         ContentRef ref = getMessage(workspaceId, channelId, messageTs);
         slackApiClient.deleteMessage(ownToken(workspaceId, userId), channelId, messageTs);
         contentRefService.markOriginDeleted(ref.getContentRefId());
@@ -223,6 +233,7 @@ public class SlackContentService {
 
     private SlackMessageResponse post(Long workspaceId, Long userId, String channelId, String threadTs,
                                       Long rootRefId, String body) {
+        contentAccess.requireTarget(workspaceId, userId, Provider.SLACK, channelId);
         validateInput(body);
         checkLinkedChannel(workspaceId, channelId);
         String token = ownToken(workspaceId, userId);

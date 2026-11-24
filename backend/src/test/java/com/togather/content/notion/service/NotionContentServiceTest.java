@@ -68,7 +68,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
     void 동기화하면_페이지를_최근_수정순으로_보여준다() {
         notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, null, userId));
 
-        List<NotionPageResponse> pages = notionContentService.getPages(workspaceId);
+        List<NotionPageResponse> pages = notionContentService.getPages(workspaceId, userId);
 
         assertThat(pages).extracting(NotionPageResponse::title).containsExactly("회의록", "기획서");
         assertThat(pages.getFirst().fromAnalysis()).isFalse();
@@ -81,14 +81,14 @@ class NotionContentServiceTest extends IntegrationTestSupport {
 
         notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, T0.plusHours(1), userId));
 
-        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::title)
+        assertThat(notionContentService.getPages(workspaceId, userId)).extracting(NotionPageResponse::title)
                 .containsExactly("회의록");
     }
 
     @Test
     void 문서를_열_때_Notion이_실패하면_저장된_본문을_보여준다() {
         notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, null, userId));
-        Long id = notionContentService.getPages(workspaceId).getFirst().contentRefId();
+        Long id = notionContentService.getPages(workspaceId, userId).getFirst().contentRefId();
         when(notionApiClient.getPage(TOKEN, "p1")).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
 
         NotionPageDetailResponse detail = notionContentService.getPage(workspaceId, userId, id);
@@ -113,7 +113,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
 
         notionContentService.deleteContent(workspaceId, userId, created.contentRefId());
         verify(notionApiClient).archivePage(TOKEN, "p3");
-        assertThat(notionContentService.getPages(workspaceId)).isEmpty();
+        assertThat(notionContentService.getPages(workspaceId, userId)).isEmpty();
         assertThat(notionContentService.getContentDetail(created.contentRefId()).isOriginDeleted()).isTrue();
 
         // 이미 Notion에서 삭제된 문서를 한 번 더 삭제하면 보관본을 지운다. (Notion은 다시 부르지 않음)
@@ -146,7 +146,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
     @Test
     void 이미지나_하위_블록이_있는_문서는_본문을_수정할_수_없다() {
         notionSyncAdapter.sync(new SyncContext(workspaceId, "db1", null, null, userId));
-        Long id = notionContentService.getPages(workspaceId).getFirst().contentRefId();
+        Long id = notionContentService.getPages(workspaceId, userId).getFirst().contentRefId();
         when(notionApiClient.getPage(TOKEN, "p1")).thenReturn(page("p1", "회의록", T0));
         when(notionApiClient.getPageContent(TOKEN, "p1"))
                 .thenReturn(new NotionApiClient.PageContent("# 안건", false));
@@ -173,10 +173,10 @@ class NotionContentServiceTest extends IntegrationTestSupport {
 
         notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
 
-        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::title)
+        assertThat(notionContentService.getPages(workspaceId, userId)).extracting(NotionPageResponse::title)
                 .containsExactlyInAnyOrder("카페를 만들어보자", "카페 기능", "menu_id");
         // 모두 연동 대상(페이지)에 묶여 저장된다.
-        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::databaseId)
+        assertThat(notionContentService.getPages(workspaceId, userId)).extracting(NotionPageResponse::databaseId)
                 .containsOnly(PAGE_TARGET);
     }
 
@@ -189,7 +189,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
 
         notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, T0.plusHours(1), userId));
 
-        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::title)
+        assertThat(notionContentService.getPages(workspaceId, userId)).extracting(NotionPageResponse::title)
                 .containsExactly("카페를 만들어보자");
     }
 
@@ -202,7 +202,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
 
         notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, T0.plusHours(1), userId));
 
-        assertThat(notionContentService.getPages(workspaceId)).hasSize(3);
+        assertThat(notionContentService.getPages(workspaceId, userId)).hasSize(3);
     }
 
     @Test
@@ -227,7 +227,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
 
         verify(notionApiClient).createChildPage(TOKEN, "root", "결정사항", "본문");
         assertThat(created.title()).isEqualTo("결정사항");
-        assertThat(notionContentService.getPages(workspaceId)).extracting(NotionPageResponse::databaseId)
+        assertThat(notionContentService.getPages(workspaceId, userId)).extracting(NotionPageResponse::databaseId)
                 .containsExactly(PAGE_TARGET);
     }
 
@@ -255,7 +255,7 @@ class NotionContentServiceTest extends IntegrationTestSupport {
     void 일반_페이지의_제목은_title_속성으로_수정한다() {
         usePageTarget();
         notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
-        Long id = notionContentService.getPages(workspaceId).stream()
+        Long id = notionContentService.getPages(workspaceId, userId).stream()
                 .filter(p -> p.title().equals("카페 기능")).findFirst().orElseThrow().contentRefId();
         when(notionApiClient.getPage(TOKEN, "child")).thenReturn(plainPage("child", "카페 기능"));
         when(notionApiClient.updatePage(TOKEN, "child", "title", "카페 기능 정리", null))

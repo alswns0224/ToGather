@@ -6,6 +6,7 @@ import com.togather.common.enums.Provider;
 import com.togather.common.event.WorkspaceEventService;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
+import com.togather.content.access.ContentAccessService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.dto.ContentDetailDTO;
 import com.togather.content.dto.ContentRefDTO;
@@ -58,6 +59,7 @@ public class NotionContentService {
     private final NotionSyncAdapter notionSyncAdapter;
     private final WorkspaceEventService workspaceEventService;
     private final NotionBlockEditor notionBlockEditor;
+    private final ContentAccessService contentAccess;
 
     private final Map<String, CachedDatabase> databases = new ConcurrentHashMap<>();
 
@@ -69,7 +71,10 @@ public class NotionContentService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<NotionDatabaseResponse> getDatabases(Long workspaceId, Long userId) {
-        return createTargets(workspaceId).stream().map(id -> {
+        // 내 Notion 계정으로 열 수 있는 연동 대상에만 새 문서를 만들 수 있다.
+        contentAccess.requireOwnConnection(workspaceId, userId, Provider.NOTION);
+        Set<String> visible = contentAccess.visibleTargets(workspaceId, userId, Provider.NOTION);
+        return createTargets(workspaceId).stream().filter(visible::contains).map(id -> {
             try {
                 String token = token(workspaceId, id, userId);
                 return NotionOAuthClient.isPageTarget(id)
@@ -81,9 +86,11 @@ public class NotionContentService {
         }).toList();
     }
 
-    /** 문서 목록: 제목과 최종 수정 시각 (최근 수정순) */
-    public List<NotionPageResponse> getPages(Long workspaceId) {
-        List<ContentRef> refs = activePages(workspaceId);
+    /** 문서 목록: 내 Notion 계정으로 볼 수 있는 연동 대상의 문서만 (최근 수정순) */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public List<NotionPageResponse> getPages(Long workspaceId, Long userId) {
+        contentAccess.requireOwnConnection(workspaceId, userId, Provider.NOTION);
+        List<ContentRef> refs = contentAccess.filter(workspaceId, userId, activePages(workspaceId), ref -> ref);
         Set<Long> fromAnalysis = analysisPageIds(refs.stream().map(ContentRef::getContentRefId).toList());
         return refs.stream()
                 .map(ref -> new NotionPageResponse(ref.getContentRefId(), ref.getOriginId(), ref.getChannelId(),
@@ -96,6 +103,7 @@ public class NotionContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public NotionPageDetailResponse getPage(Long workspaceId, Long userId, Long contentRefId) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
+        contentAccess.requireContent(workspaceId, userId, ref);
         boolean refreshFailed = false;
         boolean bodyEditable = false; // 최신 블록을 확인한 경우에만 본문 수정을 허용한다.
         if (!ref.isOriginDeleted()) {
@@ -129,6 +137,7 @@ public class NotionContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContentRefDTO createContent(Long workspaceId, Long userId, String title, String body, String targetId) {
         String resolved = resolveCreateTarget(workspaceId, targetId);
+        contentAccess.requireTarget(workspaceId, userId, Provider.NOTION, resolved);
         String token = token(workspaceId, resolved, userId);
         NotionPage page = NotionOAuthClient.isPageTarget(resolved)
                 ? notionApiClient.createChildPage(token, NotionOAuthClient.pageId(resolved), title, body)
@@ -146,6 +155,7 @@ public class NotionContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContentRefDTO updateContent(Long workspaceId, Long userId, Long contentRefId, String title, String body) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
+        contentAccess.requireContent(workspaceId, userId, ref);
         if (ref.isOriginDeleted()) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
@@ -157,7 +167,7 @@ public class NotionContentService {
     /** 블록 단위 편집기 열기: 최신 제목과 블록 목록 (이미지·표가 있는 문서도 고칠 수 있게) */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public NotionEditorResponse getEditor(Long workspaceId, Long userId, Long contentRefId) {
-        ContentRef ref = editableRef(workspaceId, contentRefId);
+        ContentRef ref = editableRef(workspaceId, userId, contentRefId);
         String token = token(workspaceId, ref.getChannelId(), userId);
         NotionPage page = notionApiClient.getPage(token, ref.getOriginId());
         return new NotionEditorResponse(page.title(), notionBlockEditor.read(token, ref.getOriginId()));
@@ -166,7 +176,7 @@ public class NotionContentService {
     /** 블록 단위 편집 저장. 고친 블록만 Notion에 반영하고, 반영된 본문을 다시 읽어 저장한다. */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContentRefDTO saveBlocks(Long workspaceId, Long userId, Long contentRefId, NotionBlocksSaveRequest request) {
-        ContentRef ref = editableRef(workspaceId, contentRefId);
+        ContentRef ref = editableRef(workspaceId, userId, contentRefId);
         String token = token(workspaceId, ref.getChannelId(), userId);
         if (request.title() != null) {
             notionApiClient.updatePage(token, ref.getOriginId(), titleProperty(token, ref), request.title(), null);
@@ -183,14 +193,15 @@ public class NotionContentService {
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
-        ContentRef ref = editableRef(workspaceId, contentRefId);
+        ContentRef ref = editableRef(workspaceId, userId, contentRefId);
         String token = token(workspaceId, ref.getChannelId(), userId);
         return notionApiClient.uploadFile(token, filename == null || filename.isBlank() ? "image" : filename,
                 contentType, bytes);
     }
 
-    private ContentRef editableRef(Long workspaceId, Long contentRefId) {
+    private ContentRef editableRef(Long workspaceId, Long userId, Long contentRefId) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
+        contentAccess.requireContent(workspaceId, userId, ref);
         if (ref.isOriginDeleted()) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
@@ -205,6 +216,7 @@ public class NotionContentService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public boolean deleteContent(Long workspaceId, Long userId, Long contentRefId) {
         ContentRef ref = getPageRef(workspaceId, contentRefId);
+        contentAccess.requireContent(workspaceId, userId, ref);
         if (ref.isOriginDeleted()) {
             contentRefRepository.delete(ref);
             notifyChanged(workspaceId, ref.getChannelId());
