@@ -45,7 +45,7 @@ public class ContentAccessService {
     public static final Set<Provider> MEMBER_SCOPED = Set.of(Provider.SLACK, Provider.NOTION, Provider.GOOGLE_DRIVE);
 
     /** 원본에서 내보내지면 이 시간 안에 ToGather에서도 안 보인다. (Slack 채널 이벤트를 받으면 바로) */
-    private static final Duration TTL = Duration.ofMinutes(1);
+    private static final Duration TTL = Duration.ofSeconds(30);
     private static final String NOTION_PAGE_PREFIX = "page:";
 
     private final IntegrationService integrationService;
