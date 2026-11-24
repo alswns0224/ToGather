@@ -210,20 +210,21 @@ class DisconnectIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void Google_폐기_후_같은_계정만_재인증_표시하고_이전_토큰도_반환하지_않는다() throws Exception {
+    void 같은_Google_계정을_다른_연결이_쓰면_외부_폐기를_하지_않고_그_연결을_유지한다() throws Exception {
+        // Drive를 해제해도 같은 계정의 Gmail은 계속 써야 한다. Google 폐기는 계정 전체 권한을 끊으므로 하지 않는다.
         var gmail = saveConnection(workspaceId, userId, Provider.GMAIL, connection.getExternalAccountId());
         Long otherUser = createUser("다른 Google 사용자", UUID.randomUUID() + "@test.example");
         addMember(workspaceId, otherUser, "MEMBER");
         var other = saveConnection(workspaceId, otherUser, Provider.GMAIL, UUID.randomUUID().toString());
         mvc.perform(delete(disconnectPath()).session(session)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.relatedConnectionsRequireReauth").value(true));
+            .andExpect(jsonPath("$.data.relatedConnectionsRequireReauth").value(false))
+            .andExpect(jsonPath("$.data.manualRevocationRequired").value(false));
+        assertDisconnected();
+        verify(oauthClient, never()).revoke(anyString());
         assertThat(connections.findById(gmail.getConnectionId()).orElseThrow().getStatus())
-            .isEqualTo(ConnectionStatus.REAUTH_REQUIRED);
+            .isEqualTo(ConnectionStatus.CONNECTED);
         assertThat(connections.findById(other.getConnectionId()).orElseThrow().getStatus())
             .isEqualTo(ConnectionStatus.CONNECTED);
-        assertThatThrownBy(() -> integrations.validAccessToken(gmail))
-            .isInstanceOfSatisfying(BusinessException.class,
-                error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.REAUTH_REQUIRED));
     }
 
     @Test

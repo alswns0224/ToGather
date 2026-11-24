@@ -231,9 +231,13 @@ public class IntegrationService {
                 return new DisconnectResult(true, false);
             }
             boolean manualRevocationRequired = false;
+            boolean shared = isTokenShared(connection);
             try {
                 String accessToken = tokenCipher.decrypt(connection.getEncryptedTokens()).accessToken();
-                if (accessToken == null || accessToken.isBlank()) {
+                if (shared) {
+                    // 같은 계정을 다른 워크스페이스·서비스 연결이 쓰고 있다. 외부에서 폐기하면 그 연결까지 끊기므로 여기서만 지운다.
+                    log.info("같은 계정의 다른 연결이 있어 외부 토큰 폐기를 건너뜀: connectionId={}", connectionId);
+                } else if (accessToken == null || accessToken.isBlank()) {
                     manualRevocationRequired = true;
                 } else {
                     clientFor(connection.getProvider()).revoke(accessToken);
@@ -244,7 +248,7 @@ public class IntegrationService {
             }
             targetRepository.deleteAllByConnectionId(connectionId);
             connection.disconnect();
-            boolean relatedReauth = !manualRevocationRequired && markRelatedGoogleConnections(connection);
+            boolean relatedReauth = !shared && !manualRevocationRequired && markRelatedGoogleConnections(connection);
             return new DisconnectResult(manualRevocationRequired, relatedReauth);
         }
     }
@@ -260,7 +264,7 @@ public class IntegrationService {
     public int purgeMemberConnections(Long workspaceId, Long userId) {
         List<ServiceConnection> mine = connectionRepository.findAllByWorkspaceIdAndUserId(workspaceId, userId);
         for (ServiceConnection connection : mine) {
-            if (connection.isActive()) {
+            if (connection.isActive() && !isTokenShared(connection)) {
                 try {
                     String accessToken = tokenCipher.decrypt(connection.getEncryptedTokens()).accessToken();
                     if (accessToken != null && !accessToken.isBlank()) {
@@ -301,6 +305,23 @@ public class IntegrationService {
                         target.getName()));
             }
         }
+    }
+
+    /**
+     * 같은 외부 계정을 다른 연결이 쓰고 있는지. Slack·Notion은 같은 사람이 여러 워크스페이스에서 연결해도 토큰이 하나라,
+     * 한 곳에서 외부 폐기(auth.revoke 등)를 하면 다른 워크스페이스의 연결까지 끊긴다. Google은 Drive·Calendar·Gmail이 한 계정을 함께 쓴다.
+     */
+    private boolean isTokenShared(ServiceConnection connection) {
+        if (connection.getExternalAccountId() == null) {
+            return false;
+        }
+        Set<Provider> family = Set.of(Provider.GOOGLE_DRIVE, Provider.GOOGLE_CALENDAR, Provider.GMAIL)
+                .contains(connection.getProvider())
+                ? Set.of(Provider.GOOGLE_DRIVE, Provider.GOOGLE_CALENDAR, Provider.GMAIL)
+                : Set.of(connection.getProvider());
+        return connectionRepository.findAllByProviderInAndExternalAccountIdAndStatusNot(family,
+                        connection.getExternalAccountId(), ConnectionStatus.DISCONNECTED).stream()
+                .anyMatch(other -> !other.getConnectionId().equals(connection.getConnectionId()));
     }
 
     /** Google 폐기는 같은 계정의 프로젝트 권한 전체에 적용되므로 다른 연결을 정상 연결로 남기지 않는다. */
