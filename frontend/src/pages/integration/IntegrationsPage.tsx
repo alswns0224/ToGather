@@ -179,7 +179,8 @@ function ServiceCard({
 
   // 누가 연결했는지: 팀 자료 서비스는 연결한 팀원들을, 개인 서비스는 내 계정만 보여 준다.
   const others = item.personal ? [] : item.connections.filter((c) => !c.mine);
-  const account = (mine ?? others[0])?.accountLabel ?? (mine ?? others[0])?.externalAccountId;
+  // 연결한 계정 이름(Slack 워크스페이스·메일 주소)은 내 연결일 때만 보여 준다.
+  const account = mine?.accountLabel ?? mine?.externalAccountId;
   const names = [...(mine ? ['내가'] : []), ...others.map((c) => `${c.connectedByName ?? '팀원'}님이`)];
   const connectedBy =
     names.length === 0
