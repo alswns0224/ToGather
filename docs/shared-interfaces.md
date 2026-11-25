@@ -124,6 +124,13 @@ record MeetingSummary(Long meetingId, String title, MeetingStatus status, LocalD
 
 사용처: C(Task 협업 맥락 조회 SD-11-01)
 
+회의 안건 API는 기존 Task 연결과 직접 입력 제목을 함께 지원한다.
+- 회의 생성 요청: 기존 `agendaTaskIds`를 유지하며 선택적으로 `agendaTitles: string[]`를 보낸다. 직접 입력 안건은 1~200자, 최대 50개이고, 입력 순서대로 저장한 뒤 Task 안건을 이어 붙인다.
+- 안건 추가·수정 요청: `{ "taskId": 123 }` 또는 `{ "title": "발표 순서 논의" }` 중 하나를 보낸다. 둘 다 보내거나 빈 제목을 보내면 400이다.
+- 상세 응답의 `agendas[]`에는 `title`이 추가된다. 직접 입력은 `taskId/task = null`, `title`에 제목이 있고, Task 연결은 기존 필드와 `title = null`을 사용한다.
+- 직접 입력 안건은 Task를 만들지 않는다. 확정된 회의의 Calendar 설명에도 반영하며, 취소된 회의의 안건은 수정할 수 없다.
+
+
 ---
 
 ## 2. B가 제공 (정철준)

@@ -21,6 +21,12 @@ public record MeetingCreateRequest(
         @NotNull LocalDateTime candidateEndAt,
         List<Long> participantIds,
         @Size(max = 50) String meetingMode,
-        List<Long> agendaTaskIds
+        List<Long> agendaTaskIds,
+        @Size(max = 50) List<@NotBlank @Size(max = 200) String> agendaTitles
 ) {
+    /** 기존 Task 안건만 보내는 호출도 그대로 지원한다. */
+    public MeetingCreateRequest(String title, int durationMinutes, LocalDateTime candidateStartAt,
+            LocalDateTime candidateEndAt, List<Long> participantIds, String meetingMode, List<Long> agendaTaskIds) {
+        this(title, durationMinutes, candidateStartAt, candidateEndAt, participantIds, meetingMode, agendaTaskIds, null);
+    }
 }

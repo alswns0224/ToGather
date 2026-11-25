@@ -1,6 +1,7 @@
 package com.togather.meeting.domain;
 
 import com.togather.common.domain.BaseTimeEntity;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -25,6 +26,9 @@ public class MeetingAgenda extends BaseTimeEntity {
 
     private Long taskId;
 
+    @Column(length = 200)
+    private String title;
+
     private int orderNo;
 
     public MeetingAgenda(Long meetingId, Long taskId, int orderNo) {
@@ -35,5 +39,17 @@ public class MeetingAgenda extends BaseTimeEntity {
 
     public void changeTask(Long taskId) {
         this.taskId = taskId;
+        this.title = null;
+    }
+
+    public static MeetingAgenda forTitle(Long meetingId, String title, int orderNo) {
+        MeetingAgenda agenda = new MeetingAgenda(meetingId, null, orderNo);
+        agenda.changeTitle(title);
+        return agenda;
+    }
+
+    public void changeTitle(String title) {
+        this.taskId = null;
+        this.title = title;
     }
 }

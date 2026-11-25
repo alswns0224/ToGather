@@ -101,7 +101,7 @@ public class MeetingService {
         List<MeetingParticipant> participants = participantRepository.findAllByMeetingId(meetingId);
         Map<Long, UserSummary> users = users(participants.stream().map(MeetingParticipant::getUserId).toList());
         List<MeetingAgenda> agendas = agendaRepository.findAllByMeetingIdOrderByOrderNoAsc(meetingId);
-        Map<Long, TaskSummary> tasks = taskService.getTasks(agendas.stream().map(MeetingAgenda::getTaskId).toList())
+        Map<Long, TaskSummary> tasks = taskService.getTasks(agendas.stream().map(MeetingAgenda::getTaskId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(TaskSummary::taskId, Function.identity()));
         return new MeetingDetailResponse(
                 meeting.getMeetingId(), meeting.getTitle(), meeting.getStatus(), meeting.getDurationMinutes(),
@@ -111,7 +111,7 @@ public class MeetingService {
                 participants.stream().anyMatch(p -> p.getUserId().equals(userId)),
                 participants.stream().map(p -> toParticipant(p, users)).toList(),
                 agendas.stream().map(a -> new AgendaResponse(a.getAgendaId(), a.getOrderNo(), a.getTaskId(),
-                        tasks.get(a.getTaskId()))).toList());
+                        tasks.get(a.getTaskId()), a.getTitle())).toList());
     }
 
     /** SCHEDULING 상태로 회의를 만든다. 만든 사람은 참여자에 자동으로 들어간다. */
@@ -130,8 +130,16 @@ public class MeetingService {
         participantRepository.saveAll(participantIds.stream()
                 .map(id -> new MeetingParticipant(meeting.getMeetingId(), id)).toList());
 
+        int order = 1;
+        if (request.agendaTitles() != null) {
+            if (request.agendaTitles().size() > 50) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "직접 입력 안건은 최대 50개까지 추가할 수 있습니다.");
+            }
+            for (String title : request.agendaTitles()) {
+                agendaRepository.save(MeetingAgenda.forTitle(meeting.getMeetingId(), validateAgendaTitle(title), order++));
+            }
+        }
         if (request.agendaTaskIds() != null) {
-            int order = 1;
             for (Long taskId : new LinkedHashSet<>(request.agendaTaskIds())) {
                 validateTask(workspaceId, taskId);
                 agendaRepository.save(new MeetingAgenda(meeting.getMeetingId(), taskId, order++));
@@ -227,12 +235,20 @@ public class MeetingService {
 
     @Transactional
     public MeetingDetailResponse addAgenda(Long workspaceId, Long meetingId, Long userId, Long taskId) {
-        Meeting meeting = findManageable(workspaceId, meetingId, userId);
-        validateTask(workspaceId, taskId);
-        if (!agendaRepository.existsByMeetingIdAndTaskId(meetingId, taskId)) {
+        return addAgenda(workspaceId, meetingId, userId, taskId, null);
+    }
+
+    @Transactional
+    public MeetingDetailResponse addAgenda(Long workspaceId, Long meetingId, Long userId, Long taskId, String title) {
+        Meeting meeting = findAgendaEditableMeeting(workspaceId, meetingId, userId);
+        String normalizedTitle = validateAgendaContent(taskId, title);
+        if (taskId != null) validateTask(workspaceId, taskId);
+        if (taskId == null || !agendaRepository.existsByMeetingIdAndTaskId(meetingId, taskId)) {
             int nextOrder = agendaRepository.findAllByMeetingIdOrderByOrderNoAsc(meetingId).stream()
                     .mapToInt(MeetingAgenda::getOrderNo).max().orElse(0) + 1;
-            agendaRepository.save(new MeetingAgenda(meeting.getMeetingId(), taskId, nextOrder));
+            agendaRepository.save(taskId == null
+                    ? MeetingAgenda.forTitle(meeting.getMeetingId(), normalizedTitle, nextOrder)
+                    : new MeetingAgenda(meeting.getMeetingId(), taskId, nextOrder));
             syncConfirmedCalendar(meeting, userId);
         }
         return getMeeting(workspaceId, meetingId, userId);
@@ -240,19 +256,50 @@ public class MeetingService {
 
     @Transactional
     public MeetingDetailResponse changeAgenda(Long workspaceId, Long meetingId, Long agendaId, Long userId, Long taskId) {
-        Meeting meeting = findManageable(workspaceId, meetingId, userId);
-        validateTask(workspaceId, taskId);
-        findAgenda(meetingId, agendaId).changeTask(taskId);
+        return changeAgenda(workspaceId, meetingId, agendaId, userId, taskId, null);
+    }
+
+    @Transactional
+    public MeetingDetailResponse changeAgenda(Long workspaceId, Long meetingId, Long agendaId, Long userId, Long taskId, String title) {
+        Meeting meeting = findAgendaEditableMeeting(workspaceId, meetingId, userId);
+        String normalizedTitle = validateAgendaContent(taskId, title);
+        if (taskId != null) validateTask(workspaceId, taskId);
+        MeetingAgenda agenda = findAgenda(meetingId, agendaId);
+        if (taskId == null) agenda.changeTitle(normalizedTitle);
+        else agenda.changeTask(taskId);
         syncConfirmedCalendar(meeting, userId);
         return getMeeting(workspaceId, meetingId, userId);
     }
 
     @Transactional
     public MeetingDetailResponse deleteAgenda(Long workspaceId, Long meetingId, Long agendaId, Long userId) {
-        Meeting meeting = findManageable(workspaceId, meetingId, userId);
+        Meeting meeting = findAgendaEditableMeeting(workspaceId, meetingId, userId);
         agendaRepository.delete(findAgenda(meetingId, agendaId));
         syncConfirmedCalendar(meeting, userId);
         return getMeeting(workspaceId, meetingId, userId);
+    }
+
+    private Meeting findAgendaEditableMeeting(Long workspaceId, Long meetingId, Long userId) {
+        Meeting meeting = findManageable(workspaceId, meetingId, userId);
+        if (meeting.getStatus() == MeetingStatus.CANCELED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "취소된 회의의 안건은 변경할 수 없습니다.");
+        }
+        return meeting;
+    }
+
+    private static String validateAgendaContent(Long taskId, String title) {
+        String normalizedTitle = blankToNull(title);
+        if ((taskId != null) == (normalizedTitle != null)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "팀 작업 또는 직접 입력 안건 중 하나를 지정해 주세요.");
+        }
+        return normalizedTitle == null ? null : validateAgendaTitle(normalizedTitle);
+    }
+
+    private static String validateAgendaTitle(String title) {
+        if (title == null || title.isBlank() || title.strip().length() > 200) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "안건 제목은 1~200자로 입력해 주세요.");
+        }
+        return title.strip();
     }
 
     // ===================== 가용 시간 =====================
@@ -437,7 +484,7 @@ public class MeetingService {
 
     private String description(Meeting meeting) {
         List<MeetingAgenda> agendas = agendaRepository.findAllByMeetingIdOrderByOrderNoAsc(meeting.getMeetingId());
-        Map<Long, TaskSummary> tasks = taskService.getTasks(agendas.stream().map(MeetingAgenda::getTaskId).toList())
+        Map<Long, TaskSummary> tasks = taskService.getTasks(agendas.stream().map(MeetingAgenda::getTaskId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(TaskSummary::taskId, Function.identity()));
         StringBuilder sb = new StringBuilder("ToGather에서 확정한 회의입니다.");
         if (meeting.getMeetingMode() != null) {
@@ -447,7 +494,8 @@ public class MeetingService {
             sb.append("\n\n안건");
             for (MeetingAgenda agenda : agendas) {
                 TaskSummary task = tasks.get(agenda.getTaskId());
-                sb.append("\n").append(agenda.getOrderNo()).append(". ").append(task == null ? "(삭제된 Task)" : task.title());
+                sb.append("\n").append(agenda.getOrderNo()).append(". ")
+                        .append(agenda.getTitle() != null ? agenda.getTitle() : task == null ? "(삭제된 Task)" : task.title());
             }
         }
         return sb.toString();

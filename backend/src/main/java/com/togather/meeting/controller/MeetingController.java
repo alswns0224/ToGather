@@ -88,7 +88,7 @@ public class MeetingController {
                                                         @PathVariable Long meetingId,
                                                         @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.addAgenda(workspaceId, meetingId, userId, request.taskId()));
+        return ApiResponse.ok(meetingService.addAgenda(workspaceId, meetingId, userId, request.taskId(), request.title()));
     }
 
     @PatchMapping("/{meetingId}/agendas/{agendaId}")
@@ -96,7 +96,7 @@ public class MeetingController {
                                                            @PathVariable Long meetingId, @PathVariable Long agendaId,
                                                            @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId()));
+        return ApiResponse.ok(meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId(), request.title()));
     }
 
     @DeleteMapping("/{meetingId}/agendas/{agendaId}")

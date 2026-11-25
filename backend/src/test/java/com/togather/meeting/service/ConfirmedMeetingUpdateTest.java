@@ -392,6 +392,31 @@ class ConfirmedMeetingUpdateTest extends IntegrationTestSupport {
         assertThat(remote).isEmpty();
     }
 
+    @Test
+    void 직접_안건을_넣어_확정하면_Calendar_설명에도_제목이_들어간다() {
+        Long taskId = task("기존 작업 안건");
+        var created = meetings.createMeeting(workspaceId, userId, new MeetingCreateRequest("직접 안건 회의", 60,
+                START, START.plusDays(1), List.of(memberId), "온라인", List.of(taskId), List.of("발표 순서 논의")));
+        meetings.confirmMeeting(workspaceId, created.meetingId(), userId, START);
+        assertThat(onlyEvent().description()).contains("1. 발표 순서 논의", "2. 기존 작업 안건").doesNotContain("삭제된 Task");
+    }
+
+    @Test
+    void 확정된_회의의_직접_안건_추가_수정_삭제도_Calendar에_반영한다() throws Exception {
+        MeetingDetailResponse original = confirmed();
+        mvc.perform(post(path(original.meetingId()) + "/agendas").session(session).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"발표 순서 논의\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.agendas[0].title").value("발표 순서 논의"));
+        Long agendaId = meetings.getMeeting(workspaceId, original.meetingId(), userId).agendas().getFirst().agendaId();
+        assertThat(onlyEvent().description()).contains("발표 순서 논의");
+        mvc.perform(patch(path(original.meetingId()) + "/agendas/" + agendaId).session(session).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"시연 역할 분담\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.agendas[0].title").value("시연 역할 분담"));
+        assertThat(onlyEvent().description()).contains("시연 역할 분담").doesNotContain("발표 순서 논의");
+        meetings.deleteAgenda(workspaceId, original.meetingId(), agendaId, userId);
+        assertThat(onlyEvent().description()).doesNotContain("안건", "시연 역할 분담");
+        verify(calendar, times(1)).insertEvent(anyString(), anyString(), any(), anyBoolean());
+    }
     private MeetingDetailResponse scheduling() {
         return meetings.createMeeting(workspaceId, userId, new MeetingCreateRequest("원래 회의", 60,
             START, START.plusDays(1), List.of(memberId), "온라인", List.of()));
