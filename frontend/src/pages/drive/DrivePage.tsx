@@ -201,8 +201,10 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   const [uploadFile, setUploadFile] =
     useState<File | null>(null);
 
-  const [uploadFolderId, setUploadFolderId] =
-    useState('');
+  const [uploadRootFolderId, setUploadRootFolderId] =
+    useState<string | null>(null);
+  const [uploadFolderPath, setUploadFolderPath] =
+    useState<DriveFolderPathEntry[]>([]);
   const [uploadCandidates, setUploadCandidates] = useState<DriveUploadCandidate[] | null>(null);
 
   // ---------------------------------------------------
@@ -241,7 +243,8 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     setUploadFile(null);
     dragDepthRef.current = 0;
     setIsDraggingFile(false);
-    setUploadFolderId('');
+    setUploadRootFolderId(null);
+    setUploadFolderPath([]);
     setPreviewFile(null);
 
     if (fileInputRef.current) {
@@ -472,9 +475,9 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   }, [activeFolderId, folderHierarchy, folderIds, folderNames, folderPath]);
 
   const chosenFolderId =
-    folderIds.includes(uploadFolderId)
-      ? uploadFolderId
-      : (folderIds[0] ?? '');
+    uploadFolderPath.length > 0 ? uploadFolderPath[uploadFolderPath.length - 1].id
+    : uploadRootFolderId && folderIds.includes(uploadRootFolderId) ? uploadRootFolderId
+    : (folderIds[0] ?? '');
 
   const canSelectUpload = !loading && !isBusy && Boolean(chosenFolderId);
   useEffect(() => { setUploadCandidates(null); }, [uploadFile, chosenFolderId]);
@@ -1177,22 +1180,20 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
         {folderIds.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
-            <label htmlFor="drive-upload-folder" className="text-[13px] text-[var(--muted)]">
-              업로드할 폴더
-            </label>
-            <select
-              id="drive-upload-folder"
-              value={chosenFolderId}
-              onChange={(event) => setUploadFolderId(event.target.value)}
-              disabled={isBusy}
-              className="input !w-auto max-w-[220px]"
-            >
-              {folderIds.map((id, index) => (
-                <option key={id} value={id}>
-                  {folderNames[id] ?? (folderIds.length === 1 ? '연동된 Drive 폴더' : `연동 폴더 ${index + 1}`)}
-                </option>
-              ))}
-            </select>
+            <DriveFolderPicker
+              workspaceId={workspaceId}
+              folders={browseRootFolders}
+              connectedCount={folderIds.length}
+              activeFolderId={uploadRootFolderId ?? (folderIds[0] || null)}
+              path={uploadFolderPath}
+              disabled={isBusy || folderHierarchyLoading}
+              showAll={false}
+              label="업로드할 폴더"
+              onChange={(rootId, path) => {
+                setUploadRootFolderId(rootId);
+                setUploadFolderPath(path);
+              }}
+            />
             <button
               type="button"
               className="btn btn-primary"

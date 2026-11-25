@@ -41,11 +41,13 @@ function FolderPanel({ depth, anchor, compact, label, onKeyDown, onScroll, child
   </div>;
 }
 
-export default function DriveFolderPicker({ workspaceId, folders, connectedCount, activeFolderId, path, disabled, onChange }: {
+export default function DriveFolderPicker({ workspaceId, folders, connectedCount, activeFolderId, path, disabled, onChange, showAll = true, label: pickerLabel = '연결된 폴더' }: {
   workspaceId: string; folders: DriveFolderPathEntry[]; activeFolderId: string | null;
   connectedCount?: number;
   path: DriveFolderPathEntry[]; disabled: boolean;
   onChange: (rootId: string | null, path: DriveFolderPathEntry[]) => void;
+  showAll?: boolean;
+  label?: string;
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -59,7 +61,7 @@ export default function DriveFolderPicker({ workspaceId, folders, connectedCount
   const [focusDepth, setFocusDepth] = useState<number | null>(null);
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 640px), (hover: none)').matches);
   const root = folders.find(folder => folder.id === activeFolderId);
-  const selectedName = path.at(-1)?.name ?? root?.name ?? '전체 폴더';
+  const selectedName = path.at(-1)?.name ?? root?.name ?? (showAll ? '전체 폴더' : folders[0]?.name ?? '폴더 선택');
   const selectedPath = [root?.name, ...path.map(folder => folder.name)].filter(Boolean).join(' / ');
 
   const close = useCallback((restoreFocus = false) => {
@@ -185,7 +187,7 @@ export default function DriveFolderPicker({ workspaceId, folders, connectedCount
   }
 
   return <div className="drive-folder-picker">
-    <label htmlFor={id}>연결된 폴더</label>
+    <label htmlFor={id}>{pickerLabel}</label>
     <button ref={trigger} id={id} type="button" className="input drive-folder-picker__trigger" disabled={disabled}
       aria-label={`조회할 폴더: ${selectedName}`} aria-haspopup="menu" aria-expanded={open}
       aria-controls={open ? `${id}-menus` : undefined} title={selectedPath || '연결된 폴더 전체'}
@@ -199,13 +201,13 @@ export default function DriveFolderPicker({ workspaceId, folders, connectedCount
       {(!compact || trail.length === 0) && <FolderPanel depth={0} anchor={anchor} compact={compact} label="연결된 폴더 선택"
         onKeyDown={event => keys(event, 0)} onScroll={() => setTrail([])}>
         <div className="drive-folder-menu__heading">연결된 폴더 <span>{connectedCount ?? folders.length}</span></div>
-        <div className={`drive-folder-menu__row${activeFolderId == null ? ' is-selected' : ''}`}
+        {showAll && <div className={`drive-folder-menu__row${activeFolderId == null ? ' is-selected' : ''}`}
           onPointerEnter={() => setTrail([])}>
           <button type="button" role="menuitemradio" aria-checked={activeFolderId == null} data-menu-choice tabIndex={-1}
             className="drive-folder-menu__choice" onClick={() => select(null, [])}>
             <FolderIcon /><span className="drive-folder-menu__name">전체 폴더</span>{activeFolderId == null && <span aria-hidden="true">✓</span>}
           </button>
-        </div>
+        </div>}
         {folders.map(folder => row(folder, 0))}
       </FolderPanel>}
       {trail.map((branch, index) => {
