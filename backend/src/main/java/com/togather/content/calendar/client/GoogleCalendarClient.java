@@ -52,7 +52,13 @@ public class GoogleCalendarClient {
 
     public record CalendarEvent(String id, String title, String description, LocalDateTime startAt,
                                 LocalDateTime endAt, boolean allDay, List<String> attendeeEmails,
-                                String htmlLink, String meetLink, LocalDateTime createdAt) {
+                                String htmlLink, String meetLink, LocalDateTime createdAt, String iCalUid) {
+
+        public CalendarEvent(String id, String title, String description, LocalDateTime startAt, LocalDateTime endAt,
+                             boolean allDay, List<String> attendeeEmails, String htmlLink, String meetLink,
+                             LocalDateTime createdAt) {
+            this(id, title, description, startAt, endAt, allDay, attendeeEmails, htmlLink, meetLink, createdAt, null);
+        }
     }
 
     /** 생성·수정 요청. null인 값은 수정 시 바꾸지 않는다. */
@@ -124,12 +130,48 @@ public class GoogleCalendarClient {
                 .retrieve().body(JSON)));
     }
 
+    /**
+     * 참여자 캘린더에 팀 일정의 사본을 넣는다. 팀 일정과 같은 iCalUID를 써서, 참여자가 초대 메일을 수락해도
+     * 같은 회의가 두 개로 생기지 않게 한다. 초대·알림은 팀 일정에서 보내므로 사본은 알림 없이 넣는다.
+     */
+    public CalendarEvent importCopy(String token, String calendarId, String iCalUid, EventWrite write) {
+        Map<String, Object> body = toBody(new EventWrite(write.title(), write.description(), write.startAt(),
+                write.endAt(), null));
+        body.put("iCalUID", iCalUid);
+        return toEvent(call(() -> externalRestClient.post()
+                .uri(UriComponentsBuilder.fromUriString(BASE + "/calendars/{calendarId}/events/import")
+                        .encode().buildAndExpand(calendarId).toUri())
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve().body(JSON)));
+    }
+
+    /** 참여자 캘린더의 사본을 알림 없이 고친다. */
+    public CalendarEvent patchCopy(String token, String calendarId, String eventId, EventWrite write) {
+        return toEvent(call(() -> externalRestClient.patch()
+                .uri(eventUri(calendarId, eventId, "none"))
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(toBody(new EventWrite(write.title(), write.description(), write.startAt(), write.endAt(), null)))
+                .retrieve().body(JSON)));
+    }
+
+    /** 참여자 캘린더의 사본을 알림 없이 지운다. 이미 지워졌으면 성공으로 본다. */
+    public void deleteCopy(String token, String calendarId, String eventId) {
+        deleteEvent(token, calendarId, eventId, "none");
+    }
+
     /** 이미 삭제된 일정이면 조용히 성공으로 본다. */
     public void deleteEvent(String token, String calendarId, String eventId) {
+        deleteEvent(token, calendarId, eventId, SEND_UPDATES);
+    }
+
+    private void deleteEvent(String token, String calendarId, String eventId, String sendUpdates) {
         try {
             call(() -> {
                 externalRestClient.delete()
-                        .uri(eventUri(calendarId, eventId, SEND_UPDATES))
+                        .uri(eventUri(calendarId, eventId, sendUpdates))
                         .headers(h -> h.setBearerAuth(token))
                         .retrieve().toBodilessEntity();
                 return Map.of();
@@ -171,7 +213,7 @@ public class GoogleCalendarClient {
         String created = str(json, "created");
         return new CalendarEvent(str(json, "id"), str(json, "summary"), str(json, "description"), startAt, endAt,
                 allDay, attendees, str(json, "htmlLink"), str(json, "hangoutLink"),
-                created == null ? null : toLocal(created));
+                created == null ? null : toLocal(created), str(json, "iCalUID"));
     }
 
     private static Map<String, Object> toBody(EventWrite write) {

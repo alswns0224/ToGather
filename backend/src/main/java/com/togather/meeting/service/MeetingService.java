@@ -20,6 +20,7 @@ import com.togather.meeting.domain.MeetingTimeCandidate;
 import com.togather.meeting.dto.AvailabilityResponse;
 import com.togather.meeting.dto.AvailabilityResponse.SlotResponse;
 import com.togather.meeting.dto.AvailabilitySaveRequest;
+import com.togather.meeting.dto.ConflictResponse;
 import com.togather.meeting.dto.MeetingCreateRequest;
 import com.togather.meeting.dto.MeetingDetailResponse;
 import com.togather.meeting.dto.MeetingDetailResponse.AgendaResponse;
@@ -331,6 +332,14 @@ public class MeetingService {
             }
         }
 
+        // 응답한 뒤에 다른 회의가 확정되는 등 일정이 바뀌었을 수 있으므로, 지금 바쁜 시간은 불가능으로 다시 계산한다.
+        List<LocalDateTime> cells = recommender.cells(meeting.getCandidatePeriod());
+        currentBusy(meeting, responses.keySet(), meeting.getCandidatePeriod()).forEach((uid, busy) -> {
+            Map<LocalDateTime, SlotPreference> mine = responses.get(uid);
+            recommender.overlappingCells(cells, busy.stream().map(BusyInterval::range).toList())
+                    .forEach(cell -> mine.put(cell, SlotPreference.UNAVAILABLE));
+        });
+
         List<Scored> scored = recommender.recommend(meeting.getCandidatePeriod(), meeting.getDurationMinutes(), responses);
         candidateRepository.deleteAllByMeetingId(meetingId);
         List<MeetingTimeCandidate> saved = new ArrayList<>();
@@ -359,10 +368,26 @@ public class MeetingService {
      */
     @Transactional(noRollbackFor = BusinessException.class)
     public MeetingDetailResponse confirmMeeting(Long workspaceId, Long meetingId, Long userId, LocalDateTime startAt) {
+        return confirmMeeting(workspaceId, meetingId, userId, startAt, true);
+    }
+
+    /**
+     * @param force false면 확정 직전에 참여자들의 지금 일정을 다시 확인하고, 겹치는 사람이 있으면 확정하지 않는다
+     *              (MEETING_TIME_CONFLICT). 화면은 겹치는 사람을 보여 준 뒤 사용자가 고르면 force=true로 다시 보낸다.
+     */
+    @Transactional(noRollbackFor = BusinessException.class)
+    public MeetingDetailResponse confirmMeeting(Long workspaceId, Long meetingId, Long userId, LocalDateTime startAt,
+                                                boolean force) {
         Meeting meeting = findManageableScheduling(workspaceId, meetingId, userId);
         DateRange period = meeting.getCandidatePeriod();
         if (startAt.isBefore(period.getStart()) || startAt.plusMinutes(meeting.getDurationMinutes()).isAfter(period.getEnd())) {
             throw new BusinessException(ErrorCode.INVALID_TIME_RANGE);
+        }
+        if (!force) {
+            List<ConflictResponse> conflicts = conflicts(meeting, startAt);
+            if (!conflicts.isEmpty()) {
+                throw new BusinessException(ErrorCode.MEETING_TIME_CONFLICT, conflictMessage(conflicts));
+            }
         }
         meeting.confirm(startAt);
         syncCalendar(meeting, userId, false);
@@ -378,6 +403,11 @@ public class MeetingService {
         }
         syncCalendar(meeting, userId, true);
         return getMeeting(workspaceId, meetingId, userId);
+    }
+
+    /** 확정하려는 시간에 이미 다른 일정이 있는 참여자 (확정 직전 재확인) */
+    public List<ConflictResponse> getConflicts(Long workspaceId, Long meetingId, LocalDateTime startAt) {
+        return conflicts(findMeeting(workspaceId, meetingId), startAt);
     }
 
     // ===================== 다른 파트 제공 (docs/shared-interfaces.md) =====================
@@ -472,6 +502,79 @@ public class MeetingService {
     }
 
     private record BusyResult(List<LocalDateTime> cells, boolean connected) {
+    }
+
+    /** 바쁜 구간. meetingTitle이 있으면 ToGather에서 확정된 다른 회의, 없으면 본인 캘린더 일정 */
+    private record BusyInterval(DateRange range, String meetingTitle) {
+    }
+
+    /**
+     * 참여자별로 지금 바쁜 구간: 본인 Google Calendar의 바쁜 시간 + 이 워크스페이스에서 확정된 다른 회의.
+     * 캘린더에 사본이 아직 없는 예전 회의나 Calendar를 연동하지 않은 참여자도 확정된 회의끼리는 겹치지 않게 한다.
+     */
+    private Map<Long, List<BusyInterval>> currentBusy(Meeting meeting, Collection<Long> userIds, DateRange period) {
+        Map<Long, List<BusyInterval>> result = new HashMap<>();
+        for (Long uid : userIds) {
+            List<BusyInterval> busy = new ArrayList<>();
+            if (calendarContentService.isCalendarConnected(meeting.getWorkspaceId(), uid)) {
+                try {
+                    calendarContentService.getBusyTimes(meeting.getWorkspaceId(), uid, period)
+                            .forEach(range -> busy.add(new BusyInterval(range, null)));
+                } catch (BusinessException e) {
+                    log.info("지금 일정 확인 생략: userId={}, code={}", uid, e.getErrorCode());
+                }
+            }
+            result.put(uid, busy);
+        }
+        List<Meeting> others = meetingRepository.findAllByWorkspaceIdAndStatusAndStartAtBetween(meeting.getWorkspaceId(),
+                        MeetingStatus.CONFIRMED, period.getStart().minusDays(1), period.getEnd()).stream()
+                .filter(m -> !m.getMeetingId().equals(meeting.getMeetingId()))
+                .filter(m -> overlaps(m.getStartAt(), m.getEndAt(), period.getStart(), period.getEnd()))
+                .toList();
+        if (!others.isEmpty()) {
+            Map<Long, Meeting> byId = others.stream().collect(Collectors.toMap(Meeting::getMeetingId, Function.identity()));
+            for (MeetingParticipant p : participantRepository.findAllByMeetingIdIn(List.copyOf(byId.keySet()))) {
+                List<BusyInterval> busy = result.get(p.getUserId());
+                if (busy != null) {
+                    Meeting other = byId.get(p.getMeetingId());
+                    busy.add(new BusyInterval(new DateRange(other.getStartAt(), other.getEndAt()), other.getTitle()));
+                }
+            }
+        }
+        return result;
+    }
+
+    private List<ConflictResponse> conflicts(Meeting meeting, LocalDateTime startAt) {
+        LocalDateTime endAt = startAt.plusMinutes(meeting.getDurationMinutes());
+        List<Long> participantIds = participantRepository.findAllByMeetingId(meeting.getMeetingId()).stream()
+                .map(MeetingParticipant::getUserId).toList();
+        Map<Long, List<BusyInterval>> busy = currentBusy(meeting, participantIds, new DateRange(startAt, endAt));
+        Map<Long, UserSummary> users = users(participantIds);
+        List<ConflictResponse> result = new ArrayList<>();
+        for (Long uid : participantIds) {
+            List<BusyInterval> hits = busy.getOrDefault(uid, List.of()).stream()
+                    .filter(b -> overlaps(b.range().getStart(), b.range().getEnd(), startAt, endAt))
+                    .toList();
+            if (hits.isEmpty()) {
+                continue;
+            }
+            List<String> titles = hits.stream().map(BusyInterval::meetingTitle).filter(Objects::nonNull).distinct().toList();
+            UserSummary user = users.get(uid);
+            result.add(new ConflictResponse(uid, user == null ? null : user.name(),
+                    titles.isEmpty() ? List.of("캘린더 일정") : titles));
+        }
+        return result;
+    }
+
+    private static String conflictMessage(List<ConflictResponse> conflicts) {
+        return conflicts.stream()
+                .map(c -> (c.name() == null ? "참여자" : c.name() + "님") + "은 이 시간에 "
+                        + c.reasons().stream().map(r -> "'" + r + "'").collect(Collectors.joining(", ")) + "이 있어요.")
+                .collect(Collectors.joining(" "));
+    }
+
+    private static boolean overlaps(LocalDateTime aStart, LocalDateTime aEnd, LocalDateTime bStart, LocalDateTime bEnd) {
+        return aStart != null && aEnd != null && aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
     }
 
     /** 캘린더를 연동하지 않았거나 조회에 실패하면 자동 표시 없이 진행한다. */

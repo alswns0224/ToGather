@@ -64,6 +64,7 @@ public class CalendarContentService {
     private final UserService userService;
     private final MeetingRepository meetingRepository;
     private final WorkspaceEventService workspaceEventService;
+    private final CalendarCopyService copyService;
 
     /** 캘린더 접근 정보. ownerUserId가 있으면 개인 캘린더 */
     private record Access(String token, String calendarId, Long ownerUserId) {
@@ -89,7 +90,11 @@ public class CalendarContentService {
             return toResponses(workspaceId, personal, calendarClient.listEvents(personal.token(), personal.calendarId(), from, to));
         }
         List<CalendarEvent> teamEvents = calendarClient.listEvents(team.get().token(), team.get().calendarId(), from, to);
-        Set<String> teamEventIds = teamEvents.stream().map(CalendarEvent::id).collect(Collectors.toSet());
+        // 참여자 캘린더에 넣은 사본은 일정 ID가 달라도 iCalUID가 같으므로 둘 다로 거른다.
+        Set<String> teamEventIds = teamEvents.stream()
+                .flatMap(e -> java.util.stream.Stream.of(e.id(), e.iCalUid()))
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
         List<CalendarEventResponse> all = new ArrayList<>(toResponses(workspaceId, team.get(), teamEvents));
         all.addAll(personalEventsOrEmpty(workspaceId, userId, from, to, teamEventIds));
         all.sort(Comparator.comparing(CalendarEventResponse::startAt, Comparator.nullsLast(Comparator.naturalOrder())));
@@ -114,7 +119,8 @@ public class CalendarContentService {
                     .map(token -> {
                         Access personal = new Access(token, PRIMARY, userId);
                         List<CalendarEvent> events = calendarClient.listEvents(token, PRIMARY, from, to).stream()
-                                .filter(e -> !teamEventIds.contains(e.id()))
+                                .filter(e -> !teamEventIds.contains(e.id())
+                                        && (e.iCalUid() == null || !teamEventIds.contains(e.iCalUid())))
                                 .toList();
                         return toResponses(workspaceId, personal, events);
                     })
@@ -154,6 +160,8 @@ public class CalendarContentService {
                 new EventWrite(request.title(), request.description(), request.startAt(), request.endAt(),
                         request.participantIds() == null ? null : emails(request.participantIds())));
         contentRefService.updateContent(contentRefId, updated.title(), updated.description());
+        copyService.syncCopies(workspaceId, contentRefId, access.calendarId(), access.ownerUserId(), updated,
+                request.participantIds());
         notifyChanged(workspaceId, access);
         return toResponse(contentRefId, updated, meetingIdsByCalendarRef(List.of(contentRefId)).get(contentRefId),
                 access.ownerUserId() != null);
@@ -164,6 +172,7 @@ public class CalendarContentService {
         Access access = refAccess(workspaceId, userId, contentRefId);
         String eventId = contentRefService.getContentRef(contentRefId).externalId();
         calendarClient.deleteEvent(access.token(), access.calendarId(), eventId);
+        copyService.deleteCopies(workspaceId, contentRefId);
         contentRefService.markOriginDeleted(contentRefId);
         notifyChanged(workspaceId, access);
     }
@@ -247,6 +256,8 @@ public class CalendarContentService {
         CalendarEvent event = calendarClient.insertEvent(access.token(), access.calendarId(),
                 new EventWrite(title, description, startAt, endAt, emails(participantIds)), withMeet);
         ContentRefDTO ref = save(workspaceId, access, event);
+        copyService.copyToParticipants(workspaceId, ref.contentRefId(), access.calendarId(), access.ownerUserId(),
+                event, participantIds);
         notifyChanged(workspaceId, access);
         return toResponse(ref.contentRefId(), event, null, access.ownerUserId() != null);
     }

@@ -136,7 +136,18 @@ export const saveAvailability = (w: string, id: number, slots: { startAt: string
 export const getResponseStatus = (w: string, id: number) => http.get<ResponseStatus>(base(w, `/${id}/responses`));
 
 export const recommendTimes = (w: string, id: number) => http.post<TimeCandidate[]>(base(w, `/${id}/recommendations`));
-export const confirmMeeting = (w: string, id: number, startAt: string) =>
-  http.post<MeetingDetailResponse>(base(w, `/${id}/confirm`), { startAt });
+/** force가 아니면 서버가 참여자들의 지금 일정을 다시 확인하고, 겹치는 사람이 있으면 확정하지 않는다. */
+export const confirmMeeting = (w: string, id: number, startAt: string, force = false) =>
+  http.post<MeetingDetailResponse>(base(w, `/${id}/confirm`), { startAt, force });
+
+/** 확정하려는 시간에 이미 다른 일정이 있는 참여자 */
+export interface MeetingConflict {
+  userId: number;
+  name: string | null;
+  reasons: string[];
+}
+
+export const getConflicts = (w: string, id: number, startAt: string) =>
+  http.get<MeetingConflict[]>(base(w, `/${id}/conflicts?startAt=${encodeURIComponent(startAt)}`));
 export const retryCalendar = (w: string, id: number) =>
   http.post<MeetingDetailResponse>(base(w, `/${id}/calendar-retry`));

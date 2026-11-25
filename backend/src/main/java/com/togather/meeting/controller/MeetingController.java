@@ -7,6 +7,7 @@ import com.togather.meeting.dto.AgendaRequest;
 import com.togather.meeting.dto.AvailabilityResponse;
 import com.togather.meeting.dto.AvailabilitySaveRequest;
 import com.togather.meeting.dto.ConfirmRequest;
+import com.togather.meeting.dto.ConflictResponse;
 import com.togather.meeting.dto.MeetingCreateRequest;
 import com.togather.meeting.dto.MeetingDetailResponse;
 import com.togather.meeting.dto.MeetingSummaryResponse;
@@ -145,7 +146,21 @@ public class MeetingController {
                                                              @PathVariable Long meetingId,
                                                              @Valid @RequestBody ConfirmRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.confirmMeeting(workspaceId, meetingId, userId, request.startAt()));
+        return ApiResponse.ok(meetingService.confirmMeeting(workspaceId, meetingId, userId, request.startAt(),
+                Boolean.TRUE.equals(request.force())));
+    }
+
+    /** 확정하려는 시간에 이미 다른 일정이 있는 참여자 (확정 직전 확인) */
+    @GetMapping("/{meetingId}/conflicts")
+    public ApiResponse<List<ConflictResponse>> getConflicts(@LoginUser Long userId, @PathVariable Long workspaceId,
+                                                            @PathVariable Long meetingId,
+                                                            @org.springframework.web.bind.annotation.RequestParam
+                                                            @org.springframework.format.annotation.DateTimeFormat(
+                                                                    iso = org.springframework.format.annotation
+                                                                            .DateTimeFormat.ISO.DATE_TIME)
+                                                            java.time.LocalDateTime startAt) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(meetingService.getConflicts(workspaceId, meetingId, startAt));
     }
 
     @PostMapping("/{meetingId}/calendar-retry")

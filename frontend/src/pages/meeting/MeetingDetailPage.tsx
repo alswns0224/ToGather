@@ -5,6 +5,7 @@ import {
   addAgenda,
   cancelMeeting,
   confirmMeeting,
+  getConflicts,
   deleteAgenda,
   getAgendaCandidates,
   getMeeting,
@@ -195,7 +196,7 @@ export default function MeetingDetailPage() {
             key={`rec-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}-${responded}`}
             workspaceId={workspaceId}
             meeting={m}
-            onConfirm={(startAt) => run(() => confirmMeeting(workspaceId, m.meetingId, startAt))}
+            onConfirm={(startAt, force) => run(() => confirmMeeting(workspaceId, m.meetingId, startAt, force))}
           />
         )}
       </div>
@@ -432,7 +433,7 @@ function Recommendations({
 }: {
   workspaceId: string;
   meeting: MeetingDetailResponse;
-  onConfirm: (startAt: string) => void;
+  onConfirm: (startAt: string, force: boolean) => void;
 }) {
   const [candidates, setCandidates] = useState<TimeCandidate[] | null>(null);
   const [visible, setVisible] = useState(PAGE_SIZE);
@@ -463,11 +464,31 @@ function Recommendations({
 
   const picked = candidates?.find((c) => c.candidateId === pickedId) ?? candidates?.[0] ?? null;
 
-  const confirm = () => {
+  // 확정 직전에 참여자들의 지금 일정을 다시 확인한다. 응답한 뒤에 다른 회의가 잡혔을 수 있다.
+  const confirm = async () => {
     if (!picked) return;
-    if (window.confirm(`${formatDateTime(picked.startAt)}로 회의를 확정할까요? 팀 캘린더에 일정과 화상 회의 링크가 등록됩니다.`)) {
-      onConfirm(picked.startAt);
+    let conflicts;
+    try {
+      conflicts = await getConflicts(workspaceId, meeting.meetingId, picked.startAt);
+    } catch (err) {
+      setError(err as Error);
+      return;
     }
+    if (conflicts.length === 0) {
+      if (window.confirm(`${formatDateTime(picked.startAt)}로 회의를 확정할까요? 팀 캘린더와 참여자 캘린더에 일정과 화상 회의 링크가 등록됩니다.`)) {
+        onConfirm(picked.startAt, false);
+      }
+      return;
+    }
+    const lines = conflicts
+      .map((c) => `· ${c.name ?? '참여자'}님: ${c.reasons.map((r) => `'${r}'`).join(', ')}`)
+      .join('\n');
+    const proceed = window.confirm(
+      `${formatDateTime(picked.startAt)}에 이미 다른 일정이 있는 참여자가 있어요.\n${lines}\n\n` +
+        '그래도 확정할까요?\n(취소를 누르면 지금 일정을 기준으로 다시 추천합니다.)',
+    );
+    if (proceed) onConfirm(picked.startAt, true);
+    else void recommend();
   };
 
   return (

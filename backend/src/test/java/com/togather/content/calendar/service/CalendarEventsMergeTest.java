@@ -106,6 +106,23 @@ class CalendarEventsMergeTest {
     }
 
     @Test
+    void 참여자_캘린더에_넣은_사본은_iCalUID가_같으므로_팀_일정으로_한_번만_준다() {
+        teamCalendar();
+        LocalDateTime start = LocalDateTime.of(2026, 11, 5, 10, 0);
+        when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.of("my-token"));
+        when(calendarClient.listEvents("team-token", TEAM_CAL, FROM, TO)).thenReturn(List.of(
+                new CalendarEvent("t1", "팀 회의", null, start, start.plusHours(1), false, List.of(), null, null, null,
+                        "uid-1")));
+        when(calendarClient.listEvents("my-token", "primary", FROM, TO)).thenReturn(List.of(
+                new CalendarEvent("copy-1", "팀 회의", null, start, start.plusHours(1), false, List.of(), null, null,
+                        null, "uid-1")));
+
+        List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
+
+        assertThat(events).singleElement().extracting(CalendarEventResponse::personal).isEqualTo(false);
+    }
+
+    @Test
     void 개인_캘린더를_연동하지_않았으면_팀_일정만_준다() {
         teamCalendar();
         when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.empty());

@@ -19,4 +19,8 @@ public interface MeetingRepository extends JpaRepository<Meeting, Long> {
     List<Meeting> findAllByCalendarRefIdIn(Collection<Long> calendarRefIds);
 
     List<Meeting> findAllByMeetingIdInAndStatusNot(Collection<Long> meetingIds, MeetingStatus status);
+
+    List<Meeting> findAllByWorkspaceIdAndStatusAndStartAtBetween(Long workspaceId, MeetingStatus status,
+                                                                 java.time.LocalDateTime from,
+                                                                 java.time.LocalDateTime to);
 }
