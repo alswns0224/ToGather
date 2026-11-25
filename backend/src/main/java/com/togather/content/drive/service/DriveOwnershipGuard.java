@@ -16,6 +16,8 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -87,8 +89,12 @@ public class DriveOwnershipGuard implements WorkspaceChangeGuard {
         }
     }
 
-    /** 팀장이 Drive를 연동(재인증 포함)하면 Drive 소유자로 정하고 휴지통 폴더를 준비한다. */
+    /**
+     * 팀장이 Drive를 연동(재인증 포함)하면 Drive 소유자로 정하고 휴지통 폴더를 준비한다.
+     * 커밋이 끝난 트랜잭션에 참여하면 저장이 반영되지 않으므로 새 트랜잭션에서 한다.
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onConnected(ServiceConnectedEvent event) {
         if (event.provider() != PROVIDER) {
             return;

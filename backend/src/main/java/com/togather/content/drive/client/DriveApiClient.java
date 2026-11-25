@@ -1508,11 +1508,21 @@ public class DriveApiClient {
     public static final String FOLDER_MIME = "application/vnd.google-apps.folder";
 
     private static final String ITEM_FIELDS =
-        "id,name,mimeType,parents,trashed,size,modifiedTime,webViewLink,owners(emailAddress)";
+        "id,name,mimeType,parents,trashed,size,modifiedTime,webViewLink,owners(emailAddress),appProperties";
 
-    /** 폴더·파일 공통 정보와 소유자 메일 주소 */
+    /**
+     * 폴더·파일 공통 정보와 소유자 메일 주소.
+     *
+     * @param appProperties ToGather가 붙인 표시 (다른 앱·사용자에게는 보이지 않는다)
+     */
     public record DriveItem(String id, String name, String mimeType, List<String> parents, boolean trashed,
-                            Long fileSize, LocalDateTime modifiedAt, String webViewLink, List<String> ownerEmails) {
+                            Long fileSize, LocalDateTime modifiedAt, String webViewLink, List<String> ownerEmails,
+                            Map<String, String> appProperties) {
+
+        public DriveItem(String id, String name, String mimeType, List<String> parents, boolean trashed,
+                         Long fileSize, LocalDateTime modifiedAt, String webViewLink, List<String> ownerEmails) {
+            this(id, name, mimeType, parents, trashed, fileSize, modifiedAt, webViewLink, ownerEmails, Map.of());
+        }
 
         public boolean isFolder() {
             return FOLDER_MIME.equals(mimeType);
@@ -1565,8 +1575,11 @@ public class DriveApiClient {
         throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
     }
 
-    /** @param parentId 만들 위치. null이면 내 드라이브 루트 */
-    public DriveItem createFolder(String token, String name, String parentId) {
+    /**
+     * @param parentId 만들 위치. null이면 내 드라이브 루트
+     * @param appProperties ToGather가 붙이는 표시 (예: 휴지통 폴더)
+     */
+    public DriveItem createFolder(String token, String name, String parentId, Map<String, String> appProperties) {
         if (parentId != null) {
             validateId(parentId);
         }
@@ -1577,6 +1590,7 @@ public class DriveApiClient {
         Map<String, Object> body = new HashMap<>();
         body.put("name", safeFileName(name));
         body.put("mimeType", FOLDER_MIME);
+        body.put("appProperties", appProperties);
         if (parentId != null) {
             body.put("parents", List.of(parentId));
         }
@@ -1585,6 +1599,38 @@ public class DriveApiClient {
             throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         }
         return folder;
+    }
+
+    /** 폴더 이름과 ToGather 표시를 바꾼다. */
+    public DriveItem updateFolder(String token, String folderId, String name, Map<String, String> appProperties) {
+        validateId(folderId);
+        URI uri = UriComponentsBuilder.fromUriString(BASE + "/files/" + folderId)
+            .queryParam("fields", ITEM_FIELDS)
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        DriveItem folder = toItem(call(HttpMethod.PATCH, token, uri,
+            Map.of("name", safeFileName(name), "appProperties", appProperties),
+            "Drive folder update", ErrorCode.EXTERNAL_API_ERROR));
+        if (folder == null) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return folder;
+    }
+
+    /** 내가 소유한, 휴지통에 있지 않은 폴더 중 이 ToGather 표시가 붙은 폴더 */
+    public List<DriveItem> findMarkedFolders(String token, String key, String value) {
+        if (!key.matches("[A-Za-z0-9_]+") || !value.matches("[A-Za-z0-9_-]+")) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(BASE + "/files")
+            .queryParam("q", "appProperties has { key='" + key + "' and value='" + value + "' }"
+                + " and mimeType = '" + FOLDER_MIME + "' and trashed = false and 'me' in owners")
+            .queryParam("fields", "files(" + ITEM_FIELDS + ")")
+            .queryParam("pageSize", 10);
+        return list(request(token, uri), "files").stream()
+            .map(DriveApiClient::toItem)
+            .filter(item -> item != null && !item.trashed())
+            .toList();
     }
 
     /** 내 드라이브 항목은 부모가 하나라, 부모를 바꿔서 옮긴다. 소유자가 아니면 DRIVE_TRASH_FORBIDDEN */
@@ -1730,6 +1776,15 @@ public class DriveApiClient {
                 }
             }
         }
+        Map<String, String> appProperties = new HashMap<>();
+        Map<String, Object> rawProperties = nestedMap(json.get("appProperties"));
+        if (rawProperties != null) {
+            rawProperties.forEach((key, value) -> {
+                if (value instanceof String text) {
+                    appProperties.put(key, text);
+                }
+            });
+        }
         return new DriveItem(
             str(json, "id"),
             str(json, "name"),
@@ -1739,7 +1794,8 @@ public class DriveApiClient {
             parseFileSize(json.get("size")),
             parseDate(str(json, "modifiedTime")),
             str(json, "webViewLink"),
-            List.copyOf(owners)
+            List.copyOf(owners),
+            Map.copyOf(appProperties)
         );
     }
 

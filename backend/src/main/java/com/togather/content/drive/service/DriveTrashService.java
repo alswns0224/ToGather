@@ -20,6 +20,7 @@ import com.togather.content.drive.repository.DriveWorkspaceSettingRepository;
 import com.togather.content.drive.service.DriveOwnerAccess.OwnerToken;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
+import com.togather.integration.client.GoogleIntegrationClient;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -67,30 +68,68 @@ public class DriveTrashService {
 
     // ===================== 휴지통 폴더 =====================
 
-    /** 휴지통 폴더를 확인하고, 없거나 지워졌으면 팀장 내 드라이브 루트에 새로 만든다. */
+    /**
+     * 휴지통 폴더를 확인하고, 없거나 지워졌으면 팀장 내 드라이브 루트에 새로 만든다.
+     *
+     * <p>휴지통 폴더에는 ToGather 표시(appProperties)를 붙여 연동할 폴더 목록에서 빼고, 이름에 워크스페이스 번호를 넣어
+     * 이름이 같은 워크스페이스끼리도 구별한다. 저장한 ID를 잃었어도 표시로 찾아 다시 써서 휴지통이 여러 개 생기지 않게 한다.
+     */
     public synchronized String ensureTrashFolder(Long workspaceId, OwnerToken owner) {
         DriveWorkspaceSetting setting = settingRepository.findById(workspaceId)
             .orElseGet(() -> new DriveWorkspaceSetting(workspaceId, owner.userId()));
+        String name = trashFolderName(workspaceId);
+        Map<String, String> marker = Map.of(
+            GoogleIntegrationClient.DRIVE_TRASH_MARKER, "true",
+            GoogleIntegrationClient.DRIVE_TRASH_WORKSPACE, workspaceId.toString());
+
         String current = setting.getTrashFolderId();
-        if (current != null) {
-            try {
-                DriveItem folder = driveApiClient.getItem(owner.accessToken(), current);
-                if (folder.isFolder() && !folder.trashed()
-                    && (owner.email() == null || folder.isOwnedBy(owner.email()))) {
-                    return current;
-                }
-            } catch (BusinessException e) {
-                if (e.getErrorCode() != ErrorCode.RESOURCE_NOT_FOUND) {
-                    throw e;
-                }
-            }
+        Optional<DriveItem> usable = current == null ? Optional.empty() : usableTrash(owner, current);
+        if (usable.isPresent()) {
+            refreshTrash(owner, usable.get(), name, marker);
+            return current;
         }
-        DriveItem created = driveApiClient.createFolder(owner.accessToken(),
-            "ToGather 휴지통 (" + workspaceName(workspaceId) + ")", null);
-        setting.changeTrashFolder(created.id());
+
+        Optional<DriveItem> marked = driveApiClient.findMarkedFolders(owner.accessToken(),
+            GoogleIntegrationClient.DRIVE_TRASH_WORKSPACE, workspaceId.toString()).stream().findFirst();
+        String id;
+        if (marked.isPresent()) {
+            refreshTrash(owner, marked.get(), name, marker);
+            id = marked.get().id();
+        } else {
+            id = driveApiClient.createFolder(owner.accessToken(), name, null, marker).id();
+            log.info("Drive 휴지통 폴더 생성: workspaceId={}, folderId={}", workspaceId, id);
+        }
+        setting.changeTrashFolder(id);
         settingRepository.save(setting);
-        log.info("Drive 휴지통 폴더 생성: workspaceId={}, folderId={}", workspaceId, created.id());
-        return created.id();
+        return id;
+    }
+
+    private Optional<DriveItem> usableTrash(OwnerToken owner, String folderId) {
+        try {
+            DriveItem folder = driveApiClient.getItem(owner.accessToken(), folderId);
+            boolean usable = folder.isFolder() && !folder.trashed()
+                && (owner.email() == null || folder.isOwnedBy(owner.email()));
+            return usable ? Optional.of(folder) : Optional.empty();
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
+                return Optional.empty();
+            }
+            throw e;
+        }
+    }
+
+    /** 이름(워크스페이스 이름이 바뀐 경우)이나 표시가 다르면 맞춘다. */
+    private void refreshTrash(OwnerToken owner, DriveItem folder, String name, Map<String, String> marker) {
+        boolean marked = marker.entrySet().stream()
+            .allMatch(entry -> entry.getValue().equals(folder.appProperties().get(entry.getKey())));
+        if (!marked || !name.equals(folder.name())) {
+            driveApiClient.updateFolder(owner.accessToken(), folder.id(), name, marker);
+        }
+    }
+
+    /** 예: "ToGather 휴지통 · 테스트 #1" (#뒤는 워크스페이스 번호) */
+    private String trashFolderName(Long workspaceId) {
+        return "ToGather 휴지통 · " + workspaceName(workspaceId) + " #" + workspaceId;
     }
 
     // ===================== 휴지통으로 이동 =====================

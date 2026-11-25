@@ -55,6 +55,7 @@ public class DriveOwnershipService {
     private final DriveApiClient driveApiClient;
     private final DriveOwnerAccess ownerAccess;
     private final DriveTreeLocator locator;
+    private final DriveTrashService trashService;
     private final DriveWorkspaceSettingRepository settingRepository;
     private final DriveOwnershipJobRepository jobRepository;
     private final IntegrationService integrationService;
@@ -77,6 +78,12 @@ public class DriveOwnershipService {
             return new PassResult(0, 0, 0);
         }
         OwnerToken owner = found.get();
+        try {
+            // 휴지통 폴더가 없거나 이름·표시가 예전 것이면 맞춘다.
+            trashService.ensureTrashFolder(workspaceId, owner);
+        } catch (BusinessException e) {
+            log.warn("Drive 휴지통 폴더 점검 실패: workspaceId={}, error={}", workspaceId, e.getMessage());
+        }
         List<DriveItem> notMine = teamItems(workspaceId, owner.accessToken()).stream()
             .filter(item -> !item.isOwnedBy(owner.email()))
             .toList();

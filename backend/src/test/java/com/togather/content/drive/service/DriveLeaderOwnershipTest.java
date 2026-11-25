@@ -24,6 +24,7 @@ import com.togather.content.drive.dto.DriveUploadMode;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.content.service.TeamTokenResolver;
+import com.togather.integration.client.GoogleIntegrationClient;
 import com.togather.integration.service.IntegrationService;
 import com.togather.integration.service.IntegrationService.OwnAccess;
 import com.togather.support.IntegrationTestSupport;
@@ -32,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,7 +89,7 @@ class DriveLeaderOwnershipTest extends IntegrationTestSupport {
         when(integration.findOwnExternalAccountId(workspaceId, member, DRIVE)).thenReturn(Optional.of(MEMBER_EMAIL));
         when(integration.hasConnection(eq(workspaceId), any(), eq(DRIVE))).thenReturn(true);
 
-        when(api.createFolder(eq(LEADER_TOKEN), anyString(), isNull())).thenReturn(item(TRASH, MY_DRIVE, true, LEADER_EMAIL));
+        when(api.createFolder(eq(LEADER_TOKEN), anyString(), isNull(), any())).thenReturn(item(TRASH, MY_DRIVE, true, LEADER_EMAIL));
         when(api.getItem(LEADER_TOKEN, TRASH)).thenReturn(item(TRASH, MY_DRIVE, true, LEADER_EMAIL));
         when(api.getItem(LEADER_TOKEN, MY_DRIVE)).thenReturn(new DriveItem(MY_DRIVE, "내 드라이브", FOLDER_MIME,
             List.of(), false, null, null, null, List.of(LEADER_EMAIL)));
@@ -131,8 +133,33 @@ class DriveLeaderOwnershipTest extends IntegrationTestSupport {
         trash.trash(workspaceId, leader, "a");
         trash.trash(workspaceId, leader, "b");
 
-        verify(api, times(1)).createFolder(eq(LEADER_TOKEN), anyString(), isNull());
+        verify(api, times(1)).createFolder(eq(LEADER_TOKEN), anyString(), isNull(), any());
         assertThat(ownerAccess.trashFolderId(workspaceId)).contains(TRASH);
+    }
+
+    @Test
+    void 휴지통_폴더는_워크스페이스_번호가_든_이름과_ToGather_표시로_만든다() {
+        when(api.getItem(LEADER_TOKEN, "a")).thenReturn(item("a", ROOT, false, LEADER_EMAIL));
+
+        trash.trash(workspaceId, leader, "a");
+
+        verify(api).createFolder(LEADER_TOKEN, "ToGather 휴지통 · 테스트 #" + workspaceId, null, Map.of(
+            GoogleIntegrationClient.DRIVE_TRASH_MARKER, "true",
+            GoogleIntegrationClient.DRIVE_TRASH_WORKSPACE, workspaceId.toString()));
+    }
+
+    @Test
+    void 저장한_휴지통_ID를_잃어도_표시로_찾아_다시_쓴다() {
+        when(api.findMarkedFolders(LEADER_TOKEN, GoogleIntegrationClient.DRIVE_TRASH_WORKSPACE, workspaceId.toString()))
+            .thenReturn(List.of(item("old-trash", MY_DRIVE, true, LEADER_EMAIL)));
+        when(api.getItem(LEADER_TOKEN, "a")).thenReturn(item("a", ROOT, false, LEADER_EMAIL));
+
+        trash.trash(workspaceId, leader, "a");
+
+        verify(api, never()).createFolder(anyString(), anyString(), any(), any());
+        verify(api).moveItem(LEADER_TOKEN, "a", ROOT, "old-trash");
+        verify(api).updateFolder(eq(LEADER_TOKEN), eq("old-trash"), eq("ToGather 휴지통 · 테스트 #" + workspaceId), any());
+        assertThat(ownerAccess.trashFolderId(workspaceId)).contains("old-trash");
     }
 
     @Test

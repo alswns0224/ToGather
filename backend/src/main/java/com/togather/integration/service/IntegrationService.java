@@ -188,6 +188,14 @@ public class IntegrationService {
                                              TargetSelectRequest request) {
         ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId);
         requireDriveOwnerSelection(connection, userId);
+        if (connection.getProvider() == Provider.GOOGLE_DRIVE) {
+            // 선택 창에 나오는 폴더(팀장 소유, ToGather 휴지통 제외)만 고를 수 있다.
+            Set<String> allowed = visibleTargetOptions(connection);
+            if (allowed != null && request.targets().stream().anyMatch(target -> !allowed.contains(target.id()))) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "고를 수 없는 Drive 폴더가 있습니다. ToGather 휴지통 폴더와 팀장 소유가 아닌 폴더는 연동할 수 없습니다.");
+            }
+        }
         if (connection.getProvider() == Provider.SLACK
                 && request.targets().stream().anyMatch(target -> target.id().startsWith("D"))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Slack DM은 개인 AI 업무 보조에서만 수집합니다.");

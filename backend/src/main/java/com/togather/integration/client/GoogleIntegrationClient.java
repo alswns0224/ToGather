@@ -1,6 +1,7 @@
 package com.togather.integration.client;
 
 import static com.togather.common.util.JsonValues.list;
+import static com.togather.common.util.JsonValues.obj;
 import static com.togather.common.util.JsonValues.str;
 
 import com.togather.auth.client.GoogleOAuthClient;
@@ -29,6 +30,11 @@ import org.springframework.web.client.RestClientResponseException;
 @Component
 @RequiredArgsConstructor
 public class GoogleIntegrationClient implements OAuthProviderClient {
+
+    /** ToGather 휴지통 폴더에 붙이는 표시(appProperties). 이 표시가 있는 폴더는 연동할 폴더 목록에서 뺀다. */
+    public static final String DRIVE_TRASH_MARKER = "togatherTrash";
+    /** 휴지통 폴더가 어느 워크스페이스 것인지 */
+    public static final String DRIVE_TRASH_WORKSPACE = "togatherTrashWorkspace";
 
     private static final String BASE_SCOPE = "openid email ";
     private static final Map<Provider, String> SCOPES = Map.of(
@@ -98,11 +104,13 @@ public class GoogleIntegrationClient implements OAuthProviderClient {
         String uri = UriComponentsBuilder.fromUriString("https://www.googleapis.com/drive/v3/files")
                 // 팀 Drive의 모든 항목을 팀장 소유로 두므로, 팀장이 소유한 폴더만 고를 수 있다.
                 .queryParam("q", "mimeType='application/vnd.google-apps.folder' and trashed=false and 'me' in owners")
-                .queryParam("fields", "files(id,name)")
+                .queryParam("fields", "files(id,name,appProperties)")
                 .queryParam("orderBy", "modifiedTime desc")
                 .queryParam("pageSize", 100)
                 .encode().build().toUriString();
         return list(get(uri, accessToken), "files").stream()
+                // ToGather 휴지통 폴더는 진짜 휴지통처럼 쓰므로 연동할 폴더로 고를 수 없다.
+                .filter(f -> !"true".equals(obj(f, "appProperties").get(DRIVE_TRASH_MARKER)))
                 .map(f -> new TargetOption(str(f, "id"), str(f, "name")))
                 .toList();
     }
