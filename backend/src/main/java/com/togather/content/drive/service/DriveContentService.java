@@ -624,7 +624,7 @@ public class DriveContentService {
 
         String folderId = file.getChannelId();
 
-        String token = resolveToken(
+        String token = resolveOwnToken(
             workspaceId,
             userId,
             folderId
@@ -694,7 +694,7 @@ public class DriveContentService {
 
         String folderId = file.getChannelId();
 
-        String token = resolveToken(
+        String token = resolveOwnToken(
             workspaceId,
             userId,
             folderId
@@ -982,6 +982,17 @@ public class DriveContentService {
             folderId,
             userId
         );
+    }
+
+    /** Drive는 휴지통 이동·복원을 요청한 계정의 권한으로 판단하므로 본인 토큰을 먼저 쓴다. */
+    private String resolveOwnToken(
+        Long workspaceId,
+        Long userId,
+        String folderId
+    ) {
+        String teamToken = resolveToken(workspaceId, userId, folderId);
+        return integrationService.findAccessToken(workspaceId, userId, PROVIDER)
+            .orElse(teamToken);
     }
 
     /**

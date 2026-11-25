@@ -1299,6 +1299,16 @@ public class DriveApiClient {
                 e
             );
 
+            // 403은 사용량 제한(rateLimitExceeded)에도 쓰이므로 권한 거절만 안내 문구로 바꾼다.
+            if (e instanceof RestClientResponseException response
+                && response.getStatusCode().value() == 403
+                && !errorReason(response).toLowerCase(Locale.ROOT).contains("ratelimit")) {
+
+                throw new BusinessException(
+                    ErrorCode.DRIVE_TRASH_FORBIDDEN
+                );
+            }
+
             throw new BusinessException(
                 ErrorCode.EXTERNAL_API_ERROR
             );
@@ -1784,6 +1794,14 @@ public class DriveApiClient {
     // 17. 오류 로깅
     // =====================================================
 
+    private static final Pattern ERROR_REASON =
+        Pattern.compile("\"reason\"\\s*:\\s*\"([^\"]+)\"");
+
+    private static String errorReason(RestClientResponseException response) {
+        Matcher matcher = ERROR_REASON.matcher(response.getResponseBodyAsString());
+        return matcher.find() ? matcher.group(1) : "unknown";
+    }
+
     private static void logRestError(
         String operation,
         RestClientException e
@@ -1792,9 +1810,10 @@ public class DriveApiClient {
         if (e instanceof RestClientResponseException response) {
 
             log.warn(
-                "{} failed: HTTP {}",
+                "{} failed: HTTP {} ({})",
                 operation,
-                response.getStatusCode().value()
+                response.getStatusCode().value(),
+                errorReason(response)
             );
 
         } else {

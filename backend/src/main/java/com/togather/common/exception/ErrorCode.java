@@ -84,6 +84,7 @@ public enum ErrorCode {
     DRIVE_FILE_NAME_CONFLICT(HttpStatus.CONFLICT, "같은 이름의 파일이 있습니다. 새 파일 저장 또는 덮어쓸 대상을 선택해 주세요."),
     DRIVE_FILE_CHANGED(HttpStatus.CONFLICT, "선택한 파일이 변경됐습니다. 최신 파일 정보를 확인한 뒤 다시 선택해 주세요."),
     DRIVE_UPLOAD_IN_PROGRESS(HttpStatus.CONFLICT, "같은 폴더와 파일 이름으로 업로드가 진행 중입니다. 완료 후 다시 시도해 주세요."),
+    DRIVE_TRASH_FORBIDDEN(HttpStatus.FORBIDDEN, "파일 소유자만 휴지통으로 옮기거나 복원할 수 있습니다. 공유 드라이브는 콘텐츠 관리자 이상 권한이 필요합니다."),
     SUGGESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "후보를 찾을 수 없습니다.");
 
     private final HttpStatus status;
