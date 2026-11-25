@@ -381,23 +381,71 @@ export const uploadDriveFile = async (
 };
 
 // =====================================================
-// 7. Google Drive 휴지통 조회
+// 7. Google Drive 휴지통 (팀장 Drive의 ToGather 휴지통 폴더)
 // =====================================================
 
 /**
- * GET /api/workspaces/{workspaceId}/drive/trash
- *
- * ToGather가 수집했던 삭제 표시 파일 조회
+ * 휴지통 항목
+ * - TOGATHER: ToGather 휴지통 폴더에 있는 파일·폴더 (itemId로 복원·영구 삭제)
+ * - DRIVE: Drive 웹에서 Google Drive 휴지통으로 보낸 수집 파일 (contentRefId로 복원)
  */
-export const getDriveTrashFiles = (
-  workspaceId: string,
-): Promise<DriveFile[]> =>
-  http.get<DriveFile[]>(
-    ws(
-      workspaceId,
-      '/drive/trash',
-    ),
-  );
+export interface DriveTrashItem {
+  itemId: string;
+  name: string | null;
+  folder: boolean;
+  mimeType: string | null;
+  fileSize: number | null;
+  trashedAt: string | null;
+  trashedBy: number | null;
+  trashedByName: string | null;
+  contentRefId: number | null;
+  source: 'TOGATHER' | 'DRIVE';
+}
+
+/** GET /api/workspaces/{workspaceId}/drive/trash */
+export const getDriveTrash = (workspaceId: string): Promise<DriveTrashItem[]> =>
+  http.get<DriveTrashItem[]>(ws(workspaceId, '/drive/trash'));
+
+/** POST /api/workspaces/{workspaceId}/drive/items/{itemId}/trash — 하위 폴더·파일을 휴지통으로 */
+export const trashDriveItem = (workspaceId: string, itemId: string): Promise<void> =>
+  http.post<void>(ws(workspaceId, `/drive/items/${encodeURIComponent(itemId)}/trash`));
+
+/** POST /api/workspaces/{workspaceId}/drive/trash/{itemId}/restore */
+export const restoreDriveTrashItem = (workspaceId: string, itemId: string): Promise<void> =>
+  http.post<void>(ws(workspaceId, `/drive/trash/${encodeURIComponent(itemId)}/restore`));
+
+/** DELETE /api/workspaces/{workspaceId}/drive/trash/{itemId} — 영구 삭제 (팀장·관리자) */
+export const deleteDriveTrashItem = (workspaceId: string, itemId: string): Promise<void> =>
+  http.delete<void>(ws(workspaceId, `/drive/trash/${encodeURIComponent(itemId)}`));
+
+/** DELETE /api/workspaces/{workspaceId}/drive/trash — 휴지통 비우기 (팀장·관리자) */
+export const emptyDriveTrash = (workspaceId: string) =>
+  http.delete<{ deleted: number; failed: number }>(ws(workspaceId, '/drive/trash'));
+
+/** Drive 소유자(팀장)와 소유권 정리·인계 상태 */
+export interface DriveOwnershipStatus {
+  ownerUserId: number | null;
+  ownerName: string | null;
+  ownerConnected: boolean;
+  trashFolderReady: boolean;
+  pendingOwnershipCount: number;
+  lastConsolidatedAt: string | null;
+  transfer: {
+    status: 'RUNNING' | 'DONE';
+    fromUserId: number;
+    fromName: string | null;
+    toUserId: number;
+    toName: string | null;
+    doneCount: number;
+    remainingCount: number;
+    failedCount: number;
+    lastError: string | null;
+  } | null;
+}
+
+/** GET /api/workspaces/{workspaceId}/drive/ownership */
+export const getDriveOwnership = (workspaceId: string): Promise<DriveOwnershipStatus> =>
+  http.get<DriveOwnershipStatus>(ws(workspaceId, '/drive/ownership'));
 
 // =====================================================
 // 8. Google Drive 파일 삭제

@@ -1,10 +1,12 @@
 package com.togather.workspace.service;
 
 import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.common.enums.WorkspaceRole;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.workspace.domain.WorkspaceMember;
 import com.togather.workspace.repository.WorkspaceMemberRepository;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,5 +45,11 @@ public class WorkspaceAccessCheckerImpl implements WorkspaceAccessChecker {
         if (!member.isOwner()) {
             throw new BusinessException(ErrorCode.MAIN_OWNER_REQUIRED);
         }
+    }
+
+    @Override
+    public Optional<Long> findMainOwner(Long workspaceId) {
+        return workspaceMemberRepository.findFirstByWorkspaceIdAndRole(workspaceId, WorkspaceRole.OWNER)
+                .map(WorkspaceMember::getUserId);
     }
 }

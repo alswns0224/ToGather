@@ -1,5 +1,6 @@
 package com.togather.workspace.repository;
 
+import com.togather.common.enums.WorkspaceRole;
 import com.togather.workspace.domain.WorkspaceMember;
 import java.util.Collection;
 import java.util.List;
@@ -17,6 +18,8 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
     List<WorkspaceMember> findAllByWorkspaceId(Long workspaceId);
 
     List<WorkspaceMember> findAllByUserId(Long userId);
+
+    Optional<WorkspaceMember> findFirstByWorkspaceIdAndRole(Long workspaceId, WorkspaceRole role);
 
     long countByWorkspaceId(Long workspaceId);
 

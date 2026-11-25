@@ -16,6 +16,7 @@ import {
   type WorkspaceRole,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
+import { getDriveOwnership } from '../drive/api';
 import { useLoginUser } from '../../components/RequireAuth';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import { formatDateTime } from '../../utils/date';
@@ -31,6 +32,9 @@ export default function MembersPage() {
   const navigate = useNavigate();
   const workspace = useAsync(() => getWorkspace(workspaceId), [workspaceId]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
+  // 팀장을 넘기면 Drive 파일 소유권도 새 팀장에게 넘어간다. 진행 상황을 보여 준다.
+  const ownership = useAsync(() => getDriveOwnership(workspaceId).catch(() => null), [workspaceId]);
+  const transfer = ownership.data?.transfer;
   // 팀장: 관리자 임명·해제, 팀장 넘기기, 워크스페이스 수정·삭제까지 / 관리자: 초대 링크 관리, 일반 팀원 내보내기
   const isMainOwner = workspace.data?.myRole === 'OWNER';
   const isAdmin = isMainOwner || workspace.data?.myRole === 'ADMIN';
@@ -103,9 +107,12 @@ export default function MembersPage() {
               type="button"
               className="btn btn-small"
               onClick={() =>
-                runRoleAction(`${m.name}님에게 팀장을 넘길까요?\n넘기면 나는 팀원이 됩니다.`, () =>
-                  transferOwner(workspaceId, m.userId),
-                )
+                runRoleAction(
+                  `${m.name}님에게 팀장을 넘길까요?\n넘기면 나는 팀원이 됩니다.\n\n`
+                    + '팀 Drive의 파일·폴더 소유권도 새 팀장에게 차례로 넘어갑니다. '
+                    + '새 팀장이 Google Drive를 연동해 두어야 하고, 넘기는 동안에는 두 사람의 Drive 연결을 해제할 수 없어요.',
+                  () => transferOwner(workspaceId, m.userId),
+                ).then(() => ownership.reload())
               }
             >
               팀장 넘기기
@@ -135,6 +142,13 @@ export default function MembersPage() {
       />
 
       {actionError && <ErrorBox error={actionError} />}
+      {transfer?.status === 'RUNNING' && (
+        <div role="status" className="alert">
+          Drive 파일 소유권을 {transfer.fromName ?? '이전 팀장'} 님에서 {transfer.toName ?? '새 팀장'} 님에게 넘기는 중이에요.
+          ({transfer.doneCount}개 완료{transfer.remainingCount > 0 && `, ${transfer.remainingCount}개 남음`})
+          <button type="button" className="btn btn-small" onClick={() => ownership.reload()}>새로고침</button>
+        </div>
+      )}
       {members.loading && <Loading />}
       {members.error && <ErrorBox error={members.error} onRetry={members.reload} />}
       {members.data && members.data.length === 0 && <Empty>팀원이 없습니다.</Empty>}

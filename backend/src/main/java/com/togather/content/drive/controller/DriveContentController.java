@@ -11,6 +11,7 @@ import com.togather.content.drive.dto.DriveUploadCandidate;
 import com.togather.content.drive.dto.DriveUploadMode;
 import com.togather.content.drive.service.DriveContentService;
 import com.togather.content.drive.service.DriveContentService.DriveTransfer;
+import com.togather.content.drive.service.DriveTrashService;
 import com.togather.content.dto.ContentRefDTO;
 
 import java.io.IOException;
@@ -70,6 +71,7 @@ public class DriveContentController {
         DriveApiClient.MAX_UPLOAD_SIZE;
 
     private final DriveContentService driveContentService;
+    private final DriveTrashService driveTrashService;
     private final WorkspaceAccessChecker workspaceAccessChecker;
 
     @GetMapping("/upload-candidates")
@@ -219,33 +221,6 @@ public class DriveContentController {
     }
 
     /**
-     * 4. Google Drive 휴지통 파일 목록 조회.
-     *
-     * GET /api/workspaces/{workspaceId}/drive/trash
-     *
-     * 이전에 ToGather에서 수집한 파일 중
-     * 삭제 상태인 파일을 조회한다.
-     */
-    @GetMapping("/trash")
-    public ApiResponse<List<ContentRefDTO>> getTrashFiles(
-        @LoginUser Long userId,
-        @PathVariable Long workspaceId
-    ) {
-
-        workspaceAccessChecker.checkMember(
-            workspaceId,
-            userId
-        );
-
-        return ApiResponse.ok(
-            driveContentService.getTrashFiles(
-                workspaceId,
-                userId
-            )
-        );
-    }
-
-    /**
      * 5. Google Drive 파일 직접 업로드.
      *
      * POST /api/workspaces/{workspaceId}/drive/files
@@ -380,12 +355,11 @@ public class DriveContentController {
     }
 
     /**
-     * 6. Google Drive 파일 삭제.
+     * 6. Google Drive 파일을 휴지통으로 이동.
      *
      * DELETE /api/workspaces/{workspaceId}/drive/files/{contentRefId}
      *
-     * 원본 파일을 영구 삭제하지 않고
-     * Google Drive 휴지통으로 이동한다.
+     * 영구 삭제하지 않고 팀장 Drive의 ToGather 휴지통 폴더로 옮긴다.
      *
      * 성공 시 204 No Content 반환.
      */
@@ -397,7 +371,7 @@ public class DriveContentController {
         @PathVariable Long contentRefId
     ) {
 
-        driveContentService.trashFile(
+        driveTrashService.trashFile(
             workspaceId,
             userId,
             contentRefId

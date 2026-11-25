@@ -3,6 +3,7 @@ package com.togather.workspace.service;
 import com.togather.auth.dto.UserSummary;
 import com.togather.auth.service.UserService;
 import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.common.auth.WorkspaceChangeGuard;
 import com.togather.common.enums.WorkspaceRole;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +33,7 @@ public class WorkspaceMemberService {
     private final UserService userService;
     private final InviteLinkService inviteLinkService;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final ObjectProvider<WorkspaceChangeGuard> guards;
 
     /** 팀원 목록. 팀장, 관리자, 팀원 순, 같은 역할은 참여 순서 */
     public List<MemberResponse> getMembers(Long workspaceId) {
@@ -73,9 +76,13 @@ public class WorkspaceMemberService {
         if (userId.equals(targetUserId)) {
             throw new BusinessException(ErrorCode.CANNOT_TRANSFER_TO_SELF);
         }
-        findMember(workspaceId, targetUserId).changeRole(WorkspaceRole.OWNER);
+        WorkspaceMember target = findMember(workspaceId, targetUserId);
+        // 다른 파트가 막을 수 있다. 예: 새 팀장이 Drive를 연동하지 않으면 Drive 파일 소유권을 넘길 수 없다.
+        guards.orderedStream().forEach(guard -> guard.beforeOwnerTransfer(workspaceId, userId, targetUserId));
+        target.changeRole(WorkspaceRole.OWNER);
         findMember(workspaceId, userId).changeRole(WorkspaceRole.MEMBER);
         workspaceMemberRepository.flush();
+        guards.orderedStream().forEach(guard -> guard.afterOwnerTransfer(workspaceId, userId, targetUserId));
         return getMembers(workspaceId);
     }
 
@@ -96,6 +103,7 @@ public class WorkspaceMemberService {
         if (target.isAdmin()) {
             throw new BusinessException(ErrorCode.CANNOT_REMOVE_OWNER);
         }
+        guards.orderedStream().forEach(guard -> guard.beforeMemberRemove(workspaceId, targetUserId));
         workspaceMemberRepository.delete(target);
         workspaceMemberRepository.flush();
         inviteLinkService.renewInviteLinks(workspaceId);

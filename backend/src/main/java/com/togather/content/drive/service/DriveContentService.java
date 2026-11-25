@@ -9,7 +9,6 @@ import com.togather.common.exception.ErrorCode;
 
 import com.togather.content.access.ContentAccessService;
 import com.togather.content.domain.ContentRef;
-import com.togather.content.domain.ContentRef.DriveFileState;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveFile;
 import com.togather.content.drive.dto.DriveUploadCandidate;
@@ -18,7 +17,6 @@ import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
-import com.togather.content.service.TeamTokenResolver;
 
 import com.togather.integration.service.IntegrationService;
 
@@ -80,7 +78,8 @@ public class DriveContentService {
     private final ContentAccessService contentAccess;
     private final WorkspaceAccessChecker workspaceAccessChecker;
     private final DriveApiClient driveApiClient;
-    private final TeamTokenResolver teamTokenResolver;
+    private final DriveOwnerAccess ownerAccess;
+    private final DriveTreeLocator locator;
     private final WorkspaceEventService workspaceEventService;
     private final Set<UploadKey> activeUploads = ConcurrentHashMap.newKeySet();
 
@@ -89,7 +88,7 @@ public class DriveContentService {
 
     public List<DriveUploadCandidate> getUploadCandidates(Long workspaceId, Long userId, String folderId, String name) {
         validateFileName(name);
-        String token = resolveToken(workspaceId, userId, folderId);
+        String token = resolveToken(workspaceId, userId, uploadRoot(workspaceId, userId, folderId));
         return driveApiClient.findFilesByName(token, folderId, DriveApiClient.normalizeFileName(name)).stream()
                 .filter(file -> file.isDirectChildOf(folderId))
                 .map(DriveUploadCandidate::from).toList();
@@ -210,33 +209,7 @@ public class DriveContentService {
             return List.of();
         }
 
-        String rootFolderId = selectedFolders.stream()
-            .filter(id -> id.equals(parentFolderId))
-            .findFirst()
-            .orElse(null);
-
-        String token;
-        if (rootFolderId != null) {
-            token = teamTokenResolver.tokenFor(
-                workspaceId, PROVIDER, rootFolderId, userId
-            );
-        } else {
-            token = selectedFolders.stream()
-                .map(id -> {
-                    try {
-                        return teamTokenResolver.tokenFor(
-                            workspaceId, PROVIDER, id, userId
-                        );
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .filter(t -> t != null)
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(
-                    ErrorCode.INTEGRATION_TARGET_NOT_SELECTED
-                ));
-        }
+        String token = browseToken(workspaceId, userId, parentFolderId, selectedFolders);
 
         return driveApiClient.listSubfolders(token, parentFolderId).stream()
             .map(f -> new DriveSubfolderResponse(f.id(), f.name()))
@@ -256,17 +229,7 @@ public class DriveContentService {
             return List.of();
         }
 
-        String token = selectedFolders.stream()
-            .map(id -> {
-                try {
-                    return teamTokenResolver.tokenFor(workspaceId, PROVIDER, id, userId);
-                } catch (Exception e) {
-                    return null;
-                }
-            })
-            .filter(t -> t != null)
-            .findFirst()
-            .orElseThrow(() -> new BusinessException(ErrorCode.INTEGRATION_TARGET_NOT_SELECTED));
+        String token = browseToken(workspaceId, userId, folderId, selectedFolders);
 
         return driveApiClient.listFolderFiles(token, folderId).stream()
             .map(f -> new DriveDirectFileResponse(
@@ -275,6 +238,30 @@ public class DriveContentService {
                 f.fileSize()
             ))
             .toList();
+    }
+
+    /** 연동 폴더 안의 폴더만 둘러볼 수 있다. 그 연동 폴더의 토큰을 돌려준다. */
+    private String browseToken(Long workspaceId, Long userId, String folderId, List<String> selectedFolders) {
+        String token = ownerAccess.operationToken(workspaceId, selectedFolders.getFirst(), userId);
+        String rootId = selectedFolders.contains(folderId) ? folderId
+            : locator.rootOf(token, folderId, selectedFolders)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        return rootId.equals(selectedFolders.getFirst()) ? token
+            : ownerAccess.operationToken(workspaceId, rootId, userId);
+    }
+
+    /** 업로드할 폴더(연동 폴더 또는 그 아래 폴더)가 속한 연동 폴더 */
+    private String uploadRoot(Long workspaceId, Long userId, String folderId) {
+        List<String> selectedFolders = getSelectedFolders(workspaceId, userId);
+        if (folderId == null || folderId.isBlank() || selectedFolders.isEmpty()) {
+            throw new BusinessException(ErrorCode.INTEGRATION_TARGET_NOT_SELECTED);
+        }
+        if (selectedFolders.contains(folderId)) {
+            return folderId;
+        }
+        String token = ownerAccess.operationToken(workspaceId, selectedFolders.getFirst(), userId);
+        return locator.rootOf(token, folderId, selectedFolders)
+            .orElseThrow(() -> new BusinessException(ErrorCode.INTEGRATION_TARGET_NOT_SELECTED));
     }
 
     /**
@@ -462,11 +449,12 @@ public class DriveContentService {
             );
         }
 
-        // 업로드 권한 검증
+        // 업로드 권한 검증 (팀원이 올려도 팀장 토큰으로 올려 팀장 소유가 된다)
+        String rootId = uploadRoot(workspaceId, userId, folderId);
         String token = resolveToken(
             workspaceId,
             userId,
-            folderId
+            rootId
         );
 
         DriveFile uploaded = driveApiClient.uploadFile(
@@ -477,16 +465,11 @@ public class DriveContentService {
             fileBytes
         );
 
-        ContentRefDTO result = saveUploadedFile(
-            workspaceId,
-            folderId,
-            fileName,
-            uploaded
-        );
+        ContentRefDTO result = saveUploaded(workspaceId, rootId, folderId, fileName, uploaded);
 
         publishDriveChanged(
             workspaceId,
-            folderId
+            rootId
         );
 
         return result;
@@ -549,11 +532,12 @@ public class DriveContentService {
             );
         }
 
-        // 워크스페이스 및 폴더 권한 확인
+        // 워크스페이스 및 폴더 권한 확인 (팀원이 올려도 팀장 토큰으로 올려 팀장 소유가 된다)
+        String rootId = uploadRoot(workspaceId, userId, folderId);
         String token = resolveToken(
             workspaceId,
             userId,
-            folderId
+            rootId
         );
 
         if (mode == null || (mode != DriveUploadMode.OVERWRITE && (targetFileId != null || expectedVersion != null))
@@ -587,8 +571,8 @@ public class DriveContentService {
                 }
                 uploaded = driveApiClient.uploadFile(token, folderId, canonicalName, mimeType, localFile);
             }
-            ContentRefDTO result = saveUploadedFile(workspaceId, folderId, canonicalName, uploaded);
-            publishDriveChanged(workspaceId, folderId);
+            ContentRefDTO result = saveUploaded(workspaceId, rootId, folderId, canonicalName, uploaded);
+            publishDriveChanged(workspaceId, rootId);
             log.info("Drive upload completed: workspaceId={}, fileId={}", workspaceId, uploaded.id());
             return result;
         } finally {
@@ -597,84 +581,10 @@ public class DriveContentService {
     }
 
     /**
-     * 7. Google Drive 파일 삭제.
+     * 8. Google Drive 휴지통에 있는 파일 복원.
      *
-     * 실제 영구 삭제하지 않고 휴지통으로 이동한다.
-     *
-     * 순서:
-     * 1. 사용자 및 파일 권한 검증
-     * 2. Google Drive 원본 조회
-     * 3. 선택된 폴더의 파일인지 검증
-     * 4. Drive 휴지통으로 이동
-     * 5. ContentRef 삭제 표시
-     * 6. SSE 이벤트 발행
-     */
-    public void trashFile(
-        Long workspaceId,
-        Long userId,
-        Long contentRefId
-    ) {
-
-        ContentRef file = requireFile(
-            workspaceId,
-            userId,
-            contentRefId,
-            false
-        );
-
-        String folderId = file.getChannelId();
-
-        String token = resolveOwnToken(
-            workspaceId,
-            userId,
-            folderId
-        );
-
-        DriveFile remote = driveApiClient.getFileMetadata(
-            token,
-            file.getOriginId()
-        );
-
-        // 실제 선택된 폴더 안의 파일인지 확인
-        if (!remote.isDirectChildOf(folderId)) {
-
-            throw new BusinessException(
-                ErrorCode.RESOURCE_NOT_FOUND
-            );
-        }
-
-        // Google Drive 원본 휴지통 이동
-        driveApiClient.trashFile(
-            token,
-            file.getOriginId()
-        );
-
-        // PostgreSQL에 원본 삭제 상태 반영
-        contentRefService.updateDriveLocation(
-            workspaceId,
-            file.getOriginId(),
-            folderId,
-            folderId,
-            DriveFileState.TRASHED
-        );
-
-        // 화면 자동 갱신 이벤트
-        publishDriveChanged(
-            workspaceId,
-            folderId
-        );
-
-        log.info(
-            "Drive file trashed: workspaceId={}, contentRefId={}",
-            workspaceId,
-            contentRefId
-        );
-    }
-
-    /**
-     * 8. Google Drive 파일 복원.
-     *
-     * 이전에 ToGather에서 수집했던 파일만 복원한다.
+     * ToGather 휴지통(휴지통 폴더)은 DriveTrashService가 맡는다. 여기서는 Drive 웹에서 Google Drive 휴지통으로
+     * 보낸 수집 파일을 되살린다. 이전에 ToGather에서 수집했던 파일만 복원한다.
      *
      * 복원 후 ContentRefService.upsert()로
      * 최신 메타데이터를 반영한다.
@@ -694,7 +604,7 @@ public class DriveContentService {
 
         String folderId = file.getChannelId();
 
-        String token = resolveOwnToken(
+        String token = resolveToken(
             workspaceId,
             userId,
             folderId
@@ -976,23 +886,12 @@ public class DriveContentService {
             );
         }
 
-        return teamTokenResolver.tokenFor(
+        // 팀 Drive는 팀장 소유라 팀장 토큰으로 한다. (팀장이 아직 연동하지 않았으면 폴더를 고른 사람의 토큰)
+        return ownerAccess.operationToken(
             workspaceId,
-            PROVIDER,
             folderId,
             userId
         );
-    }
-
-    /** Drive는 휴지통 이동·복원을 요청한 계정의 권한으로 판단하므로 본인 토큰을 먼저 쓴다. */
-    private String resolveOwnToken(
-        Long workspaceId,
-        Long userId,
-        String folderId
-    ) {
-        String teamToken = resolveToken(workspaceId, userId, folderId);
-        return integrationService.findAccessToken(workspaceId, userId, PROVIDER)
-            .orElse(teamToken);
     }
 
     /**
@@ -1028,6 +927,24 @@ public class DriveContentService {
                 ErrorCode.INVALID_INPUT
             );
         }
+    }
+
+    /**
+     * 연동 폴더 바로 아래에 올린 파일은 수집 목록(ContentRef)에 저장한다. 하위 폴더에 올린 파일은 수집하지 않으므로
+     * (하위 폴더는 Drive에서 바로 조회한다) ID 없이 업로드 결과만 돌려준다.
+     */
+    private ContentRefDTO saveUploaded(Long workspaceId, String rootId, String folderId, String requestedName,
+                                       DriveFile uploaded) {
+        if (rootId.equals(folderId)) {
+            return saveUploadedFile(workspaceId, folderId, requestedName, uploaded);
+        }
+        if (uploaded == null || uploaded.id() == null || uploaded.id().isBlank()) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return new ContentRefDTO(null, PROVIDER, ContentType.FILE, uploaded.id(),
+            uploaded.name() != null ? uploaded.name() : requestedName,
+            "파일 유형: " + (uploaded.mimeType() != null ? uploaded.mimeType() : "application/octet-stream"),
+            uploaded.webViewLink(), null, uploaded.modifiedAt(), 0, false, uploaded.fileSize());
     }
 
     /**

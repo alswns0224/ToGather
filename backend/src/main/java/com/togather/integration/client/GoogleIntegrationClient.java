@@ -96,7 +96,8 @@ public class GoogleIntegrationClient implements OAuthProviderClient {
 
     private List<TargetOption> getFolders(String accessToken) {
         String uri = UriComponentsBuilder.fromUriString("https://www.googleapis.com/drive/v3/files")
-                .queryParam("q", "mimeType='application/vnd.google-apps.folder' and trashed=false")
+                // 팀 Drive의 모든 항목을 팀장 소유로 두므로, 팀장이 소유한 폴더만 고를 수 있다.
+                .queryParam("q", "mimeType='application/vnd.google-apps.folder' and trashed=false and 'me' in owners")
                 .queryParam("fields", "files(id,name)")
                 .queryParam("orderBy", "modifiedTime desc")
                 .queryParam("pageSize", 100)

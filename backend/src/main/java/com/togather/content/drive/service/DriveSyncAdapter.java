@@ -14,7 +14,6 @@ import com.togather.content.drive.client.DriveApiClient.DriveFile;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
-import com.togather.content.service.TeamTokenResolver;
 
 import com.togather.integration.service.IntegrationService;
 import com.togather.sync.service.SyncAdapter;
@@ -74,7 +73,7 @@ public class DriveSyncAdapter implements SyncAdapter {
     private final ContentRefService contentRefService;
     private final ContentRefRepository contentRefRepository;
     private final IntegrationService integrationService;
-    private final TeamTokenResolver teamTokenResolver;
+    private final DriveOwnerAccess ownerAccess;
 
     // =====================================================
     // 1. Provider
@@ -144,10 +143,9 @@ public class DriveSyncAdapter implements SyncAdapter {
         // 프로젝트 공통 DB 시간 기준: UTC
         LocalDateTime startedAt = LocalDateTime.now();
 
-        // 기존 공통 Google OAuth 토큰 관리 재사용
-        String token = teamTokenResolver.tokenFor(
+        // 팀 Drive는 팀장 소유라 팀장 토큰으로 동기화한다. (팀장이 아직 연동하지 않았으면 폴더를 고른 사람의 토큰)
+        String token = ownerAccess.operationToken(
             context.workspaceId(),
-            PROVIDER,
             folderId,
             context.requestedBy()
         );
@@ -665,6 +663,15 @@ public class DriveSyncAdapter implements SyncAdapter {
 
     private void reconcileLocation(Long workspaceId, String folderId, String fileId, DriveFile file) {
         if (file == null) {
+            contentRefService.updateDriveLocation(
+                workspaceId, fileId, folderId, folderId, DriveFileState.UNAVAILABLE
+            );
+            return;
+        }
+
+        // ToGather 휴지통 폴더로 옮겨진 파일은 연동 폴더 소속으로 두고 목록에서만 숨긴다. (복원하면 다시 보인다)
+        String trashFolder = ownerAccess.trashFolderId(workspaceId).orElse(null);
+        if (trashFolder != null && file.parents().contains(trashFolder)) {
             contentRefService.updateDriveLocation(
                 workspaceId, fileId, folderId, folderId, DriveFileState.UNAVAILABLE
             );

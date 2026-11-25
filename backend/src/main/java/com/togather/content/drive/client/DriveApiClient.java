@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1498,6 +1499,248 @@ public class DriveApiClient {
             .equals(mimeType)
             || "application/vnd.google-apps.drawing"
             .equals(mimeType);
+    }
+
+    // =====================================================
+    // 12-b. 팀장 단일 소유: 폴더 생성 · 이동 · 영구 삭제 · 소유권 이전
+    // =====================================================
+
+    public static final String FOLDER_MIME = "application/vnd.google-apps.folder";
+
+    private static final String ITEM_FIELDS =
+        "id,name,mimeType,parents,trashed,size,modifiedTime,webViewLink,owners(emailAddress)";
+
+    /** 폴더·파일 공통 정보와 소유자 메일 주소 */
+    public record DriveItem(String id, String name, String mimeType, List<String> parents, boolean trashed,
+                            Long fileSize, LocalDateTime modifiedAt, String webViewLink, List<String> ownerEmails) {
+
+        public boolean isFolder() {
+            return FOLDER_MIME.equals(mimeType);
+        }
+
+        public boolean isOwnedBy(String email) {
+            return email != null && ownerEmails.stream().anyMatch(email::equalsIgnoreCase);
+        }
+    }
+
+    public DriveItem getItem(String token, String itemId) {
+        validateId(itemId);
+        UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId)
+            .queryParam("fields", ITEM_FIELDS)
+            .queryParam("supportsAllDrives", true);
+        DriveItem item = toItem(request(token, uri, true));
+        if (item == null) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return item;
+    }
+
+    /** 휴지통에 있지 않은 바로 아래 항목 (폴더와 파일) */
+    public List<DriveItem> listChildren(String token, String folderId) {
+        validateId(folderId);
+        List<DriveItem> items = new ArrayList<>();
+        String pageToken = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(BASE + "/files")
+                .queryParam("q", "'" + folderId + "' in parents and trashed = false")
+                .queryParam("fields", "nextPageToken,files(" + ITEM_FIELDS + ")")
+                .queryParam("pageSize", 100)
+                .queryParam("supportsAllDrives", true)
+                .queryParam("includeItemsFromAllDrives", true);
+            if (pageToken != null) {
+                uri.queryParam("pageToken", pageToken);
+            }
+            Map<String, Object> body = request(token, uri);
+            for (Map<String, Object> json : list(body, "files")) {
+                DriveItem item = toItem(json);
+                if (item != null && !item.trashed() && item.parents().contains(folderId)) {
+                    items.add(item);
+                }
+            }
+            pageToken = str(body, "nextPageToken");
+            if (pageToken == null || pageToken.isBlank()) {
+                return List.copyOf(items);
+            }
+        }
+        throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    /** @param parentId 만들 위치. null이면 내 드라이브 루트 */
+    public DriveItem createFolder(String token, String name, String parentId) {
+        if (parentId != null) {
+            validateId(parentId);
+        }
+        URI uri = UriComponentsBuilder.fromUriString(BASE + "/files")
+            .queryParam("fields", ITEM_FIELDS)
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", safeFileName(name));
+        body.put("mimeType", FOLDER_MIME);
+        if (parentId != null) {
+            body.put("parents", List.of(parentId));
+        }
+        DriveItem folder = toItem(call(HttpMethod.POST, token, uri, body, "Drive folder create", ErrorCode.EXTERNAL_API_ERROR));
+        if (folder == null || !folder.isFolder()) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return folder;
+    }
+
+    /** 내 드라이브 항목은 부모가 하나라, 부모를 바꿔서 옮긴다. 소유자가 아니면 DRIVE_TRASH_FORBIDDEN */
+    public DriveItem moveItem(String token, String itemId, String fromParentId, String toParentId) {
+        validateId(itemId);
+        validateId(fromParentId);
+        validateId(toParentId);
+        URI uri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId)
+            .queryParam("addParents", toParentId)
+            .queryParam("removeParents", fromParentId)
+            .queryParam("fields", ITEM_FIELDS)
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        DriveItem moved = toItem(call(HttpMethod.PATCH, token, uri, Map.of(), "Drive move", ErrorCode.DRIVE_TRASH_FORBIDDEN));
+        if (moved == null || !moved.parents().contains(toParentId)) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return moved;
+    }
+
+    /** 영구 삭제. 이미 없으면(404) 지운 것으로 본다. */
+    public void deleteItem(String token, String itemId) {
+        validateId(itemId);
+        URI uri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId)
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        try {
+            externalRestClient.delete()
+                .uri(uri)
+                .headers(h -> h.setBearerAuth(token))
+                .retrieve()
+                .toBodilessEntity();
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 404) {
+                return;
+            }
+            throw failure("Drive delete", e, ErrorCode.DRIVE_TRASH_FORBIDDEN);
+        } catch (RestClientException e) {
+            throw failure("Drive delete", e, ErrorCode.DRIVE_TRASH_FORBIDDEN);
+        }
+    }
+
+    /** 이 메일 주소 사용자의 권한 ID. 권한이 없으면 편집자로 추가한다. (알림 메일은 보내지 않는다) */
+    public String ensureWriter(String token, String itemId, String email) {
+        validateId(itemId);
+        UriComponentsBuilder listUri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId + "/permissions")
+            .queryParam("fields", "permissions(id,emailAddress,role)")
+            .queryParam("supportsAllDrives", true);
+        for (Map<String, Object> permission : list(request(token, listUri), "permissions")) {
+            if (email.equalsIgnoreCase(str(permission, "emailAddress"))) {
+                return str(permission, "id");
+            }
+        }
+        URI createUri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId + "/permissions")
+            .queryParam("sendNotificationEmail", false)
+            .queryParam("fields", "id")
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        String id = str(call(HttpMethod.POST, token, createUri,
+            Map.of("role", "writer", "type", "user", "emailAddress", email),
+            "Drive permission create", ErrorCode.EXTERNAL_API_ERROR), "id");
+        if (id == null || id.isBlank()) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
+        return id;
+    }
+
+    /** 현재 소유자가 자기 토큰으로 소유권 이전을 요청한다. 개인 Google 계정끼리는 받는 사람이 수락해야 넘어간다. */
+    public void requestOwnership(String ownerToken, String itemId, String permissionId) {
+        validateId(itemId);
+        validateId(permissionId);
+        URI uri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId + "/permissions/" + permissionId)
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        call(HttpMethod.PATCH, ownerToken, uri, Map.of("role", "writer", "pendingOwner", true),
+            "Drive ownership request", ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    /** 받는 사람이 자기 토큰으로 소유권 이전을 수락한다. */
+    public void acceptOwnership(String newOwnerToken, String itemId, String permissionId) {
+        validateId(itemId);
+        validateId(permissionId);
+        URI uri = UriComponentsBuilder.fromUriString(BASE + "/files/" + itemId + "/permissions/" + permissionId)
+            .queryParam("transferOwnership", true)
+            .queryParam("supportsAllDrives", true)
+            .build().encode().toUri();
+        call(HttpMethod.PATCH, newOwnerToken, uri, Map.of("role", "owner"),
+            "Drive ownership accept", ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    private Map<String, Object> call(HttpMethod method, String token, URI uri, Map<String, Object> body,
+                                     String operation, ErrorCode forbidden) {
+        try {
+            Map<String, Object> result = externalRestClient.method(method)
+                .uri(uri)
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(JSON);
+            return result == null ? Map.of() : result;
+        } catch (RestClientException e) {
+            throw failure(operation, e, forbidden);
+        }
+    }
+
+    /** 403 권한 거절은 forbidden으로, 404는 RESOURCE_NOT_FOUND로 바꾼다. 사용량 제한 403은 일반 실패다. */
+    private static BusinessException failure(String operation, RestClientException e, ErrorCode forbidden) {
+        logRestError(operation, e);
+        if (e instanceof RestClientResponseException response) {
+            int status = response.getStatusCode().value();
+            String reason = errorReason(response);
+            if (status == 404) {
+                return new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+            if (status == 403 && !reason.toLowerCase(Locale.ROOT).contains("ratelimit")) {
+                return new BusinessException(forbidden, forbidden.getMessage() + " (" + reason + ")");
+            }
+            return new BusinessException(ErrorCode.EXTERNAL_API_ERROR,
+                ErrorCode.EXTERNAL_API_ERROR.getMessage() + " (" + reason + ")");
+        }
+        return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    private static DriveItem toItem(Map<String, Object> json) {
+        if (json == null || str(json, "id") == null) {
+            return null;
+        }
+        List<String> parents = new ArrayList<>();
+        if (json.get("parents") instanceof List<?> values) {
+            for (Object value : values) {
+                if (value instanceof String parent) {
+                    parents.add(parent);
+                }
+            }
+        }
+        List<String> owners = new ArrayList<>();
+        if (json.get("owners") instanceof List<?> values) {
+            for (Object value : values) {
+                Map<String, Object> owner = nestedMap(value);
+                if (owner != null && str(owner, "emailAddress") != null) {
+                    owners.add(str(owner, "emailAddress"));
+                }
+            }
+        }
+        return new DriveItem(
+            str(json, "id"),
+            str(json, "name"),
+            str(json, "mimeType"),
+            List.copyOf(parents),
+            Boolean.TRUE.equals(json.get("trashed")),
+            parseFileSize(json.get("size")),
+            parseDate(str(json, "modifiedTime")),
+            str(json, "webViewLink"),
+            List.copyOf(owners)
+        );
     }
 
     // =====================================================

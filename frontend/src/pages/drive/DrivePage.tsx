@@ -21,28 +21,36 @@ import {
 import {
   canPreviewDriveFile,
   deleteDriveFile,
+  deleteDriveTrashItem,
+  emptyDriveTrash,
   formatDriveFileSize,
   getDriveDirectFiles,
   getDriveDownloadUrl,
   getDriveFiles,
+  getDriveOwnership,
   getDriveSubfolders,
   getDriveUploadCandidates,
   getDriveFolderHierarchy,
   getDriveFolders,
   getDrivePreviewUrl,
   getDriveSyncStatuses,
-  getDriveTrashFiles,
+  getDriveTrash,
   MAX_DRIVE_UPLOAD_SIZE,
   restoreDriveFile,
+  restoreDriveTrashItem,
   syncDrive,
+  trashDriveItem,
   uploadDriveFile,
   type DriveDirectFile,
   type DriveFile,
+  type DriveOwnershipStatus,
   type DriveSubfolder,
   type DriveSyncStatus,
+  type DriveTrashItem,
   type DriveUploadCandidate,
   type DriveUploadOptions,
 } from './api';
+import { getWorkspace } from '../workspace/api';
 
 // =====================================================
 // 타입
@@ -62,6 +70,7 @@ type WorkingAction =
   | 'check-upload'
   | 'delete'
   | 'restore'
+  | 'empty'
   | null;
 
 // 화면 데이터 자동 조회 간격: 60초
@@ -95,6 +104,27 @@ function fileFormat(file: DriveFile): string {
   if (mime.startsWith('image/')) return 'IMAGE';
 
   return 'FILE';
+}
+
+/** 수집하지 않은 항목(하위 폴더 파일·휴지통)의 형식 표시 */
+function itemFormat(name: string | null, mimeType: string | null): string {
+  const mime = mimeType || '';
+  if (mime.includes('spreadsheet')) return 'SHEET';
+  if (mime.includes('presentation')) return 'SLIDES';
+  if (mime.includes('document')) return 'DOC';
+  if (mime.includes('pdf')) return 'PDF';
+  if (mime.startsWith('image/')) return 'IMAGE';
+  return name?.match(/\.([a-z0-9]+)$/i)?.[1]?.toUpperCase() || 'FILE';
+}
+
+function FolderGlyph() {
+  return (
+    <span className="drive-ext ext-folder">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      </svg>
+    </span>
+  );
 }
 
 function fileDescription(file: DriveFile): string {
@@ -131,7 +161,11 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [trashFiles, setTrashFiles] =
-    useState<DriveFile[]>([]);
+    useState<DriveTrashItem[]>([]);
+  // Drive 소유자(팀장) 연동·소유권 인계 상태, 내 역할 (영구 삭제는 팀장·관리자만)
+  const [ownership, setOwnership] =
+    useState<DriveOwnershipStatus | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [statuses, setStatuses] =
     useState<DriveSyncStatus[]>([]);
@@ -180,6 +214,8 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   const [workingFileId, setWorkingFileId] =
     useState<number | null>(null);
+  const [workingItemId, setWorkingItemId] =
+    useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] =
@@ -261,7 +297,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
         getDriveFiles(workspaceId),
         getDriveSyncStatuses(workspaceId),
         getDriveFolders(workspaceId),
-        getDriveTrashFiles(workspaceId),
+        getDriveTrash(workspaceId),
       ]);
 
       if (!active) return;
@@ -289,6 +325,10 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     }
 
     void initialLoad();
+    void getDriveOwnership(workspaceId).then(value => { if (active) setOwnership(value); }).catch(() => undefined);
+    void getWorkspace(workspaceId)
+      .then(value => { if (active) setIsAdmin(value.myRole === 'OWNER' || value.myRole === 'ADMIN'); })
+      .catch(() => undefined);
 
     // 서버에 저장된 최신 파일 정보를 60초마다 조회.
     // Google Drive API 동기화 자체는 실행하지 않는다.
@@ -305,7 +345,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
         getDriveFiles(workspaceId),
         getDriveSyncStatuses(workspaceId),
         getDriveFolders(workspaceId),
-        getDriveTrashFiles(workspaceId),
+        getDriveTrash(workspaceId),
       ])
         .then(([
                  fileResult,
@@ -353,6 +393,14 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   // 7. 최신 파일·폴더·동기화 상태 재조회
   // ===================================================
 
+  async function refreshOwnership() {
+    try {
+      setOwnership(await getDriveOwnership(workspaceId));
+    } catch {
+      // 소유권 상태는 안내용이라 실패해도 화면을 막지 않는다.
+    }
+  }
+
   async function reloadAll(): Promise<void> {
     if (!workspaceId) return;
 
@@ -365,8 +413,9 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
       getDriveFiles(workspaceId),
       getDriveSyncStatuses(workspaceId),
       getDriveFolders(workspaceId),
-      getDriveTrashFiles(workspaceId),
+      getDriveTrash(workspaceId),
     ]);
+    void refreshOwnership();
 
     if (statusResult.status === 'fulfilled') {
       setStatuses(statusResult.value);
@@ -557,11 +606,16 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   const isInSubfolder = folderPath.length > 0 && activeFolderId != null && !folderIds.includes(currentBrowseFolderId!);
 
-  const currentFiles = showTrash
-    ? trashFiles
-    : isInSubfolder
-      ? []
-      : (activeFolderId && folderFiles != null ? folderFiles : files);
+  const currentFiles = showTrash || isInSubfolder
+    ? []
+    : (activeFolderId && folderFiles != null ? folderFiles : files);
+
+  const visibleTrash = useMemo(() => {
+    if (!showTrash) return [];
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return trashFiles;
+    return trashFiles.filter(item => (item.name || '').toLowerCase().includes(keyword));
+  }, [trashFiles, query, showTrash]);
 
   const visibleFiles = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -864,19 +918,22 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
         options,
       );
 
-      // 업로드 성공 즉시 목록에 표시
-      setFiles(current => [
-        uploaded,
-        ...current.filter(
-          file =>
-            file.contentRefId !==
-            uploaded.contentRefId,
-        ),
-      ]);
+      // 연동 폴더 바로 아래에 올린 파일은 바로 목록에 표시한다.
+      // 하위 폴더에 올린 파일은 수집 목록에 없으므로(ID 없음) 목록을 다시 불러와 하위 폴더에서 보인다.
+      if (uploaded.contentRefId != null) {
+        setFiles(current => [
+          uploaded,
+          ...current.filter(
+            file =>
+              file.contentRefId !==
+              uploaded.contentRefId,
+          ),
+        ]);
+        setSelectedId(uploaded.contentRefId);
+      }
 
       setShowTrash(false);
       setQuery('');
-      setSelectedId(uploaded.contentRefId);
 
       setUploadFile(null);
       setUploadCandidates(null);
@@ -923,7 +980,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     }
 
     const confirmed = window.confirm(
-      `'${file.title || '(제목 없음)'}' 파일을 Google Drive 휴지통으로 이동할까요?\n\n영구 삭제가 아니며 휴지통에서 복원할 수 있습니다.`,
+      `'${file.title || '(제목 없음)'}' 파일을 휴지통으로 이동할까요?\n\n팀장 Drive의 ToGather 휴지통 폴더로 옮겨지며, 휴지통에서 복원할 수 있습니다.`,
     );
 
     if (!confirmed) return;
@@ -977,68 +1034,84 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   // 15. Google Drive 휴지통 복원
   // ===================================================
 
-  async function handleRestore(file: DriveFile) {
-    if (
-      !workspaceId ||
-      workingRef.current
-    ) {
-      return;
-    }
+  /** 휴지통 동작 공통: 진행 표시 → 실행 → 목록 다시 불러오기 */
+  async function runTrashAction(
+    action: WorkingAction,
+    itemId: string | null,
+    run: () => Promise<string>,
+  ) {
+    if (!workspaceId || workingRef.current) return;
 
     workingRef.current = true;
     dataVersionRef.current += 1;
-
-    setWorking('restore');
-    setWorkingFileId(file.contentRefId);
+    setWorking(action);
+    setWorkingItemId(itemId);
     setError(null);
     setNotice(null);
 
     try {
-      const restored = await restoreDriveFile(
-        workspaceId,
-        file.contentRefId,
-      );
-
-      // 휴지통 목록에서 즉시 제거
-      setTrashFiles(current =>
-        current.filter(
-          item =>
-            item.contentRefId !== file.contentRefId,
-        ),
-      );
-
-      // 일반 파일 목록에 반영
-      setFiles(current => [
-        restored,
-        ...current.filter(
-          item =>
-            item.contentRefId !==
-            restored.contentRefId,
-        ),
-      ]);
-
-      setShowTrash(false);
-      setQuery('');
-      setSelectedId(restored.contentRefId);
-
-      setNotice(
-        `'${file.title || '파일'}' 복원이 완료됐습니다.`,
-      );
-
+      const message = await run();
+      setNotice(message);
       try {
         await reloadAll();
       } catch {
-        setNotice(
-          '복원은 완료됐지만 목록 갱신에 실패했습니다.',
-        );
+        setNotice(`${message} 목록 갱신에는 실패했습니다. 새로고침해 주세요.`);
       }
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       workingRef.current = false;
       setWorking(null);
-      setWorkingFileId(null);
+      setWorkingItemId(null);
     }
+  }
+
+  /** 하위 폴더나 하위 폴더 안의 파일을 휴지통으로 */
+  function handleTrashItem(itemId: string, name: string | null, folder: boolean) {
+    const label = name || (folder ? '폴더' : '파일');
+    if (!window.confirm(
+      `'${label}' ${folder ? '폴더(안의 파일 포함)' : '파일'}를 휴지통으로 이동할까요?\n\n팀장 Drive의 ToGather 휴지통 폴더로 옮겨지며, 휴지통에서 복원할 수 있습니다.`,
+    )) return;
+    void runTrashAction('delete', itemId, async () => {
+      await trashDriveItem(workspaceId, itemId);
+      return `'${label}'을 휴지통으로 이동했습니다.`;
+    });
+  }
+
+  function handleRestore(item: DriveTrashItem) {
+    const label = item.name || '항목';
+    void runTrashAction('restore', item.itemId, async () => {
+      // Drive 웹에서 Google Drive 휴지통으로 보낸 수집 파일은 수집 ID로 되살린다.
+      if (item.source === 'DRIVE' && item.contentRefId != null) {
+        await restoreDriveFile(workspaceId, item.contentRefId);
+      } else {
+        await restoreDriveTrashItem(workspaceId, item.itemId);
+      }
+      return `'${label}' 복원이 완료됐습니다.`;
+    });
+  }
+
+  function handleDeleteForever(item: DriveTrashItem) {
+    const label = item.name || '항목';
+    if (!window.confirm(
+      `'${label}'${item.folder ? ' 폴더와 안의 모든 파일' : ''}을 영구 삭제할까요?\n\n팀장 Drive에서 완전히 지워지며 되돌릴 수 없습니다.`,
+    )) return;
+    void runTrashAction('delete', item.itemId, async () => {
+      await deleteDriveTrashItem(workspaceId, item.itemId);
+      return `'${label}'을 영구 삭제했습니다.`;
+    });
+  }
+
+  function handleEmptyTrash() {
+    if (!window.confirm(
+      '휴지통의 모든 항목을 영구 삭제할까요?\n\n팀장 Drive에서 완전히 지워지며 되돌릴 수 없습니다.',
+    )) return;
+    void runTrashAction('empty', null, async () => {
+      const result = await emptyDriveTrash(workspaceId);
+      return result.failed > 0
+        ? `${result.deleted}개를 영구 삭제했고, ${result.failed}개는 지우지 못했습니다.`
+        : `휴지통을 비웠습니다. (${result.deleted}개 영구 삭제)`;
+    });
   }
 
   // ===================================================
@@ -1134,6 +1207,28 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
       {notice && (
         <div role="status" className="alert alert-success">
           {notice}
+        </div>
+      )}
+
+      {/* 팀 Drive는 팀장 소유: 팀장 연동 · 팀장 넘기기 인계 · 팀장 소유가 아닌 항목 안내 */}
+      {folderIds.length > 0 && ownership && !ownership.ownerConnected && (
+        <div role="status" className="alert">
+          팀장({ownership.ownerName ?? '팀장'} 님)이 Google Drive를 연동해야 휴지통을 쓸 수 있고, 올린 파일이 팀장 소유로 저장돼요.
+        </div>
+      )}
+      {ownership?.transfer?.status === 'RUNNING' && (
+        <div role="status" className="alert">
+          팀장이 바뀌어 Drive 파일 소유권을 {ownership.transfer.fromName ?? '이전 팀장'} 님에서{' '}
+          {ownership.transfer.toName ?? '새 팀장'} 님에게 넘기는 중이에요. ({ownership.transfer.doneCount}개 완료
+          {ownership.transfer.remainingCount > 0 && `, ${ownership.transfer.remainingCount}개 남음`})
+          {ownership.transfer.lastError && ` · ${ownership.transfer.lastError}`}
+        </div>
+      )}
+      {folderIds.length > 0 && ownership && ownership.pendingOwnershipCount > 0
+        && ownership.transfer?.status !== 'RUNNING' && (
+        <div role="status" className="alert">
+          팀장 소유가 아닌 항목이 {ownership.pendingOwnershipCount}개 있어요. Drive에서 직접 올린 파일로, 올린 사람이
+          ToGather에 Drive를 연동하면 자동으로 팀장에게 넘어가요.
         </div>
       )}
 
@@ -1236,14 +1331,26 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               <strong className="text-[17px]">{showTrash ? 'Drive 휴지통' : '파일 목록'}</strong>
               <span className="badge">{showTrash ? trashFiles.length : isInSubfolder ? (directFiles.length + subfolders.length) : (activeFolderId && folderFiles ? folderFiles.length + subfolders.length : files.length)}</span>
             </div>
-            <a
-              href="https://drive.google.com/drive/my-drive"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-small"
-            >
-              ↗ Drive에서 열기
-            </a>
+            <div className="flex items-center gap-2">
+              {showTrash && isAdmin && trashFiles.some((item) => item.source === 'TOGATHER') && (
+                <button
+                  type="button"
+                  className="btn btn-small btn-danger"
+                  disabled={isBusy}
+                  onClick={handleEmptyTrash}
+                >
+                  {working === 'empty' ? '비우는 중...' : '휴지통 비우기'}
+                </button>
+              )}
+              <a
+                href="https://drive.google.com/drive/my-drive"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-small"
+              >
+                ↗ Drive에서 열기
+              </a>
+            </div>
           </div>
 
           {/* 연결된 폴더 드롭다운 · 하위 폴더 탐색 */}
@@ -1304,17 +1411,19 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
             />
           </div>
 
-          <div className="drive-row drive-head max-sm:grid-cols-[minmax(0,1fr)_auto]">
-            <span>파일 이름 · 크기</span>
-            <span className="max-sm:hidden">최근 수정</span>
+          <div className={`drive-row drive-head max-sm:grid-cols-[minmax(0,1fr)_auto]${showTrash ? ' drive-trash' : ''}`}>
+            <span>{showTrash ? '이름 · 삭제한 사람' : '파일 이름 · 크기'}</span>
+            <span className="max-sm:hidden">{showTrash ? '삭제한 때' : '최근 수정'}</span>
             <span>{showTrash ? '' : '연결'}</span>
           </div>
 
           {loading ? (
             <div className="py-12 text-center text-[13px] text-[var(--muted)]">Google Drive 파일을 불러오는 중입니다...</div>
-          ) : visibleFiles.length === 0 && visibleSubfolders.length === 0 && visibleDirectFiles.length === 0 ? (
+          ) : (showTrash
+            ? visibleTrash.length === 0
+            : visibleFiles.length === 0 && visibleSubfolders.length === 0 && visibleDirectFiles.length === 0) ? (
             <div className="py-12 text-center text-[13px] text-[var(--muted)]">
-              {query ? '검색 결과가 없습니다.' : showTrash ? '휴지통에 표시할 파일이 없습니다.' : '동기화된 파일이 없습니다.'}
+              {query ? '검색 결과가 없습니다.' : showTrash ? '휴지통이 비어 있습니다.' : '동기화된 파일이 없습니다.'}
               {!query && !showTrash && (
                 <div className="mt-2">
                   <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리에서 Drive 폴더 확인하기 →</Link>
@@ -1323,28 +1432,77 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
             </div>
           ) : (
             <>
+            {showTrash && visibleTrash.map((item) => {
+              const format = itemFormat(item.name, item.mimeType);
+              const isWorkingItem = workingItemId === item.itemId;
+              return (
+                <div
+                  key={`${item.source}-${item.itemId}`}
+                  className="drive-row drive-item drive-trash max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    {item.folder
+                      ? <FolderGlyph />
+                      : <span className={`drive-ext ext-${format.toLowerCase()}`}>{format.slice(0, 4)}</span>}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-bold">{item.name || '(이름 없음)'}</span>
+                      <span className="block truncate text-xs text-[var(--muted)]">
+                        {item.folder ? '폴더' : formatDriveFileSize(item.fileSize)}
+                        {item.trashedByName && ` · ${item.trashedByName} 님이 삭제`}
+                        {item.source === 'DRIVE' && ' · Google Drive 휴지통'}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="text-sm max-sm:col-span-2 max-sm:row-start-2 max-sm:pl-[50px]">{formatDate(item.trashedAt)}</span>
+                  <span className="flex flex-wrap justify-end gap-1.5 max-sm:col-start-2 max-sm:row-start-1">
+                    <button type="button" className="btn btn-small" disabled={isBusy} onClick={() => handleRestore(item)}>
+                      {isWorkingItem && working === 'restore' ? '복원 중...' : '↩ 복원'}
+                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="btn btn-small btn-danger"
+                        disabled={isBusy}
+                        onClick={() => handleDeleteForever(item)}
+                      >
+                        {isWorkingItem && working === 'delete' ? '삭제 중...' : '영구 삭제'}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
             {visibleSubfolders.map((folder) => (
-              <button
+              <div
                 key={`folder-${folder.id}`}
-                type="button"
-                onClick={() => navigateToSubfolder(folder)}
-                disabled={isBusy}
                 className="drive-row drive-item drive-subfolder-row max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
               >
-                <span className="flex min-w-0 items-center gap-3">
-                  <span className="drive-ext ext-folder">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                    </svg>
-                  </span>
+                <button
+                  type="button"
+                  onClick={() => navigateToSubfolder(folder)}
+                  disabled={isBusy}
+                  className="drive-row-main"
+                  aria-label={`${folder.name || '폴더'} 열기`}
+                >
+                  <FolderGlyph />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-bold">{folder.name || '(이름 없음)'}</span>
-                    <span className="block text-xs text-[var(--muted)]">폴더</span>
+                    <span className="block text-xs text-[var(--muted)]">폴더 ▸</span>
                   </span>
-                </span>
+                </button>
                 <span className="text-sm max-sm:col-span-2 max-sm:row-start-2 max-sm:pl-[50px]" />
-                <span className="text-xs text-[var(--muted)] max-sm:col-start-2 max-sm:row-start-1">▸</span>
-              </button>
+                <span className="flex justify-end max-sm:col-start-2 max-sm:row-start-1">
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={isBusy}
+                    onClick={() => handleTrashItem(folder.id, folder.name, true)}
+                    title="폴더를 휴지통으로 이동"
+                  >
+                    {workingItemId === folder.id ? '이동 중...' : '🗑'}
+                  </button>
+                </span>
+              </div>
             ))}
             {!isInSubfolder && visibleFiles.map((file) => {
               const selected = selectedFile?.contentRefId === file.contentRefId;
@@ -1385,32 +1543,37 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               );
             })}
             {isInSubfolder && visibleDirectFiles.map((file) => {
-              const ext = file.name?.match(/\.([a-z0-9]+)$/i)?.[1]?.toUpperCase() || 'FILE';
-              const mime = file.mimeType || '';
-              const format = mime.includes('spreadsheet') ? 'SHEET'
-                : mime.includes('presentation') ? 'SLIDES'
-                : mime.includes('document') ? 'DOC'
-                : mime.includes('pdf') ? 'PDF'
-                : mime.startsWith('image/') ? 'IMAGE'
-                : ext !== 'FILE' ? ext : 'FILE';
+              const format = itemFormat(file.name, file.mimeType);
               return (
-                <a
+                <div
                   key={file.id}
-                  href={file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="drive-row drive-item max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
                 >
-                  <span className="flex min-w-0 items-center gap-3">
+                  <a
+                    href={file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="drive-row-main"
+                  >
                     <span className={`drive-ext ext-${format.toLowerCase()}`}>{format.slice(0, 4)}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-bold">{file.name || '(제목 없음)'}</span>
-                      <span className="block text-xs text-[var(--muted)]">{formatDriveFileSize(file.fileSize)}</span>
+                      <span className="block text-xs text-[var(--muted)]">{formatDriveFileSize(file.fileSize)} · Drive에서 열기 ↗</span>
                     </span>
-                  </span>
+                  </a>
                   <span className="text-sm max-sm:col-span-2 max-sm:row-start-2 max-sm:pl-[50px]">{formatDate(file.modifiedAt)}</span>
-                  <span className="text-xs text-[var(--muted)] max-sm:col-start-2 max-sm:row-start-1">↗</span>
-                </a>
+                  <span className="flex justify-end max-sm:col-start-2 max-sm:row-start-1">
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      disabled={isBusy}
+                      onClick={() => handleTrashItem(file.id, file.name, false)}
+                      title="파일을 휴지통으로 이동"
+                    >
+                      {workingItemId === file.id ? '이동 중...' : '🗑'}
+                    </button>
+                  </span>
+                </div>
               );
             })}
             </>
@@ -1504,33 +1667,26 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               )}
 
               <div className="border-t border-[var(--border-soft)] pt-4">
-                {showTrash ? (
-                  <>
-                    <p className="mb-3 text-[13px] text-[var(--muted)]">
-                      휴지통에 있는 파일입니다. 복원하면 일반 파일 목록에 다시 표시됩니다.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      className="btn btn-primary w-full"
-                      onClick={() => void handleRestore(selectedFile)}
-                    >
-                      {working === 'restore' ? '복원 중...' : '↩ Google Drive에서 복원'}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => void handleDelete(selectedFile)}
-                    className="btn btn-danger !h-11 w-full"
-                    title="Google Drive 휴지통으로 이동하며, 영구 삭제되지 않습니다."
-                  >
-                    {working === 'delete' ? '삭제 중...' : '🗑 휴지통으로 이동'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void handleDelete(selectedFile)}
+                  className="btn btn-danger !h-11 w-full"
+                  title="팀장 Drive의 ToGather 휴지통 폴더로 옮기며, 영구 삭제되지 않습니다."
+                >
+                  {working === 'delete' ? '삭제 중...' : '🗑 휴지통으로 이동'}
+                </button>
               </div>
             </>
+          ) : showTrash ? (
+            <div className="flex flex-col gap-2 py-6 text-[13px] leading-relaxed text-[var(--muted)]">
+              <p className="m-0">
+                휴지통으로 옮긴 파일·폴더는 팀장 Drive의 <strong className="text-[var(--text)]">ToGather 휴지통</strong> 폴더에
+                모여 팀원에게서 사라집니다.
+              </p>
+              <p className="m-0">복원하면 원래 폴더로 돌아가고, 원래 폴더가 없어졌으면 연동 폴더 바로 아래로 돌아갑니다.</p>
+              <p className="m-0">영구 삭제와 휴지통 비우기는 팀장·관리자만 할 수 있어요.</p>
+            </div>
           ) : (
             <div className="py-12 text-center text-[13px] text-[var(--muted)]">
               왼쪽에서 파일을 선택하면 상세 정보가 표시됩니다.
