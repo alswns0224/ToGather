@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   addAgenda,
+  addTextAgenda,
   cancelMeeting,
   confirmMeeting,
   deleteAgenda,
@@ -158,7 +159,7 @@ export default function MeetingDetailPage() {
             </div>
           )}
 
-          <Agendas workspaceId={workspaceId} meeting={m} onChange={run} />
+          <Agendas workspaceId={workspaceId} meeting={m} busy={acting} onChange={run} />
 
           {scheduling && (
             <div className="flex flex-col gap-2">
@@ -206,14 +207,17 @@ export default function MeetingDetailPage() {
 function Agendas({
   workspaceId,
   meeting,
+  busy,
   onChange,
 }: {
   workspaceId: string;
   meeting: MeetingDetailResponse;
+  busy: boolean;
   onChange: (fn: () => Promise<MeetingDetailResponse>) => void;
 }) {
   const editable = meeting.canManage && meeting.status !== 'CANCELED';
   const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
   const candidates = useAsync(
     () => (adding ? getAgendaCandidates(workspaceId) : Promise.resolve([])),
     [workspaceId, adding],
@@ -227,7 +231,7 @@ function Agendas({
         <span className="badge">{meeting.agendas.length}</span>
         <span className="flex-1" />
         {editable && (
-          <button type="button" className="analysis-ghost" onClick={() => setAdding(!adding)}>
+          <button type="button" className="analysis-ghost" disabled={busy} onClick={() => setAdding(!adding)}>
             {adding ? '닫기' : '+ 안건 추가'}
           </button>
         )}
@@ -239,7 +243,26 @@ function Agendas({
           onRemove={() => onChange(() => deleteAgenda(workspaceId, meeting.meetingId, agenda.agendaId))} />
       ))}
       {adding && (
-        <div className="tags">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+          <form className="mb-4" onSubmit={(event) => {
+            event.preventDefault();
+            const title = newTitle.trim();
+            if (!title || busy) return;
+            onChange(async () => {
+              const updated = await addTextAgenda(workspaceId, meeting.meetingId, title);
+              setNewTitle('');
+              return updated;
+            });
+          }}>
+            <label htmlFor={`meeting-${meeting.meetingId}-agenda-title`} className="mb-2 block text-xs font-semibold">새 안건 직접 입력</label>
+            <div className="flex flex-wrap gap-2">
+              <input id={`meeting-${meeting.meetingId}-agenda-title`} className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--primary)]"
+                required maxLength={200} disabled={busy} placeholder="예: 시연 순서와 역할 분담" value={newTitle} onChange={(event) => setNewTitle(event.target.value)} />
+              <button type="submit" disabled={busy || !newTitle.trim()} className="btn btn-primary">{busy ? '추가 중…' : '안건 추가'}</button>
+            </div>
+          </form>
+          <p className="m-0 mb-2 border-t border-[var(--border)] pt-3 text-xs font-semibold">기존 팀 작업 연결</p>
+          <div className="tags">
           {candidates.loading && <Loading />}
           {candidates.error && <ErrorBox error={candidates.error} onRetry={candidates.reload} />}
           {candidates.data
@@ -248,6 +271,7 @@ function Agendas({
               <button
                 key={t.taskId}
                 className="tag selectable"
+                disabled={busy}
                 onClick={() => onChange(() => addAgenda(workspaceId, meeting.meetingId, t.taskId))}
               >
                 + {t.title}
@@ -256,6 +280,7 @@ function Agendas({
           {candidates.data && candidates.data.filter((t) => !used.has(t.taskId)).length === 0 && (
             <span className="muted small">추가할 수 있는 진행 중 팀 작업이 없습니다.</span>
           )}
+          </div>
         </div>
       )}
     </div>

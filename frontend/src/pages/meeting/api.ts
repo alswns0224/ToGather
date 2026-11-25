@@ -38,8 +38,9 @@ export interface ParticipantResponse {
 export interface AgendaResponse {
   agendaId: number;
   orderNo: number;
-  taskId: number;
+  taskId: number | null;
   task: TaskSummary | null;
+  title: string | null;
 }
 
 export interface MeetingDetailResponse {
@@ -70,6 +71,7 @@ export interface MeetingCreateRequest {
   participantIds: number[];
   meetingMode?: string;
   agendaTaskIds: number[];
+  agendaTitles?: string[];
 }
 
 export interface MeetingUpdateRequest {
@@ -126,6 +128,8 @@ export const cancelMeeting = (w: string, id: number) => http.post<void>(base(w, 
 export const getAgendaCandidates = (w: string) => http.get<TaskSummary[]>(base(w, '/agenda-candidates'));
 export const addAgenda = (w: string, id: number, taskId: number) =>
   http.post<MeetingDetailResponse>(base(w, `/${id}/agendas`), { taskId });
+export const addTextAgenda = (w: string, id: number, title: string) =>
+  http.post<MeetingDetailResponse>(base(w, `/${id}/agendas`), { title });
 export const deleteAgenda = (w: string, id: number, agendaId: number) =>
   http.delete<MeetingDetailResponse>(base(w, `/${id}/agendas/${agendaId}`));
 

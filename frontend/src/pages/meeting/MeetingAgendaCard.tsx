@@ -47,13 +47,16 @@ export default function MeetingAgendaCard({ workspaceId, agenda, editable, onRem
     <article className="overflow-hidden rounded-xl border border-[var(--border-soft)]">
       <div className="meeting-agenda !flex-wrap !rounded-none !border-0">
         <div className="flex min-w-0 basis-[220px] flex-1 items-center gap-2">
-          <span className="text-[var(--muted)]"><NavIcon name="tasks" /></span>
+          <span className="text-[var(--muted)]"><NavIcon name={agenda.title ? 'meetings' : 'tasks'} /></span>
           {task ? (
             <Link to={`/workspaces/${workspaceId}/tasks/${agenda.taskId}`}
               className="min-w-0 break-words text-sm font-semibold text-[var(--text)] no-underline">
               {task.title}
             </Link>
-          ) : <span className="text-sm text-[var(--muted)]">(삭제된 팀 작업)</span>}
+          ) : agenda.title ? <>
+            <strong className="min-w-0 break-words text-sm font-semibold text-[var(--text)]">{agenda.title}</strong>
+            <span className="shrink-0 rounded-md bg-[var(--primary-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--primary)]">직접 입력</span>
+          </> : <span className="text-sm text-[var(--muted)]">(삭제된 팀 작업)</span>}
           {task && task.riskLevel !== 'NORMAL' && !done && (
             <span className={`badge ${task.riskLevel === 'DANGER' ? 'badge-danger' : 'badge-warning'} !text-[10px]`}>
               {RISK_TEXT[task.riskLevel]}
