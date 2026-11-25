@@ -6,9 +6,11 @@ import com.togather.common.exception.ErrorCode;
 import com.togather.meeting.dto.MeetingSummary;
 import com.togather.meeting.service.MeetingService;
 import com.togather.task.domain.Task;
+import com.togather.task.event.TaskDeletedEvent;
 import com.togather.task.repository.TaskRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,7 @@ public class TaskDeletionService {
 
     private final TaskRepository taskRepository;
     private final MeetingService meetingService;
+    private final ApplicationEventPublisher events;
 
     public List<MeetingSummary> getDeletionBlockers(Long workspaceId, Long taskId) {
         taskRepository.findById(taskId)
@@ -37,6 +40,7 @@ public class TaskDeletionService {
             throw new BusinessException(ErrorCode.TASK_IN_ACTIVE_MEETING);
         }
         taskRepository.delete(task);
+        events.publishEvent(new TaskDeletedEvent(workspaceId, taskId));
     }
 
     private List<MeetingSummary> activeMeetings(Long taskId) {

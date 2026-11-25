@@ -18,7 +18,6 @@ import com.togather.content.drive.service.DriveOwnerAccess.OwnerToken;
 import com.togather.integration.service.IntegrationService;
 import com.togather.integration.service.IntegrationService.OwnAccess;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -267,7 +266,7 @@ public class DriveOwnershipService {
     }
 
     private static LocalDateTime now() {
-        return LocalDateTime.now(ZoneOffset.UTC);
+        return LocalDateTime.now(DriveApiClient.ZONE);
     }
 
     /** 팀장을 넘길 때 Drive를 쓰는 워크스페이스인지 */

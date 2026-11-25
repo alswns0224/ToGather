@@ -25,7 +25,6 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -967,7 +966,7 @@ public class DriveContentService {
         }
 
         LocalDateTime now =
-            LocalDateTime.now(ZoneOffset.UTC);
+            LocalDateTime.now(DriveApiClient.ZONE);
 
         LocalDateTime createdAt =
             uploaded.createdAt() != null

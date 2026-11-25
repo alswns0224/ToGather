@@ -19,7 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -63,6 +63,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Slf4j
 @Component
 public class DriveApiClient {
+
+    /** 화면·DB 시간 기준. 다른 서비스(Slack·Notion·Calendar·Gmail)와 같이 한국 시간으로 맞춘다. */
+    public static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
     private static final String BASE =
         "https://www.googleapis.com/drive/v3";
@@ -1954,7 +1957,7 @@ public class DriveApiClient {
             ? null
             : LocalDateTime.ofInstant(
             Instant.parse(raw),
-            ZoneOffset.UTC
+            ZONE
         );
     }
 

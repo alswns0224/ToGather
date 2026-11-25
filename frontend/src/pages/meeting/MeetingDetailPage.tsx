@@ -549,7 +549,7 @@ function Recommendations({
                 이 시간으로 확정
               </button>
             ) : (
-              <div className="text-center text-xs text-[var(--muted)]">회의를 만든 사람이 확정할 수 있어요.</div>
+              <div className="text-center text-xs text-[var(--muted)]">회의를 만든 사람이나 팀장·관리자가 확정할 수 있어요.</div>
             )}
             <div className="text-center text-xs text-[var(--muted)]">📅 확정하면 팀 캘린더에 등록돼요.</div>
           </div>

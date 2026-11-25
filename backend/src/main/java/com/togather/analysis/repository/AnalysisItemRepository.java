@@ -15,4 +15,6 @@ public interface AnalysisItemRepository extends JpaRepository<AnalysisItem, Long
     List<AnalysisItem> findAllByAnalysisIdAndItemTypeOrderByItemIdAsc(Long analysisId, ItemType itemType);
 
     long countByAnalysisId(Long analysisId);
+
+    List<AnalysisItem> findAllByItemTypeAndOutputTargetId(ItemType itemType, Long outputTargetId);
 }

@@ -22,7 +22,7 @@ class GoogleCalendarClientTest {
     void 기존_회의_일정은_필요한_필드만_PATCH하고_Meet_정보를_덮어쓰지_않는다() {
         var builder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo("https://www.googleapis.com/calendar/v3/calendars/team%40gmail.com/events/event-id?sendUpdates=none"))
+        server.expect(requestTo("https://www.googleapis.com/calendar/v3/calendars/team%40gmail.com/events/event-id?sendUpdates=all"))
             .andExpect(method(HttpMethod.PATCH))
             .andExpect(content().json("""
                 {"summary":"바뀐 회의","description":"진행 방식: 온라인",
@@ -54,5 +54,11 @@ class GoogleCalendarClientTest {
         // 두 번 인코딩하면 %2540이 되어 Google이 캘린더를 찾지 못한다 (404)
         assertThat(GoogleCalendarClient.insertUri("team@gmail.com", true).getRawPath())
                 .isEqualTo("/calendar/v3/calendars/team%40gmail.com/events");
+    }
+
+    @Test
+    void 팀_일정은_참석자_캘린더에도_들어가도록_초대를_보낸다() {
+        assertThat(GoogleCalendarClient.insertUri("team@gmail.com", false).getRawQuery())
+                .contains("sendUpdates=all");
     }
 }

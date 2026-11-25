@@ -37,6 +37,12 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class GoogleCalendarClient {
 
     public static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
+    /**
+     * 참석자에게 초대·변경·취소를 알린다. "none"이면 Google이 참석자 캘린더에 일정을 넣지 않아
+     * 팀 일정이 참석자 캘린더에 보이지 않고, 회의 가용 시간(바쁜 시간)에도 반영되지 않는다.
+     */
+    static final String SEND_UPDATES = "all";
     private static final DateTimeFormatter LOCAL_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
     private static final String BASE = "https://www.googleapis.com/calendar/v3";
     private static final ParameterizedTypeReference<Map<String, Object>> JSON = new ParameterizedTypeReference<>() {
@@ -111,7 +117,7 @@ public class GoogleCalendarClient {
 
     public CalendarEvent patchEvent(String token, String calendarId, String eventId, EventWrite write) {
         return toEvent(call(() -> externalRestClient.patch()
-                .uri(eventUri(calendarId, eventId, "none"))
+                .uri(eventUri(calendarId, eventId, SEND_UPDATES))
                 .headers(h -> h.setBearerAuth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(toBody(write))
@@ -123,7 +129,7 @@ public class GoogleCalendarClient {
         try {
             call(() -> {
                 externalRestClient.delete()
-                        .uri(eventUri(calendarId, eventId, "none"))
+                        .uri(eventUri(calendarId, eventId, SEND_UPDATES))
                         .headers(h -> h.setBearerAuth(token))
                         .retrieve().toBodilessEntity();
                 return Map.of();
@@ -206,7 +212,7 @@ public class GoogleCalendarClient {
      */
     static java.net.URI insertUri(String calendarId, boolean withMeet) {
         return UriComponentsBuilder.fromUriString(BASE + "/calendars/{calendarId}/events")
-                .queryParam("sendUpdates", "none")
+                .queryParam("sendUpdates", SEND_UPDATES)
                 .queryParam("conferenceDataVersion", withMeet ? 1 : 0)
                 .encode().buildAndExpand(calendarId).toUri();
     }

@@ -22,7 +22,6 @@ import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
 import com.togather.integration.client.GoogleIntegrationClient;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -345,6 +344,6 @@ public class DriveTrashService {
     }
 
     private static LocalDateTime now() {
-        return LocalDateTime.now(ZoneOffset.UTC);
+        return LocalDateTime.now(DriveApiClient.ZONE);
     }
 }

@@ -45,6 +45,7 @@ public enum ErrorCode {
     MEETING_NOT_FOUND(HttpStatus.NOT_FOUND, "회의를 찾을 수 없습니다."),
     MEETING_NOT_SCHEDULING(HttpStatus.BAD_REQUEST, "일정 조율 중인 회의만 변경할 수 있습니다."),
     MEETING_NOT_PARTICIPANT(HttpStatus.FORBIDDEN, "회의 참여자가 아닙니다."),
+    MEETING_MANAGE_REQUIRED(HttpStatus.FORBIDDEN, "회의를 만든 사람이나 팀장·관리자만 할 수 있습니다."),
     AGENDA_NOT_FOUND(HttpStatus.NOT_FOUND, "안건을 찾을 수 없습니다."),
     INVALID_TIME_RANGE(HttpStatus.BAD_REQUEST, "시작 시각은 종료 시각보다 이전이어야 합니다."),
 

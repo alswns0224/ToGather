@@ -25,11 +25,16 @@ import com.togather.integration.service.IntegrationService;
 import com.togather.meeting.domain.Meeting;
 import com.togather.meeting.repository.MeetingRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>content_ref.channelId에 캘린더 ID, originId에 일정 ID를 저장한다.</li>
  * </ul>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
@@ -65,20 +71,59 @@ public class CalendarContentService {
 
     // ===================== 화면용 (UI-07) =====================
 
-    /** 기간 안의 일정 (월·주 조회) */
+    /**
+     * 기간 안의 일정 (월·주 조회).
+     * 팀 캘린더가 있으면 팀 일정과 요청자 기본 캘린더의 개인 일정을 함께 준다.
+     * 같은 일정이 두 캘린더에 다 있으면(팀 캘린더가 내 캘린더이거나, 팀 일정에 초대된 경우) 팀 일정으로 한 번만 준다.
+     * 개인 캘린더를 읽지 못하면(미연동·재인증 필요 등) 팀 일정만 준다. 팀 캘린더가 없으면 지금처럼 개인 일정만 준다.
+     */
     @Transactional(noRollbackFor = BusinessException.class)
     public List<CalendarEventResponse> getEvents(Long workspaceId, Long userId, LocalDateTime from, LocalDateTime to) {
         if (!from.isBefore(to)) {
             throw new BusinessException(ErrorCode.INVALID_TIME_RANGE);
         }
-        Access access = workspaceAccess(workspaceId, userId);
-        List<CalendarEvent> events = calendarClient.listEvents(access.token(), access.calendarId(), from, to);
+        Optional<Access> team = integrationService.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR)
+                .map(t -> new Access(t.accessToken(), t.targetIds().get(0), null));
+        if (team.isEmpty()) {
+            Access personal = personalAccess(workspaceId, userId);
+            return toResponses(workspaceId, personal, calendarClient.listEvents(personal.token(), personal.calendarId(), from, to));
+        }
+        List<CalendarEvent> teamEvents = calendarClient.listEvents(team.get().token(), team.get().calendarId(), from, to);
+        Set<String> teamEventIds = teamEvents.stream().map(CalendarEvent::id).collect(Collectors.toSet());
+        List<CalendarEventResponse> all = new ArrayList<>(toResponses(workspaceId, team.get(), teamEvents));
+        all.addAll(personalEventsOrEmpty(workspaceId, userId, from, to, teamEventIds));
+        all.sort(Comparator.comparing(CalendarEventResponse::startAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        return all;
+    }
+
+    /** 읽어 온 일정을 저장하고 화면 응답으로 바꾼다. */
+    private List<CalendarEventResponse> toResponses(Long workspaceId, Access access, List<CalendarEvent> events) {
         List<ContentRefDTO> refs = events.stream().map(e -> save(workspaceId, access, e)).toList();
         Map<Long, Long> meetings = meetingIdsByCalendarRef(refs.stream().map(ContentRefDTO::contentRefId).toList());
         return IntStream.range(0, events.size())
                 .mapToObj(i -> toResponse(refs.get(i).contentRefId(), events.get(i),
                         meetings.get(refs.get(i).contentRefId()), access.ownerUserId() != null))
                 .toList();
+    }
+
+    /** 요청자 기본 캘린더의 개인 일정. 연동이 없거나 읽지 못하면 빈 목록 (팀 일정은 그대로 보여 준다). */
+    private List<CalendarEventResponse> personalEventsOrEmpty(Long workspaceId, Long userId, LocalDateTime from,
+                                                              LocalDateTime to, Set<String> teamEventIds) {
+        try {
+            return integrationService.findAccessToken(workspaceId, userId, Provider.GOOGLE_CALENDAR)
+                    .map(token -> {
+                        Access personal = new Access(token, PRIMARY, userId);
+                        List<CalendarEvent> events = calendarClient.listEvents(token, PRIMARY, from, to).stream()
+                                .filter(e -> !teamEventIds.contains(e.id()))
+                                .toList();
+                        return toResponses(workspaceId, personal, events);
+                    })
+                    .orElse(List.of());
+        } catch (BusinessException e) {
+            log.warn("개인 캘린더 일정을 읽지 못해 팀 일정만 보여 줍니다: workspaceId={}, userId={}, code={}",
+                    workspaceId, userId, e.getErrorCode());
+            return List.of();
+        }
     }
 
     @Transactional(noRollbackFor = BusinessException.class) // 원본 삭제 표시는 예외가 나도 남긴다

@@ -552,7 +552,7 @@ public class MeetingService {
 
     private void checkManage(Meeting meeting, Long userId) {
         if (!canManage(meeting, userId)) {
-            throw new BusinessException(ErrorCode.WORKSPACE_OWNER_REQUIRED);
+            throw new BusinessException(ErrorCode.MEETING_MANAGE_REQUIRED);
         }
     }
 
