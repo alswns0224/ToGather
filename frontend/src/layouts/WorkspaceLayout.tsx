@@ -8,12 +8,14 @@ import { ErrorBox, Loading } from '../components/Status';
 import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
 import NavIcon, { type IconName } from './NavIcon';
-import { useNavCounts, type NavCounts } from './useNavCounts';
 
 type Menu = { to: string; label: string; icon: IconName; also?: string };
 
 /** also: 이 경로로 시작하는 하위 화면에서도 메뉴를 켠다 (예: 논의 정리 상세 slack/analysis/7) */
-const TOP_MENU: Menu[] = [{ to: 'search', label: '통합 검색', icon: 'search' }];
+const TOP_MENU: Menu[] = [
+  { to: 'search', label: '통합 검색', icon: 'search' },
+  { to: 'home', label: '대시보드', icon: 'home' },
+];
 
 const MENU_GROUPS: { title: string; items: Menu[] }[] = [
   {
@@ -46,7 +48,7 @@ const SUB_MENU: Menu[] = [
   { to: 'integrations', label: '연동 관리', icon: 'integrations' },
 ];
 
-const ALL_MENUS = [{ to: 'home', label: '대시보드', icon: 'home' } as Menu, ...TOP_MENU, ...MENU_GROUPS.flatMap((g) => g.items), ...SUB_MENU];
+const ALL_MENUS = [...TOP_MENU, ...MENU_GROUPS.flatMap((g) => g.items), ...SUB_MENU];
 
 /** 상단바에 보여줄 현재 메뉴 이름 (가장 길게 맞는 경로) */
 function currentMenuLabel(pathname: string, workspaceId: string) {
@@ -60,7 +62,7 @@ function currentMenuLabel(pathname: string, workspaceId: string) {
 
 const ROLE_TEXT: Record<string, string> = { OWNER: '팀장', ADMIN: '관리자', MEMBER: '팀원' };
 
-function MenuLink({ workspaceId, menu, count }: { workspaceId: string; menu: Menu; count?: number }) {
+function MenuLink({ workspaceId, menu }: { workspaceId: string; menu: Menu }) {
   const { pathname } = useLocation();
   const alsoActive = !!menu.also && pathname.startsWith(`/workspaces/${workspaceId}/${menu.also}`);
   return (
@@ -74,7 +76,6 @@ function MenuLink({ workspaceId, menu, count }: { workspaceId: string; menu: Men
         <NavIcon name={menu.icon} />
         <span className="truncate">{menu.label}</span>
       </span>
-      {count !== undefined && <span className="nav-count">{count}</span>}
     </NavLink>
   );
 }
@@ -91,7 +92,6 @@ export default function WorkspaceLayout() {
   // 멤버가 아니면 403이 와서 여기서 막힌다.
   const workspace = useAsync(() => getWorkspace(workspaceId), [workspaceId]);
   const ws = workspace.data;
-  const counts: NavCounts = { ...useNavCounts(workspaceId, menuLabel), members: ws?.memberCount };
 
   const signOut = async () => {
     await logout();
@@ -126,7 +126,7 @@ export default function WorkspaceLayout() {
             <div key={group.title} className="flex flex-col gap-[3px]">
               <div className="nav-sec">{group.title}</div>
               {group.items.map((m) => (
-                <MenuLink key={m.to} workspaceId={workspaceId} menu={m} count={counts[m.to]} />
+                <MenuLink key={m.to} workspaceId={workspaceId} menu={m} />
               ))}
             </div>
           ))}
@@ -135,7 +135,7 @@ export default function WorkspaceLayout() {
         {/* 하단: 팀원 · 연동 관리 · 내 정보 */}
         <div className="flex flex-col gap-1 border-t border-[var(--border-soft)] pt-2">
           {SUB_MENU.map((m) => (
-            <MenuLink key={m.to} workspaceId={workspaceId} menu={m} count={counts[m.to]} />
+            <MenuLink key={m.to} workspaceId={workspaceId} menu={m} />
           ))}
           <div className="mt-1 flex items-center justify-between gap-2 border-t border-[var(--border-soft)] pt-2.5">
             <div className="flex min-w-0 items-center gap-2">

@@ -157,7 +157,7 @@ export default function HomePage() {
     <section className="stack">
       <PageHeader
         icon={<NavIcon name="home" className="h-[22px] w-[22px] text-[var(--primary)]" />}
-        title={`${d?.ws?.name ?? ''} 대시보드`}
+        title="대시보드"
         description="흩어진 대화·문서·파일·일정을 한눈에 보고 바로 작업으로 이어가세요."
         actions={
           <>
