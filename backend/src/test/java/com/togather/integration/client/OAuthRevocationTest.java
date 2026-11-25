@@ -10,7 +10,6 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.togather.auth.client.GoogleOAuthClient;
 import com.togather.common.config.TogatherProperties;
-import com.togather.common.config.TogatherProperties.Auth;
 import com.togather.common.config.TogatherProperties.OAuthClient;
 import com.togather.common.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +33,7 @@ class OAuthRevocationTest {
         server = MockRestServiceServer.bindTo(builder).build();
         rest = builder.build();
         var client = new OAuthClient("test-client", "test-secret");
-        properties = new TogatherProperties("http://localhost:5173", "unused", new Auth(false), client, client, client);
+        properties = new TogatherProperties("http://localhost:5173", "unused", client, client, client);
     }
 
     @ParameterizedTest

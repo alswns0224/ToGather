@@ -183,6 +183,13 @@ record ContentDetailDTO(Long contentRefId, Provider provider, String title, Stri
 `upsertDriveFile`로 크기까지 갱신한다(null을 넘기면 미확인으로 갱신). V11은 크기 필드를 추가하고
 Drive의 동기화 커서를 초기화해 다음 동기화에서 기존 파일 크기도 채운다. 다른 제공자의 커서는 유지한다.
 
+### Drive 폴더 경로 (C-03)
+
+- `GET /api/workspaces/{workspaceId}/drive/folders/hierarchy`: 본인 Google 계정으로 볼 수 있는 연동 폴더와 원본 부모 경로.
+  응답은 `DriveFolderHierarchyResponse(folderId, name, ancestors: List<DriveFolderResponse(folderId, name)>)`.
+- `ancestors`는 최상위 연동 폴더부터 직계 부모까지의 순서이며, 연동하지 않은 중간 폴더는 유지하고 연동 범위 밖 상위 경로는 제외한다.
+- 화면은 부모가 함께 연결된 하위 폴더를 최상위 목록에서 중복 표시하지 않는다. 기존 `/folders`·`/folders/names`와 업로드 대상은 유지한다.
+
 ### Drive 업로드 선택 (C-03)
 
 - `GET /api/workspaces/{workspaceId}/drive/upload-candidates?folderId=&name=`: 같은 이름의 선택 폴더 내 파일 목록.

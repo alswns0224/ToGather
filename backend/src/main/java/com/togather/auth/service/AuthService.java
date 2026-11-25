@@ -2,7 +2,6 @@ package com.togather.auth.service;
 
 import com.togather.auth.client.GoogleOAuthClient;
 import com.togather.auth.domain.User;
-import com.togather.auth.dto.DevLoginRequest;
 import com.togather.auth.dto.GoogleUserInfo;
 import com.togather.auth.dto.LoginResult;
 import com.togather.auth.dto.OAuthToken;
@@ -44,13 +43,6 @@ public class AuthService {
         }
         String name = info.name() != null ? info.name() : info.email();
         return LoginResult.from(UserSummary.from(saveOrUpdate(info.sub(), info.email(), name, info.picture())));
-    }
-
-    /** 개발용 로그인. Google 설정 없이 이메일로 사용자를 만든다. (togather.auth.dev-login=true일 때만 호출) */
-    @Transactional
-    public LoginResult devLogin(DevLoginRequest request) {
-        String sub = "dev:" + request.email().toLowerCase();
-        return LoginResult.from(UserSummary.from(saveOrUpdate(sub, request.email(), request.name(), null)));
     }
 
     private User saveOrUpdate(String googleSub, String email, String name, String picture) {

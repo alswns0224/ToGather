@@ -9,6 +9,8 @@ import { Link, useParams } from 'react-router';
 
 import { ApiError, http, ws } from '../../api/client';
 import DriveUploadConflict from './DriveUploadConflict';
+import DriveFolderPicker, { type DriveFolderPathEntry } from './DriveFolderPicker';
+import DriveFolderBreadcrumbs from './DriveFolderBreadcrumbs';
 import PageHeader from '../../components/PageHeader';
 import NavIcon from '../../layouts/NavIcon';
 
@@ -25,7 +27,7 @@ import {
   getDriveFiles,
   getDriveSubfolders,
   getDriveUploadCandidates,
-  getDriveFolderNames,
+  getDriveFolderHierarchy,
   getDriveFolders,
   getDrivePreviewUrl,
   getDriveSyncStatuses,
@@ -148,8 +150,6 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   const [activeFolderId, setActiveFolderId] =
     useState<string | null>(null);
-  const [folderPanelOpen, setFolderPanelOpen] =
-    useState(true);
   const [folderPath, setFolderPath] =
     useState<{ id: string; name: string }[]>([]);
   const [subfolders, setSubfolders] =
@@ -414,18 +414,10 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   // 업로드할 폴더 고르기에 보여줄 폴더 이름 (연동 관리에서 고를 때 저장한 이름)
   const [folderNames, setFolderNames] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let active = true;
-    getDriveFolderNames(workspaceId)
-      .then((list) => {
-        if (!active) return;
-        setFolderNames(Object.fromEntries(list.filter((f) => f.name).map((f) => [f.folderId, f.name as string])));
-      })
-      .catch(() => undefined); // 이름을 못 가져오면 "연동 폴더 N"으로 보여준다
-    return () => {
-      active = false;
-    };
-  }, [workspaceId]);
+  const [folderHierarchy, setFolderHierarchy] = useState<Record<string, DriveFolderPathEntry[]>>({});
+  const [folderHierarchyLoading, setFolderHierarchyLoading] = useState(true);
+  const [folderHierarchyError, setFolderHierarchyError] = useState<string | null>(null);
+  const [folderHierarchyVersion, setFolderHierarchyVersion] = useState(0);
 
   const folderIds = useMemo(() => {
     // 선택된 연동 폴더 API가 정상 응답하면
@@ -444,6 +436,40 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
       ),
     ];
   }, [folders, foldersLoaded, statuses]);
+
+  const folderIdsKey = folderIds.join('|');
+  const folderSyncKey = statuses.map(status => status.lastSyncedAt ?? '').join('|');
+  useEffect(() => {
+    if (!folderIdsKey) { setFolderHierarchyLoading(false); return; }
+    let active = true;
+    setFolderHierarchyLoading(true);
+    setFolderHierarchyError(null);
+    getDriveFolderHierarchy(workspaceId).then(list => {
+      if (!active) return;
+      setFolderNames(Object.fromEntries(list.filter(folder => folder.name).map(folder => [folder.folderId, folder.name as string])));
+      setFolderHierarchy(Object.fromEntries(list.map(folder => [folder.folderId,
+        folder.ancestors.map(parent => ({ id: parent.folderId, name: parent.name || '(이름 없음)' })),
+      ])));
+    }).catch(failure => { if (active) setFolderHierarchyError(errorMessage(failure)); })
+      .finally(() => { if (active) setFolderHierarchyLoading(false); });
+    return () => { active = false; };
+  }, [workspaceId, folderIdsKey, folderSyncKey, folderHierarchyVersion]);
+
+  const browseRootFolders = useMemo(() => {
+    const linked = new Set(folderIds);
+    return folderIds.filter(id => !(folderHierarchy[id] ?? []).some(parent => linked.has(parent.id)))
+      .map((id, index) => ({ id, name: folderNames[id] ?? `폴더 ${index + 1}` }));
+  }, [folderIds, folderHierarchy, folderNames]);
+
+  // 이미 선택한 하위 폴더도 실제 최상위 연동 폴더와 그 아래 경로로 정규화한다.
+  useEffect(() => {
+    if (!activeFolderId) return;
+    const ancestors = folderHierarchy[activeFolderId] ?? [];
+    const rootIndex = ancestors.findIndex(parent => folderIds.includes(parent.id));
+    if (rootIndex < 0) return;
+    setActiveFolderId(ancestors[rootIndex].id);
+    setFolderPath([...ancestors.slice(rootIndex + 1), { id: activeFolderId, name: folderNames[activeFolderId] ?? '(이름 없음)' }, ...folderPath]);
+  }, [activeFolderId, folderHierarchy, folderIds, folderNames, folderPath]);
 
   const chosenFolderId =
     folderIds.includes(uploadFolderId)
@@ -474,7 +500,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     }
     let active = true;
     const browseFolderId = currentBrowseFolderId ?? activeFolderId;
-    const isSubfolder = folderPath.length > 0;
+    const isSubfolder = folderPath.length > 0 && !folderIds.includes(browseFolderId);
     setFolderFilesLoading(true);
     setSubfoldersLoading(true);
     Promise.allSettled([
@@ -501,10 +527,17 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
       setSubfoldersLoading(false);
     });
     return () => { active = false; };
-  }, [workspaceId, activeFolderId, currentBrowseFolderId, files, folderPath.length]);
+  }, [workspaceId, activeFolderId, currentBrowseFolderId, files, folderPath.length, folderIdsKey]);
 
   function navigateToSubfolder(subfolder: DriveSubfolder) {
     setFolderPath(prev => [...prev, { id: subfolder.id, name: subfolder.name ?? subfolder.id }]);
+    setSelectedId(null);
+    setQuery('');
+  }
+
+  function selectBrowseFolder(rootId: string | null, path: DriveFolderPathEntry[]) {
+    setActiveFolderId(rootId);
+    setFolderPath(path);
     setSelectedId(null);
     setQuery('');
   }
@@ -519,7 +552,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     setQuery('');
   }
 
-  const isInSubfolder = folderPath.length > 0 && activeFolderId != null;
+  const isInSubfolder = folderPath.length > 0 && activeFolderId != null && !folderIds.includes(currentBrowseFolderId!);
 
   const currentFiles = showTrash
     ? trashFiles
@@ -1212,102 +1245,26 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
             </a>
           </div>
 
-          {/* 연결된 폴더 토글 패널 */}
+          {/* 연결된 폴더 드롭다운 · 하위 폴더 탐색 */}
           {folderIds.length > 0 && !showTrash && (
             <div className="border-b border-[var(--border-soft)] px-5 pb-3">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 text-[13px] font-bold text-[var(--muted)] hover:text-[var(--text)]"
-                onClick={() => setFolderPanelOpen(!folderPanelOpen)}
-              >
-                <span className={`inline-block transition-transform ${folderPanelOpen ? 'rotate-90' : ''}`}>▶</span>
-                연결된 폴더 ({folderIds.length})
-              </button>
-              {folderPanelOpen && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className={`drive-folder-chip${!activeFolderId ? ' active' : ''}`}
-                    disabled={isBusy}
-                    onClick={() => {
-                      setActiveFolderId(null);
-                      setFolderPath([]);
-                      setSelectedId(null);
-                      setQuery('');
-                    }}
-                  >
-                    전체
-                    <span className="drive-folder-count">{files.length}</span>
-                  </button>
-                  {folderIds.map((id, index) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={`drive-folder-chip${activeFolderId === id ? ' active' : ''}`}
-                      disabled={isBusy}
-                      onClick={() => {
-                        setActiveFolderId(id);
-                        setFolderPath([]);
-                        setSelectedId(null);
-                        setQuery('');
-                      }}
-                    >
-                      {folderNames[id] ?? `폴더 ${index + 1}`}
-                      {activeFolderId === id && folderFiles && (
-                        <span className="drive-folder-count">{folderFiles.length}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <DriveFolderPicker workspaceId={workspaceId}
+                folders={browseRootFolders} connectedCount={folderIds.length}
+                activeFolderId={activeFolderId} path={folderPath} disabled={loading || isBusy || folderHierarchyLoading || folderHierarchyError != null}
+                onChange={selectBrowseFolder} />
+              {folderHierarchyLoading && <span className="mt-2 block text-xs text-[var(--muted)]" role="status">폴더 구조 불러오는 중…</span>}
+              {folderHierarchyError && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--danger)]" role="status">
+                <span>폴더 구조를 불러오지 못했어요.</span>
+                <button type="button" className="btn btn-small" onClick={() => setFolderHierarchyVersion(value => value + 1)}>다시 불러오기</button>
+              </div>}
             </div>
           )}
 
           {/* 현재 폴더 경로 (브레드크럼) */}
-          {activeFolderId && !showTrash && (
-            <div className="flex items-center gap-1.5 border-b border-[var(--border-soft)] px-5 py-2.5 text-[13px]">
-              <button
-                type="button"
-                className="text-[var(--primary)] hover:underline"
-                onClick={() => { setActiveFolderId(null); setFolderPath([]); setSelectedId(null); setQuery(''); }}
-              >
-                Drive
-              </button>
-              <span className="text-[var(--muted)]">/</span>
-              {folderPath.length > 0 ? (
-                <>
-                  <button
-                    type="button"
-                    className="text-[var(--primary)] hover:underline"
-                    onClick={() => navigateToPathIndex(-1)}
-                  >
-                    {folderNames[activeFolderId] ?? activeFolderId}
-                  </button>
-                  {folderPath.map((entry, idx) => (
-                    <span key={entry.id} className="flex items-center gap-1.5">
-                      <span className="text-[var(--muted)]">/</span>
-                      {idx < folderPath.length - 1 ? (
-                        <button
-                          type="button"
-                          className="text-[var(--primary)] hover:underline"
-                          onClick={() => navigateToPathIndex(idx)}
-                        >
-                          {entry.name}
-                        </button>
-                      ) : (
-                        <span className="font-bold">{entry.name}</span>
-                      )}
-                    </span>
-                  ))}
-                </>
-              ) : (
-                <span className="font-bold">
-                  {folderNames[activeFolderId] ?? activeFolderId}
-                </span>
-              )}
-              {(folderFilesLoading || subfoldersLoading) && <span className="text-[var(--muted)]">불러오는 중...</span>}
-            </div>
-          )}
+          {activeFolderId && !showTrash && <DriveFolderBreadcrumbs
+            root={{ id: activeFolderId, name: folderNames[activeFolderId] ?? '연결된 폴더' }} path={folderPath}
+            loading={folderFilesLoading || subfoldersLoading} disabled={isBusy}
+            onAll={() => selectBrowseFolder(null, [])} onNavigate={navigateToPathIndex} />}
 
           <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-soft)] px-5 pb-4 pt-3">
             <div className="segmented">

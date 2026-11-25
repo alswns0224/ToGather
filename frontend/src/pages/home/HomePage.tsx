@@ -1,4 +1,4 @@
-// 워크스페이스 홈 대시보드 — 팀원 UI 시안(togather_ui.html)의 home: 숫자 카드 4개 + Task 현황 | 연동 상태 · 최근 AI 정리·회의
+// 워크스페이스 홈 대시보드 — 작업·최근 논의와 회의 | 마감·연동 상태
 import { Link, useNavigate, useParams } from 'react-router';
 import { useAsync } from '../../hooks/useAsync';
 import PageHeader from '../../components/PageHeader';
@@ -213,55 +213,79 @@ export default function HomePage() {
           </div>
 
           <div className="home-board">
-            {/* 팀 작업 현황 */}
-            <div className="card home-card">
-              <div className="flex items-center justify-between">
-                <strong className="text-[17px]">팀 작업 & 산출물 진행 현황</strong>
-                <Link to={`${base}/tasks`} className="text-sm font-semibold text-[var(--muted)] no-underline">
-                  전체 보기 →
-                </Link>
-              </div>
-              {overall ? (
-                <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <strong>팀 전체 평균 진행률 {overall.progress}%</strong>
-                    <span className="text-xs text-[var(--muted)]">정상 {overall.normalCount} · 주의 {overall.warningCount} · 위험 {overall.dangerCount}</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface)]">
-                    <div className="h-full rounded-full bg-[image:var(--brand-grad)]" style={{ width: `${overall.progress}%` }} />
-                  </div>
-                </div>
-              ) : <div className="alert alert-error"><span>팀 작업 집계를 불러오지 못했습니다.</span>
-                <button type="button" className="btn btn-small" onClick={data.reload}>다시 시도</button></div>}
-              {d.tasks === null && <p className="m-0 text-sm text-[var(--danger)]">최근 팀 작업을 불러오지 못했습니다.</p>}
-              {d.tasks && taskItems.length === 0 && <p className="m-0 text-sm text-[var(--muted)]">아직 팀 작업이 없어요.</p>}
-              {taskItems.slice(0, 5).map((t) => {
-                const done = t.status === 'DONE';
-                const name = memberName(t.assigneeId);
-                return (
-                  <Link key={t.taskId} to={`${base}/tasks/${t.taskId}`} className="home-task">
-                    <div className="flex items-center gap-3">
-                      <span className="tg-avatar">{name.slice(0, 1)}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-base font-bold text-[var(--text)]">{t.title}</div>
-                        <div className="text-[13px] text-[var(--muted)]">
-                          {name} · 마감 {t.dueDate ?? '미정'}
-                        </div>
-                      </div>
-                      <span className={`badge ${done ? 'badge-success' : 'badge-primary'}`}>{done ? '완료' : '진행 중'}</span>
-                    </div>
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
-                        <div className="h-full rounded-full bg-[image:var(--brand-grad)]" style={{ width: `${t.progress}%` }} />
-                      </div>
-                      <span className="w-11 text-right text-sm font-bold text-[var(--text)]">{t.progress}%</span>
-                    </div>
+            <div className="flex min-w-0 flex-col gap-4">
+              {/* 팀 작업 현황 */}
+              <div className="card home-card">
+                <div className="flex items-center justify-between">
+                  <strong className="text-[17px]">팀 작업 & 산출물 진행 현황</strong>
+                  <Link to={`${base}/tasks`} className="text-sm font-semibold text-[var(--muted)] no-underline">
+                    전체 보기 →
                   </Link>
-                );
-              })}
+                </div>
+                {overall ? (
+                  <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <strong>팀 전체 평균 진행률 {overall.progress}%</strong>
+                      <span className="text-xs text-[var(--muted)]">정상 {overall.normalCount} · 주의 {overall.warningCount} · 위험 {overall.dangerCount}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface)]">
+                      <div className="h-full rounded-full bg-[image:var(--brand-grad)]" style={{ width: `${overall.progress}%` }} />
+                    </div>
+                  </div>
+                ) : <div className="alert alert-error"><span>팀 작업 집계를 불러오지 못했습니다.</span>
+                  <button type="button" className="btn btn-small" onClick={data.reload}>다시 시도</button></div>}
+                {d.tasks === null && <p className="m-0 text-sm text-[var(--danger)]">최근 팀 작업을 불러오지 못했습니다.</p>}
+                {d.tasks && taskItems.length === 0 && <p className="m-0 text-sm text-[var(--muted)]">아직 팀 작업이 없어요.</p>}
+                {taskItems.slice(0, 5).map((t) => {
+                  const done = t.status === 'DONE';
+                  const name = memberName(t.assigneeId);
+                  return (
+                    <Link key={t.taskId} to={`${base}/tasks/${t.taskId}`} className="home-task">
+                      <div className="flex items-center gap-3">
+                        <span className="tg-avatar">{name.slice(0, 1)}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-base font-bold text-[var(--text)]">{t.title}</div>
+                          <div className="text-[13px] text-[var(--muted)]">
+                            {name} · 마감 {t.dueDate ?? '미정'}
+                          </div>
+                        </div>
+                        <span className={`badge ${done ? 'badge-success' : 'badge-primary'}`}>{done ? '완료' : '진행 중'}</span>
+                      </div>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                          <div className="h-full rounded-full bg-[image:var(--brand-grad)]" style={{ width: `${t.progress}%` }} />
+                        </div>
+                        <span className="w-11 text-right text-sm font-bold text-[var(--text)]">{t.progress}%</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              {/* 최근 AI 정리 · 회의 */}
+              <div className="card home-card">
+                <div className="flex items-center justify-between">
+                  <strong className="text-[17px]">최근 AI 논의 & 회의 일정</strong>
+                  <Link to={`${base}/slack/analyses`} className="text-sm font-semibold text-[var(--muted)] no-underline">
+                    분석 보기 →
+                  </Link>
+                </div>
+                {recent.length === 0 && (
+                  <p className="m-0 text-sm text-[var(--muted)]">검토할 일정 후보, 논의 정리, 다가오는 회의가 없어요.</p>
+                )}
+                {recent.map((r) => (
+                  <Link key={r.key} to={r.to} className="home-recent">
+                    <div className="flex items-start justify-between gap-2">
+                      <strong className="text-[15px] text-[var(--text)]">{r.title}</strong>
+                      <span className="badge badge-primary flex-shrink-0">{r.tag}</span>
+                    </div>
+                    <div className="mt-1 text-sm text-[var(--muted)]">{r.sub}</div>
+                  </Link>
+                ))}
+              </div>
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex min-w-0 flex-col gap-4">
               {/* 이번 주 마감 */}
               <div className="card home-card">
                 <div className="flex items-center justify-between">
@@ -307,7 +331,7 @@ export default function HomePage() {
                   </Link>
                 </div>
                 {(d.integrations ?? []).map((item) => {
-                  const conn = item.personal ? item.connections.find((c) => c.mine) : item.connections[0];
+                  const conn = item.connections.find((c) => c.mine);
                   const [text, cls] = CONN_BADGE[conn?.status ?? 'DISCONNECTED'];
                   const targets = conn?.targets.map((t) => t.name ?? t.id).join(', ');
                   return (
@@ -325,27 +349,6 @@ export default function HomePage() {
                 })}
               </div>
 
-              {/* 최근 AI 정리 · 회의 */}
-              <div className="card home-card">
-                <div className="flex items-center justify-between">
-                  <strong className="text-[17px]">최근 AI 논의 & 회의 일정</strong>
-                  <Link to={`${base}/slack/analyses`} className="text-sm font-semibold text-[var(--muted)] no-underline">
-                    분석 보기 →
-                  </Link>
-                </div>
-                {recent.length === 0 && (
-                  <p className="m-0 text-sm text-[var(--muted)]">검토할 일정 후보, 논의 정리, 다가오는 회의가 없어요.</p>
-                )}
-                {recent.map((r) => (
-                  <Link key={r.key} to={r.to} className="home-recent">
-                    <div className="flex items-start justify-between gap-2">
-                      <strong className="text-[15px] text-[var(--text)]">{r.title}</strong>
-                      <span className="badge badge-primary flex-shrink-0">{r.tag}</span>
-                    </div>
-                    <div className="mt-1 text-sm text-[var(--muted)]">{r.sub}</div>
-                  </Link>
-                ))}
-              </div>
             </div>
           </div>
         </>

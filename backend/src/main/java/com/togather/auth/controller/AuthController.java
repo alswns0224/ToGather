@@ -1,6 +1,5 @@
 package com.togather.auth.controller;
 
-import com.togather.auth.dto.DevLoginRequest;
 import com.togather.auth.dto.LoginResult;
 import com.togather.auth.service.AuthService;
 import com.togather.auth.service.OAuthStateStore;
@@ -11,11 +10,9 @@ import com.togather.auth.service.UserService;
 import com.togather.common.auth.LoginUser;
 import com.togather.common.config.TogatherProperties;
 import com.togather.common.exception.BusinessException;
-import com.togather.common.exception.ErrorCode;
 import com.togather.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -55,8 +51,7 @@ public class AuthController {
     @GetMapping("/config")
     public ApiResponse<AuthConfigResponse> getConfig() {
         boolean googleEnabled = properties.google() != null && properties.google().isConfigured();
-        boolean devLogin = properties.auth() != null && properties.auth().devLogin();
-        return ApiResponse.ok(new AuthConfigResponse(googleEnabled, devLogin));
+        return ApiResponse.ok(new AuthConfigResponse(googleEnabled));
     }
 
     @GetMapping("/google/login")
@@ -98,18 +93,7 @@ public class AuthController {
         sessionManager.invalidate(request);
     }
 
-    /** 개발용 로그인. togather.auth.dev-login=true일 때만 동작한다. */
-    @PostMapping("/dev-login")
-    public ApiResponse<LoginResult> devLogin(@Valid @RequestBody DevLoginRequest body, HttpServletRequest request) {
-        if (properties.auth() == null || !properties.auth().devLogin()) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        }
-        LoginResult result = authService.devLogin(body);
-        sessionManager.createSession(request, result.userId());
-        return ApiResponse.ok(result);
-    }
-
-    public record AuthConfigResponse(boolean googleEnabled, boolean devLoginEnabled) {
+    public record AuthConfigResponse(boolean googleEnabled) {
     }
 
     /** 외부 주소로 보내는 오픈 리다이렉트를 막기 위해 앱 내부 경로만 허용한다. */

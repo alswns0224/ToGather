@@ -1,13 +1,13 @@
 // UI-01 로그인 (가로 3단계 흐름 카드 + 60:40 분할 + 파랑·보라 / 당근 오렌지 공통 지원)
-import { useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
-import { devLogin, getAuthConfig, googleLoginUrl } from './api';
+import { useState } from 'react';
+import { useSearchParams } from 'react-router';
+import { getAuthConfig, googleLoginUrl } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { useTheme } from '../../hooks/useTheme';
 import { ErrorBox, Loading } from '../../components/Status';
 import ThemeToggle from '../../components/ThemeToggle';
 import ServiceLogo from '../../components/ServiceLogo';
-import { BTN_SUB, INPUT, MUTED } from '../../components/ui';
+import { MUTED } from '../../components/ui';
 
 const ERROR_MESSAGES: Record<string, string> = {
   access_denied: '로그인을 취소했습니다.',
@@ -19,15 +19,11 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 export default function LoginPage() {
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const redirect = params.get('redirect') ?? '/workspaces';
   const errorCode = params.get('error');
   const config = useAsync(getAuthConfig, []);
   const { theme, palette } = useTheme();
   const [redirecting, setRedirecting] = useState(false);
-  const [dev, setDev] = useState({ email: '', name: '' });
-  const [devError, setDevError] = useState<Error>();
-  const [submitting, setSubmitting] = useState(false);
 
   const isIndigo = palette === 'indigo';
   const isDark = theme === 'dark';
@@ -38,20 +34,6 @@ export default function LoginPage() {
   const startGoogle = () => {
     setRedirecting(true);
     window.location.href = googleLoginUrl(redirect);
-  };
-
-  const submitDev = async (e: FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setDevError(undefined);
-    try {
-      await devLogin(dev.email, dev.name);
-      navigate(redirect, { replace: true });
-    } catch (err) {
-      setDevError(err as Error);
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   return (
@@ -207,32 +189,6 @@ export default function LoginPage() {
                     : '서버에 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET이 설정되지 않았습니다.'}
                 </p>
 
-                {config.data.devLoginEnabled && (
-                  <details className="border-0 border-t border-dashed border-[var(--border)] pt-3">
-                    <summary className={`cursor-pointer text-xs font-semibold ${MUTED}`}>개발용 로그인 (선택)</summary>
-                    <form className="mt-3 flex flex-col gap-2" onSubmit={submitDev}>
-                      <input
-                        className={INPUT}
-                        type="email"
-                        placeholder="이메일"
-                        required
-                        value={dev.email}
-                        onChange={(e) => setDev({ ...dev, email: e.target.value })}
-                      />
-                      <input
-                        className={INPUT}
-                        placeholder="이름"
-                        required
-                        value={dev.name}
-                        onChange={(e) => setDev({ ...dev, name: e.target.value })}
-                      />
-                      {devError && <ErrorBox error={devError} />}
-                      <button className={`${BTN_SUB} py-2.5`} disabled={submitting}>
-                        {submitting ? '로그인 중...' : '개발용 로그인'}
-                      </button>
-                    </form>
-                  </details>
-                )}
               </>
             )}
           </div>

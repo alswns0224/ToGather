@@ -122,6 +122,14 @@ public class DriveContentController {
         return ApiResponse.ok(driveContentService.getFolderNames(workspaceId, userId));
     }
 
+    @GetMapping("/folders/hierarchy")
+    public ApiResponse<List<DriveContentService.DriveFolderHierarchyResponse>> getFolderHierarchy(
+        @LoginUser Long userId, @PathVariable Long workspaceId
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        return ApiResponse.ok(driveContentService.getFolderHierarchy(workspaceId, userId));
+    }
+
     /**
      * 하위 폴더 목록 조회.
      *

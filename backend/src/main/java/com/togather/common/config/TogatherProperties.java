@@ -9,14 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record TogatherProperties(
         String appUrl,
         String tokenKey,
-        Auth auth,
         OAuthClient google,
         OAuthClient slack,
         OAuthClient notion
 ) {
-
-    public record Auth(boolean devLogin) {
-    }
 
     public record OAuthClient(String clientId, String clientSecret) {
 

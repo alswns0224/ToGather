@@ -7,12 +7,15 @@ import { useAsync } from '../../hooks/useAsync';
 import { useLoginUser } from '../../components/RequireAuth';
 import { ErrorBox, Loading } from '../../components/Status';
 import ThemeToggle from '../../components/ThemeToggle';
+import { useTheme } from '../../hooks/useTheme';
 import { BTN_AI, BTN_SUB, CARD, INPUT, MUTED, SUB_CARD } from '../../components/ui';
 
 const WS_COLORS = ['linear-gradient(135deg,#4F46E5,#7C3AED)', 'linear-gradient(135deg,#0D9488,#2563EB)'];
 
 export default function WorkspaceListPage() {
   const user = useLoginUser();
+  const { palette } = useTheme();
+  const logoSrc = palette === 'indigo' ? '/togather-logo-mark.png' : '/togather-logo-carrot.png';
   const navigate = useNavigate();
   const { loading, error, data, reload } = useAsync(getWorkspaces, []);
   const [creating, setCreating] = useState(false);
@@ -44,7 +47,7 @@ export default function WorkspaceListPage() {
       <div className="mx-auto max-w-6xl space-y-8">
         <header className={`${CARD} flex flex-wrap items-center justify-between gap-4 !rounded-3xl px-6 py-4`}>
           <div className="flex items-center gap-3">
-            <div className={`${BTN_AI} !h-9 !w-9 !p-0 text-base`}>T</div>
+            <img src={logoSrc} alt="ToGather 로고" className="h-9 w-auto shrink-0" />
             <div>
               <span className="text-lg font-bold">ToGather</span>
               <span className={`block text-xs sm:ml-2 sm:inline ${MUTED}`}>프로젝트별 워크스페이스</span>
