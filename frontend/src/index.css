@@ -1763,6 +1763,41 @@ hr {
   background: var(--surface-2);
 }
 
+/* 행 안의 열기 영역 (행 끝에 휴지통 버튼을 따로 두기 위해 행 전체를 버튼으로 만들지 않는다) */
+.drive-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.drive-row-main:disabled {
+  cursor: not-allowed;
+}
+
+.drive-row-main:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* 휴지통 행: 복원 · 영구 삭제 버튼 두 개가 들어간다 */
+.drive-row.drive-trash {
+  grid-template-columns: minmax(0, 2fr) 150px 190px;
+}
+
+.drive-item.drive-trash {
+  cursor: default;
+}
+
 .drive-side {
   display: flex;
   flex-direction: column;

@@ -18,6 +18,7 @@ import {
   type TargetItem,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
+import { getWorkspace } from '../workspace/api';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
@@ -44,6 +45,9 @@ export default function IntegrationsPage() {
   const { workspaceId = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const { loading, error, data, reload } = useAsync(() => getIntegrations(workspaceId), [workspaceId]);
+  // 팀 Drive의 모든 항목은 팀장 소유라 Drive 폴더는 팀장만 고른다.
+  const workspace = useAsync(() => getWorkspace(workspaceId), [workspaceId]);
+  const isMainOwner = workspace.data?.myRole === 'OWNER';
   const [selecting, setSelecting] = useState<ConnectionStatusDTO | null>(null);
   const [actionError, setActionError] = useState<Error>();
   const [removingId, setRemovingId] = useState<number | null>(null);
@@ -129,6 +133,7 @@ export default function IntegrationsPage() {
             key={item.provider}
             workspaceId={workspaceId}
             item={item}
+            isMainOwner={isMainOwner}
             onSelect={setSelecting}
             onRemove={remove}
             removingId={removingId}
@@ -156,12 +161,14 @@ export default function IntegrationsPage() {
 function ServiceCard({
   workspaceId,
   item,
+  isMainOwner,
   onSelect,
   onRemove,
   removingId,
 }: {
   workspaceId: string;
   item: IntegrationStatusResponse;
+  isMainOwner: boolean;
   onSelect: (conn: ConnectionStatusDTO) => void;
   onRemove: (conn: ConnectionStatusDTO) => void;
   removingId: number | null;
@@ -275,6 +282,8 @@ function ServiceCard({
               <a className="btn btn-primary" href={reauthUrl(workspaceId, mine.connectionId)}>
                 재인증하기
               </a>
+            ) : item.provider === 'GOOGLE_DRIVE' && !isMainOwner ? (
+              <span className="self-center text-xs text-[var(--muted)]">Drive 폴더는 팀장이 골라요</span>
             ) : label.target ? (
               <button
                 type="button"

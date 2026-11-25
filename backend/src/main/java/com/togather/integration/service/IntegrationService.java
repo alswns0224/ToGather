@@ -6,6 +6,7 @@ import com.togather.auth.service.OAuthStateStore.OAuthState;
 import com.togather.auth.service.OAuthStateStore.Purpose;
 import com.togather.auth.service.UserService;
 import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.common.auth.WorkspaceChangeGuard;
 import com.togather.common.config.TogatherProperties;
 import com.togather.common.enums.ConnectionStatus;
 import com.togather.common.enums.Provider;
@@ -21,6 +22,7 @@ import com.togather.integration.dto.ConnectionStatusDTO.TargetResponse;
 import com.togather.integration.dto.IntegrationStatusResponse;
 import com.togather.integration.dto.DisconnectResult;
 import com.togather.integration.dto.TargetSelectRequest;
+import com.togather.integration.event.ServiceConnectedEvent;
 import com.togather.integration.repository.IntegrationTargetRepository;
 import com.togather.integration.repository.ServiceConnectionRepository;
 import java.time.LocalDateTime;
@@ -34,6 +36,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +69,9 @@ public class IntegrationService {
     private final UserService userService;
     private final TogatherProperties properties;
     private final ConnectionOperationRegistry operations;
+    private final ApplicationEventPublisher events;
+    /** Drive guard가 이 서비스를 쓰므로 생성 시점이 아니라 호출할 때 꺼낸다. */
+    private final ObjectProvider<WorkspaceChangeGuard> guards;
 
     // ===================== 연결 (인증) =====================
 
@@ -131,6 +138,7 @@ public class IntegrationService {
         }
         connection.changeAccountLabel(result.accountLabel());
         refreshTargetStatus(connection, client);
+        events.publishEvent(new ServiceConnectedEvent(connection.getWorkspaceId(), connection.getUserId(), provider));
         return connection.getConnectionId();
     }
 
@@ -169,6 +177,7 @@ public class IntegrationService {
     @Transactional(noRollbackFor = BusinessException.class)
     public List<TargetOption> getAvailableTargets(Long workspaceId, Long userId, Long connectionId) {
         ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId);
+        requireDriveOwnerSelection(connection, userId);
         return clientFor(connection.getProvider())
                 .getAvailableTargets(connection.getProvider(), validAccessToken(connection));
     }
@@ -178,6 +187,7 @@ public class IntegrationService {
     public ConnectionStatusDTO selectTargets(Long workspaceId, Long userId, Long connectionId,
                                              TargetSelectRequest request) {
         ServiceConnection connection = getEditableConnection(workspaceId, userId, connectionId);
+        requireDriveOwnerSelection(connection, userId);
         if (connection.getProvider() == Provider.SLACK
                 && request.targets().stream().anyMatch(target -> target.id().startsWith("D"))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Slack DM은 개인 AI 업무 보조에서만 수집합니다.");
@@ -207,6 +217,19 @@ public class IntegrationService {
             connection.changeStatus(ConnectionStatus.CONNECTED);
         }
         return toDto(connection, userId, userService.getUser(connection.getUserId()), saved);
+    }
+
+    /** Drive 폴더는 팀장이 자기 연결로만 고른다. 팀 Drive의 모든 항목을 팀장 소유로 두기 위해서다. */
+    private void requireDriveOwnerSelection(ServiceConnection connection, Long userId) {
+        if (connection.getProvider() == Provider.GOOGLE_DRIVE
+                && (!connection.getUserId().equals(userId) || !isMainOwner(connection))) {
+            throw new BusinessException(ErrorCode.DRIVE_TARGET_OWNER_ONLY);
+        }
+    }
+
+    private boolean isMainOwner(ServiceConnection connection) {
+        return workspaceAccessChecker.findMainOwner(connection.getWorkspaceId())
+                .map(connection.getUserId()::equals).orElse(false);
     }
 
     /**
@@ -248,6 +271,8 @@ public class IntegrationService {
             // 로컬 해제 기록만으로 과거 외부 폐기 성공 여부를 단정하지 않는다.
             return new DisconnectResult(true, false);
         }
+        guards.orderedStream()
+                .forEach(guard -> guard.beforeDisconnect(workspaceId, connection.getUserId(), connection.getProvider()));
         try (var lease = operations.beginDisconnect(connection)) {
             if (connectionRepository.findCurrentStatus(connectionId).orElse(ConnectionStatus.DISCONNECTED)
                     == ConnectionStatus.DISCONNECTED) {
@@ -587,7 +612,9 @@ public class IntegrationService {
     private void refreshTargetStatus(ServiceConnection connection, OAuthProviderClient client) {
         boolean hasTargets = connection.getConnectionId() != null
                 && !targetRepository.findAllByConnectionId(connection.getConnectionId()).isEmpty();
-        boolean needsTarget = client.requiresTarget(connection.getProvider()) && !hasTargets;
+        // Drive 폴더는 팀장만 고르므로 팀원의 Drive 연결은 대상 없이 바로 연결됨이다.
+        boolean memberDrive = connection.getProvider() == Provider.GOOGLE_DRIVE && !isMainOwner(connection);
+        boolean needsTarget = client.requiresTarget(connection.getProvider()) && !hasTargets && !memberDrive;
         connection.changeStatus(needsTarget ? ConnectionStatus.TARGET_NOT_SELECTED : ConnectionStatus.CONNECTED);
     }
 

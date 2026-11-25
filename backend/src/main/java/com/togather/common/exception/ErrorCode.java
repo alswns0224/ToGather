@@ -84,7 +84,12 @@ public enum ErrorCode {
     DRIVE_FILE_NAME_CONFLICT(HttpStatus.CONFLICT, "같은 이름의 파일이 있습니다. 새 파일 저장 또는 덮어쓸 대상을 선택해 주세요."),
     DRIVE_FILE_CHANGED(HttpStatus.CONFLICT, "선택한 파일이 변경됐습니다. 최신 파일 정보를 확인한 뒤 다시 선택해 주세요."),
     DRIVE_UPLOAD_IN_PROGRESS(HttpStatus.CONFLICT, "같은 폴더와 파일 이름으로 업로드가 진행 중입니다. 완료 후 다시 시도해 주세요."),
-    SUGGESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "후보를 찾을 수 없습니다.");
+    DRIVE_TRASH_FORBIDDEN(HttpStatus.FORBIDDEN, "이 항목은 아직 팀장 소유로 옮겨지지 않아 휴지통으로 옮기거나 복원할 수 없습니다. 소유권 정리가 끝난 뒤 다시 시도해 주세요."),
+    DRIVE_OWNER_NOT_CONNECTED(HttpStatus.CONFLICT, "팀장이 Google Drive를 연동해야 사용할 수 있습니다. 팀장에게 연동 관리에서 Drive 연결을 요청해 주세요."),
+    DRIVE_OWNER_REAUTH_REQUIRED(HttpStatus.CONFLICT, "팀장의 Google Drive 연결을 다시 인증해야 합니다. 팀장에게 연동 관리에서 재인증을 요청해 주세요."),
+    DRIVE_TARGET_OWNER_ONLY(HttpStatus.FORBIDDEN, "Drive 폴더는 팀장이 자기 Drive 연결로만 고를 수 있습니다."),
+    DRIVE_NEW_OWNER_NOT_CONNECTED(HttpStatus.CONFLICT, "팀장을 넘겨받을 팀원이 먼저 Google Drive를 연동해야 Drive 파일 소유권도 함께 넘길 수 있습니다."),
+    DRIVE_OWNERSHIP_TRANSFER_IN_PROGRESS(HttpStatus.CONFLICT, "Drive 파일 소유권을 넘기는 중입니다. 끝난 뒤 다시 시도해 주세요."),    SUGGESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "후보를 찾을 수 없습니다.");
 
     private final HttpStatus status;
     private final String message;

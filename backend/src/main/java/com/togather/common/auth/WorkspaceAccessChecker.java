@@ -1,5 +1,7 @@
 package com.togather.common.auth;
 
+import java.util.Optional;
+
 /**
  * 워크스페이스 권한 검사. 실패 시 BusinessException(WORKSPACE_ACCESS_DENIED / WORKSPACE_OWNER_REQUIRED)을 던진다.
  * 구현: workspace.service.WorkspaceAccessCheckerImpl (A 담당)
@@ -13,4 +15,7 @@ public interface WorkspaceAccessChecker {
 
     /** 팀장만: 관리자 임명·해제, 팀장 넘기기, 워크스페이스 수정·삭제 */
     void checkMainOwner(Long workspaceId, Long userId);
+
+    /** 팀장의 사용자 ID. 팀장이 없으면 빈 값 */
+    Optional<Long> findMainOwner(Long workspaceId);
 }

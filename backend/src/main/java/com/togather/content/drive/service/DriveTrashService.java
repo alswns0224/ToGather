@@ -1,0 +1,311 @@
+package com.togather.content.drive.service;
+
+import com.togather.auth.dto.UserSummary;
+import com.togather.auth.service.UserService;
+import com.togather.common.auth.WorkspaceAccessChecker;
+import com.togather.common.enums.Provider;
+import com.togather.common.event.WorkspaceEventService;
+import com.togather.common.exception.BusinessException;
+import com.togather.common.exception.ErrorCode;
+import com.togather.content.domain.ContentRef;
+import com.togather.content.domain.ContentRef.DriveFileState;
+import com.togather.content.dto.ContentRefDTO;
+import com.togather.content.drive.client.DriveApiClient;
+import com.togather.content.drive.client.DriveApiClient.DriveItem;
+import com.togather.content.drive.domain.DriveTrashEntry;
+import com.togather.content.drive.domain.DriveWorkspaceSetting;
+import com.togather.content.drive.dto.DriveTrashItem;
+import com.togather.content.drive.repository.DriveTrashEntryRepository;
+import com.togather.content.drive.repository.DriveWorkspaceSettingRepository;
+import com.togather.content.drive.service.DriveOwnerAccess.OwnerToken;
+import com.togather.content.repository.ContentRefRepository;
+import com.togather.content.service.ContentRefService;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+/**
+ * Drive 휴지통 = 팀장 내 드라이브의 "ToGather 휴지통" 폴더.
+ *
+ * <p>모든 항목이 팀장 소유라 팀장 토큰으로 옮기고 지운다. 휴지통 폴더는 연동 폴더 밖에 있어서, 옮긴 항목은 공유 폴더에서
+ * 받던 권한이 빠져 팀원에게서 사라지고 팀장 Drive에만 남는다. Drive에서 직접 휴지통 폴더로 옮긴 것도 그대로 휴지통으로 보인다.
+ * 원래 위치는 drive_trash_entry에 남겨 복원할 때 쓴다.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class DriveTrashService {
+
+    private static final Provider PROVIDER = Provider.GOOGLE_DRIVE;
+
+    private final DriveApiClient driveApiClient;
+    private final DriveOwnerAccess ownerAccess;
+    private final DriveTreeLocator locator;
+    private final DriveContentService driveContentService;
+    private final DriveTrashEntryRepository entryRepository;
+    private final DriveWorkspaceSettingRepository settingRepository;
+    private final ContentRefRepository contentRefRepository;
+    private final ContentRefService contentRefService;
+    private final WorkspaceAccessChecker workspaceAccessChecker;
+    private final WorkspaceEventService workspaceEventService;
+    private final UserService userService;
+    private final JdbcTemplate jdbc;
+
+    public record EmptyResult(int deleted, int failed) {
+    }
+
+    // ===================== 휴지통 폴더 =====================
+
+    /** 휴지통 폴더를 확인하고, 없거나 지워졌으면 팀장 내 드라이브 루트에 새로 만든다. */
+    public synchronized String ensureTrashFolder(Long workspaceId, OwnerToken owner) {
+        DriveWorkspaceSetting setting = settingRepository.findById(workspaceId)
+            .orElseGet(() -> new DriveWorkspaceSetting(workspaceId, owner.userId()));
+        String current = setting.getTrashFolderId();
+        if (current != null) {
+            try {
+                DriveItem folder = driveApiClient.getItem(owner.accessToken(), current);
+                if (folder.isFolder() && !folder.trashed()
+                    && (owner.email() == null || folder.isOwnedBy(owner.email()))) {
+                    return current;
+                }
+            } catch (BusinessException e) {
+                if (e.getErrorCode() != ErrorCode.RESOURCE_NOT_FOUND) {
+                    throw e;
+                }
+            }
+        }
+        DriveItem created = driveApiClient.createFolder(owner.accessToken(),
+            "ToGather 휴지통 (" + workspaceName(workspaceId) + ")", null);
+        setting.changeTrashFolder(created.id());
+        settingRepository.save(setting);
+        log.info("Drive 휴지통 폴더 생성: workspaceId={}, folderId={}", workspaceId, created.id());
+        return created.id();
+    }
+
+    // ===================== 휴지통으로 이동 =====================
+
+    public void trashFile(Long workspaceId, Long userId, Long contentRefId) {
+        ContentRef file = contentRefRepository.findById(contentRefId)
+            .filter(ref -> workspaceId.equals(ref.getWorkspaceId()) && ref.getProvider() == PROVIDER)
+            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        trash(workspaceId, userId, file.getOriginId());
+    }
+
+    /** 연동 폴더 안의 파일·폴더를 휴지통 폴더로 옮긴다. 연동 폴더 자신은 옮길 수 없다. */
+    public void trash(Long workspaceId, Long userId, String itemId) {
+        List<String> roots = driveContentService.getFolders(workspaceId, userId);
+        if (roots.contains(itemId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "연동한 폴더 자체는 휴지통으로 옮길 수 없습니다.");
+        }
+        OwnerToken owner = ownerAccess.requireOwnerToken(workspaceId);
+        String trashFolder = ensureTrashFolder(workspaceId, owner);
+        if (itemId.equals(trashFolder)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        DriveItem item = driveApiClient.getItem(owner.accessToken(), itemId);
+        if (item.trashed() || item.parents().isEmpty()) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        String parentId = item.parents().getFirst();
+        String rootId = locator.rootOf(owner.accessToken(), parentId, roots)
+            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        driveApiClient.moveItem(owner.accessToken(), itemId, parentId, trashFolder);
+
+        entryRepository.findByWorkspaceIdAndItemId(workspaceId, itemId).ifPresent(entryRepository::delete);
+        entryRepository.save(new DriveTrashEntry(workspaceId, itemId, item.name(), item.isFolder(), rootId, parentId,
+            userId, now()));
+        markTracked(workspaceId, itemId, DriveFileState.UNAVAILABLE, null);
+        workspaceEventService.publish(workspaceId, PROVIDER.name(), rootId);
+        log.info("Drive 휴지통 이동: workspaceId={}, itemId={}, folder={}", workspaceId, itemId, item.isFolder());
+    }
+
+    // ===================== 복원 =====================
+
+    /** 원래 자리로 되돌린다. 원래 자리가 없어졌거나 휴지통 안에 있으면 연동 폴더 바로 아래로 옮긴다. */
+    public void restore(Long workspaceId, Long userId, String itemId) {
+        List<String> roots = driveContentService.getFolders(workspaceId, userId);
+        if (roots.isEmpty()) {
+            throw new BusinessException(ErrorCode.INTEGRATION_TARGET_NOT_SELECTED);
+        }
+        OwnerToken owner = ownerAccess.requireOwnerToken(workspaceId);
+        String trashFolder = ownerAccess.trashFolderId(workspaceId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        DriveItem item = driveApiClient.getItem(owner.accessToken(), itemId);
+        if (item.trashed() || !item.parents().contains(trashFolder)) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        Optional<DriveTrashEntry> entry = entryRepository.findByWorkspaceIdAndItemId(workspaceId, itemId);
+        String target = entry.map(e -> restoreTarget(owner.accessToken(), e, roots)).orElse(roots.getFirst());
+
+        driveApiClient.moveItem(owner.accessToken(), itemId, trashFolder, target);
+
+        entry.ifPresent(entryRepository::delete);
+        if (roots.contains(target)) {
+            markTracked(workspaceId, itemId, DriveFileState.AVAILABLE, target);
+        }
+        workspaceEventService.publish(workspaceId, PROVIDER.name(),
+            roots.contains(target) ? target : entry.map(DriveTrashEntry::getRootFolderId).orElse(target));
+        log.info("Drive 휴지통 복원: workspaceId={}, itemId={}", workspaceId, itemId);
+    }
+
+    private String restoreTarget(String token, DriveTrashEntry entry, List<String> roots) {
+        if (locator.rootOf(token, entry.getOriginParentId(), roots).isPresent()) {
+            return entry.getOriginParentId();
+        }
+        return roots.contains(entry.getRootFolderId()) ? entry.getRootFolderId() : roots.getFirst();
+    }
+
+    // ===================== 영구 삭제 =====================
+
+    /** 팀장·관리자만. 휴지통 폴더에 있거나, Google Drive 휴지통에 있는 수집 파일만 지운다. */
+    public void deleteForever(Long workspaceId, Long userId, String itemId) {
+        workspaceAccessChecker.checkOwner(workspaceId, userId);
+        List<String> roots = driveContentService.getFolders(workspaceId, userId);
+        OwnerToken owner = ownerAccess.requireOwnerToken(workspaceId);
+        Optional<String> trashFolder = ownerAccess.trashFolderId(workspaceId);
+        Optional<ContentRef> tracked = contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(
+            workspaceId, PROVIDER, itemId);
+
+        DriveItem item;
+        try {
+            item = driveApiClient.getItem(owner.accessToken(), itemId);
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
+                forget(workspaceId, itemId);
+                return;
+            }
+            throw e;
+        }
+        boolean inTrashFolder = trashFolder.isPresent() && !item.trashed() && item.parents().contains(trashFolder.get());
+        boolean inDriveTrash = item.trashed() && tracked.isPresent() && roots.contains(tracked.get().getChannelId());
+        if (!inTrashFolder && !inDriveTrash) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+
+        driveApiClient.deleteItem(owner.accessToken(), itemId);
+        forget(workspaceId, itemId);
+        tracked.ifPresent(ref -> workspaceEventService.publish(workspaceId, PROVIDER.name(), ref.getChannelId()));
+        log.info("Drive 영구 삭제: workspaceId={}, itemId={}", workspaceId, itemId);
+    }
+
+    /** 휴지통 폴더를 비운다. 하나가 실패해도 나머지는 계속 지운다. */
+    public EmptyResult empty(Long workspaceId, Long userId) {
+        workspaceAccessChecker.checkOwner(workspaceId, userId);
+        driveContentService.getFolders(workspaceId, userId);
+        OwnerToken owner = ownerAccess.requireOwnerToken(workspaceId);
+        Optional<String> trashFolder = ownerAccess.trashFolderId(workspaceId);
+        if (trashFolder.isEmpty()) {
+            return new EmptyResult(0, 0);
+        }
+        int deleted = 0;
+        int failed = 0;
+        for (DriveItem item : listTrashFolder(owner.accessToken(), trashFolder.get())) {
+            try {
+                driveApiClient.deleteItem(owner.accessToken(), item.id());
+                forget(workspaceId, item.id());
+                deleted++;
+            } catch (BusinessException e) {
+                failed++;
+                log.warn("Drive 휴지통 비우기 실패: workspaceId={}, itemId={}, code={}", workspaceId, item.id(),
+                    e.getErrorCode());
+            }
+        }
+        workspaceEventService.publish(workspaceId, PROVIDER.name(), trashFolder.get());
+        return new EmptyResult(deleted, failed);
+    }
+
+    // ===================== 조회 =====================
+
+    /** 휴지통 폴더의 항목과, Google Drive 휴지통에 있는 수집 파일 */
+    public List<DriveTrashItem> list(Long workspaceId, Long userId) {
+        List<String> roots = driveContentService.getFolders(workspaceId, userId);
+        if (roots.isEmpty()) {
+            return List.of();
+        }
+        List<DriveTrashItem> result = new ArrayList<>();
+        Optional<OwnerToken> owner = ownerAccess.findOwnerToken(workspaceId);
+        Optional<String> trashFolder = ownerAccess.trashFolderId(workspaceId);
+        if (owner.isPresent() && trashFolder.isPresent()) {
+            Map<String, DriveTrashEntry> entries = entryRepository.findAllByWorkspaceId(workspaceId).stream()
+                .collect(Collectors.toMap(DriveTrashEntry::getItemId, Function.identity(), (a, b) -> b));
+            List<DriveItem> items = listTrashFolder(owner.get().accessToken(), trashFolder.get());
+            Map<Long, String> names = userNames(entries.values().stream()
+                .map(DriveTrashEntry::getTrashedBy).filter(Objects::nonNull).distinct().toList());
+            for (DriveItem item : items) {
+                DriveTrashEntry entry = entries.get(item.id());
+                // 다른 팀원 계정으로만 볼 수 있는 연동 폴더에서 온 항목은 보여 주지 않는다.
+                if (entry != null && !roots.contains(entry.getRootFolderId())) {
+                    continue;
+                }
+                Long contentRefId = item.isFolder() ? null : contentRefRepository
+                    .findByWorkspaceIdAndProviderAndOriginId(workspaceId, PROVIDER, item.id())
+                    .map(ContentRef::getContentRefId).orElse(null);
+                result.add(new DriveTrashItem(item.id(), item.name(), item.isFolder(), item.mimeType(),
+                    item.fileSize(), entry == null ? item.modifiedAt() : entry.getTrashedAt(),
+                    entry == null ? null : entry.getTrashedBy(),
+                    entry == null ? null : names.get(entry.getTrashedBy()),
+                    contentRefId, DriveTrashItem.TOGATHER));
+            }
+        }
+        for (ContentRefDTO file : driveContentService.getTrashFiles(workspaceId, userId)) {
+            result.add(new DriveTrashItem(file.externalId(), file.title(), false, null, file.fileSize(),
+                file.lastModifiedAt(), null, null, file.contentRefId(), DriveTrashItem.DRIVE));
+        }
+        result.sort(Comparator.comparing(DriveTrashItem::trashedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+        return result;
+    }
+
+    private List<DriveItem> listTrashFolder(String token, String trashFolder) {
+        try {
+            return driveApiClient.listChildren(token, trashFolder);
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
+                return List.of();
+            }
+            throw e;
+        }
+    }
+
+    // ===================== 내부 =====================
+
+    /** ToGather가 수집한 파일이면 목록에서 숨기거나(UNAVAILABLE) 다시 보이게(AVAILABLE) 한다. */
+    private void markTracked(Long workspaceId, String itemId, DriveFileState state, String folderId) {
+        contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, PROVIDER, itemId)
+            .ifPresent(ref -> contentRefService.updateDriveLocation(workspaceId, itemId, null,
+                folderId != null ? folderId : ref.getChannelId(), state));
+    }
+
+    private void forget(Long workspaceId, String itemId) {
+        entryRepository.findByWorkspaceIdAndItemId(workspaceId, itemId).ifPresent(entryRepository::delete);
+        markTracked(workspaceId, itemId, DriveFileState.UNAVAILABLE, null);
+    }
+
+    private Map<Long, String> userNames(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userService.getUsers(userIds).stream()
+            .collect(Collectors.toMap(UserSummary::userId, UserSummary::name, (a, b) -> a));
+    }
+
+    private String workspaceName(Long workspaceId) {
+        return jdbc.query("SELECT name FROM workspace WHERE workspace_id = ?",
+            rs -> rs.next() ? rs.getString(1) : "워크스페이스", workspaceId);
+    }
+
+    private static LocalDateTime now() {
+        return LocalDateTime.now(ZoneOffset.UTC);
+    }
+}
