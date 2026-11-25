@@ -331,7 +331,7 @@ export default function HomePage() {
                   </Link>
                 </div>
                 {(d.integrations ?? []).map((item) => {
-                  const conn = item.personal ? item.connections.find((c) => c.mine) : item.connections[0];
+                  const conn = item.connections.find((c) => c.mine);
                   const [text, cls] = CONN_BADGE[conn?.status ?? 'DISCONNECTED'];
                   const targets = conn?.targets.map((t) => t.name ?? t.id).join(', ');
                   return (
