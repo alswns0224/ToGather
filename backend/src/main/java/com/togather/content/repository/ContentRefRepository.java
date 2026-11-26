@@ -121,6 +121,14 @@ public interface ContentRefRepository
         Long parentRefId
     );
 
+    /** 채널에서 after 이후 작성된 최상위 메시지 중 원본이 남아 있는 것 (Slack 삭제 감지) */
+    @Query("select c from ContentRef c where c.workspaceId = :workspaceId and c.provider = :provider "
+            + "and c.channelId = :channelId and c.parentRefId is null and c.ownerUserId is null "
+            + "and c.isOriginDeleted = false and c.createdAt >= :after")
+    List<ContentRef> findAllByWorkspaceIdAndProviderAndChannelIdAndParentRefIdIsNullAndIsOriginDeletedFalseAndCreatedAtAfter(
+            Long workspaceId, Provider provider, String channelId, LocalDateTime after);
+
+
     /**
      * 원본에서 삭제된 답글 ID 조회.
      * DB의 최신 삭제 상태를 확인한다.

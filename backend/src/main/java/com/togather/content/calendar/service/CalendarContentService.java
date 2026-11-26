@@ -10,6 +10,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.content.calendar.client.GoogleCalendarClient;
 import com.togather.content.calendar.client.GoogleCalendarClient.CalendarEvent;
+import com.togather.content.calendar.client.GoogleCalendarClient.EventList;
 import com.togather.content.calendar.client.GoogleCalendarClient.EventWrite;
 import com.togather.content.calendar.dto.CalendarEventCreateRequest;
 import com.togather.content.calendar.dto.CalendarEventRequest;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
@@ -90,7 +92,7 @@ public class CalendarContentService {
             Access personal = personalAccess(workspaceId, userId);
             try {
                 return toResponses(workspaceId, personal,
-                        calendarClient.listEvents(personal.token(), personal.calendarId(), from, to));
+                        readEvents(workspaceId, personal, from, to));
             } catch (BusinessException e) {
                 if (e.getErrorCode() == ErrorCode.REAUTH_REQUIRED) {
                     integrationService.reportUnauthorized(workspaceId, userId, Provider.GOOGLE_CALENDAR);
@@ -100,7 +102,7 @@ public class CalendarContentService {
         }
         List<CalendarEvent> teamEvents;
         try {
-            teamEvents = calendarClient.listEvents(team.get().token(), team.get().calendarId(), from, to);
+            teamEvents = readEvents(workspaceId, team.get(), from, to);
         } catch (BusinessException e) {
             if (e.getErrorCode() == ErrorCode.REAUTH_REQUIRED) {
                 // 팀장 캘린더 권한이 끊겼다. 팀장 연결을 재인증 필요로 표시한다.
@@ -117,6 +119,12 @@ public class CalendarContentService {
         all.addAll(personalEventsOrEmpty(workspaceId, userId, from, to, teamEventIds));
         all.sort(Comparator.comparing(CalendarEventResponse::startAt, Comparator.nullsLast(Comparator.naturalOrder())));
         return all;
+    }
+
+    private List<CalendarEvent> readEvents(Long workspaceId, Access access, LocalDateTime from, LocalDateTime to) {
+        EventList list = calendarClient.listEventsWithDeleted(access.token(), access.calendarId(), from, to);
+        markCancelledDeleted(workspaceId, access, list.cancelledIds());
+        return list.events();
     }
 
     /** 읽어 온 일정을 저장하고 화면 응답으로 바꾼다. */
@@ -136,7 +144,7 @@ public class CalendarContentService {
             return integrationService.findAccessToken(workspaceId, userId, Provider.GOOGLE_CALENDAR)
                     .map(token -> {
                         Access personal = new Access(token, PRIMARY, userId);
-                        List<CalendarEvent> events = calendarClient.listEvents(token, PRIMARY, from, to).stream()
+                        List<CalendarEvent> events = readEvents(workspaceId, personal, from, to).stream()
                                 .filter(e -> !teamEventIds.contains(e.id())
                                         && (e.iCalUid() == null || !teamEventIds.contains(e.iCalUid())))
                                 .toList();
@@ -342,6 +350,19 @@ public class CalendarContentService {
                 contentRefService.markOriginDeleted(contentRefId);
             }
             throw e;
+        }
+    }
+
+    /**
+     * Google에서 지운 일정의 사본을 원본 삭제로 표시한다. (행은 남김: 회의·근거 연결 보존)
+     * 같은 캘린더(팀/개인)의 사본만 표시한다.
+     */
+    private void markCancelledDeleted(Long workspaceId, Access access, List<String> cancelledIds) {
+        for (String eventId : cancelledIds) {
+            contentRefService.findByOrigin(workspaceId, Provider.GOOGLE_CALENDAR, eventId)
+                    .filter(ref -> Objects.equals(contentRefService.getOwner(ref.contentRefId()).ownerUserId(),
+                            access.ownerUserId()))
+                    .ifPresent(ref -> contentRefService.markOriginDeleted(ref.contentRefId()));
         }
     }
 
