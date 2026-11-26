@@ -33,7 +33,7 @@ public record MeetingDetailResponse(
     public record ParticipantResponse(Long userId, String name, String profileImage, boolean hasResponded) {
     }
 
-    /** task가 null이면 안건 Task가 삭제된 것 */
-    public record AgendaResponse(Long agendaId, int orderNo, Long taskId, TaskSummary task) {
+    /** 직접 입력 안건은 taskId/task가 null이고 title이 있다. 기존 Task 안건의 title은 null이다. */
+    public record AgendaResponse(Long agendaId, int orderNo, Long taskId, TaskSummary task, String title) {
     }
 }
