@@ -1,5 +1,6 @@
 // UI-10 회의 상세 · 안건 · 가용 시간 · 추천 · 확정 (담당: A)
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useParams } from 'react-router';
 import {
   addAgenda,
@@ -31,6 +32,10 @@ import { addDays, formatDate, formatDateTime, formatTime, fromLocalIso, startOfD
 export default function MeetingDetailPage() {
   const { workspaceId = '', meetingId = '' } = useParams();
   const meeting = useAsync(() => getMeeting(workspaceId, meetingId), [workspaceId, meetingId]);
+  // 다른 참여자가 가능 시간을 저장하거나 회의를 바꾸면 응답 수·상태를 새로고침 없이 다시 불러온다.
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'MEETING' && event.targetId === meetingId) meeting.reload();
+  });
   const [actionError, setActionError] = useState<Error>();
   const [editing, setEditing] = useState(false);
   const [acting, setActing] = useState(false);

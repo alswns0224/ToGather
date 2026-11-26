@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
 } from 'react';
 import { Link, useParams } from 'react-router';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 
 import { ApiError, http, ws } from '../../api/client';
 import DriveUploadConflict from './DriveUploadConflict';
@@ -392,6 +393,14 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
       window.clearInterval(intervalId);
     };
   }, [workspaceId]);
+
+  // 다른 팀원이 올리거나 지우거나 폴더를 만들면(서버 알림) 1분을 기다리지 않고 바로 다시 불러온다.
+  // 내가 작업 중이면 그 작업이 끝날 때 다시 불러오므로 건너뛴다.
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider !== 'GOOGLE_DRIVE' || workingRef.current) return;
+    void reloadAll().catch(() => undefined);
+    setFolderHierarchyVersion((value) => value + 1);
+  });
 
   // ===================================================
   // 7. 최신 파일·폴더·동기화 상태 재조회
@@ -1042,7 +1051,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   // 새 폴더 만들기: 지금 보고 있는 폴더 안에 만든다.
   // ===================================================
 
-  /** 새 폴더를 만들 곳. "전체 폴더"를 보고 있으면 연결된 폴더가 하나일 때만 그 폴더 */
+  /** 새 폴더를 만들 곳. "전체 파일"을 보고 있으면 연결된 폴더가 하나일 때만 그 폴더 */
   const createFolderParentId = showTrash
     ? null
     : currentBrowseFolderId ?? (folderIds.length === 1 ? folderIds[0] : null);
@@ -1098,7 +1107,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   function handleTrashItem(itemId: string, name: string | null, folder: boolean) {
     const label = name || (folder ? '폴더' : '파일');
     if (!window.confirm(
-      `'${label}' ${folder ? '폴더(안의 파일 포함)' : '파일'}를 휴지통으로 이동할까요?\n\n팀장 Drive의 ToGather 휴지통 폴더로 옮겨지며, 휴지통에서 복원할 수 있습니다.`,
+      `'${label}' ${folder ? '폴더(안의 파일 포함)를' : '파일을'} 휴지통으로 이동할까요?\n\n팀장 Drive의 ToGather 휴지통 폴더로 옮겨지며, 휴지통에서 복원할 수 있습니다.`,
     )) return;
     void runTrashAction('delete', itemId, async () => {
       await trashDriveItem(workspaceId, itemId);

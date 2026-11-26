@@ -30,6 +30,8 @@ export interface IntegrationStatusResponse {
   connections: ConnectionStatusDTO[];
   /** 팀장이 고른 팀 캘린더 (Calendar만). 아직 안 골랐으면 null */
   teamTarget?: { id: string; name: string; chosenByUserId: number; chosenByName: string | null } | null;
+  /** 연결이 끊겨 지금 아무도 쓰지 못하는 팀 채널·페이지·폴더. 누군가 다시 연결하면 되살아난다. */
+  parkedTargets?: string[];
 }
 
 export const PROVIDER_LABELS: Record<Provider, { name: string; target: string; description: string }> = {

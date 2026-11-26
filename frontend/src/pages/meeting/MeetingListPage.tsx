@@ -1,5 +1,6 @@
 // UI-10 회의 목록 · 생성 (담당: A)
 import { useState, type FormEvent } from 'react';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useNavigate, useParams } from 'react-router';
 import { createMeeting, getAgendaCandidates, getMeetings, type MeetingSummaryResponse } from './api';
 import { getMembers } from '../workspace/api';
@@ -22,6 +23,9 @@ function isPast(m: MeetingSummaryResponse) {
 export default function MeetingListPage() {
   const { workspaceId = '' } = useParams();
   const meetings = useAsync(() => getMeetings(workspaceId), [workspaceId]);
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'MEETING') meetings.reload();
+  });
   const [creating, setCreating] = useState(false);
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const list = (meetings.data ?? []).filter((m) => (tab === 'past' ? isPast(m) : !isPast(m)));

@@ -28,6 +28,14 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final WorkspaceMemberService workspaceMemberService;
+    private final com.togather.common.event.WorkspaceEventService workspaceEventService;
+
+    /** 팀 작업 화면을 보고 있는 팀원에게 바뀐 작업을 알린다. (커밋된 뒤 전송) */
+    public static final String TASK_EVENT = "TASK";
+
+    private void notifyChanged(Long workspaceId, Long taskId) {
+        workspaceEventService.publish(workspaceId, TASK_EVENT, String.valueOf(taskId));
+    }
 
     /** Task 생성 - 다른 파트에서도 사용하는 공유 인터페이스 */
     @Transactional
@@ -64,7 +72,9 @@ public class TaskService {
         }
 
         task.refreshStatusByDeliverables();
-        return taskRepository.save(task).getTaskId();
+        Long taskId = taskRepository.save(task).getTaskId();
+        notifyChanged(workspaceId, taskId);
+        return taskId;
     }
 
     /** 워크스페이스 전체 Task 목록 */
@@ -161,6 +171,7 @@ public class TaskService {
             task.changeStatus(status);
         }
 
+        notifyChanged(workspaceId, taskId);
         return TaskSummary.from(task, currentTaskDate());
     }
 

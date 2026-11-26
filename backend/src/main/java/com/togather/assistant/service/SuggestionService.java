@@ -81,6 +81,7 @@ public class SuggestionService {
     private final GeminiClient geminiClient;
     private final PromptTemplates promptTemplates;
     private final UserService userService;
+    private final com.togather.meeting.repository.MeetingRepository meetingRepository;
 
     /**
      * 워크스페이스·사용자별로 이미 분석한 콘텐츠와 수정 시각을 기록한다.
@@ -144,7 +145,8 @@ public class SuggestionService {
                     candidateType == SuggestionType.SCHEDULE ? parseDateTime(c.datetime()) : null,
                     candidateType == SuggestionType.TASK ? parseDate(c.dueDate()) : null));
         }
-        List<Suggestion> saved = saveNew(userId, excludeDuplicateCandidates(userId, candidates));
+        List<Suggestion> saved = saveNew(userId,
+                excludeDuplicateCandidates(userId, excludeConfirmedMeetings(workspaceId, candidates)));
         log.info("후보 탐지: workspaceId={}, userId={}, messages={}, created={}", workspaceId, userId,
                 messages.size(), saved.size());
         return new DetectResultResponse(messages.size(), toDtos(saved), direct.warnings());
@@ -319,6 +321,7 @@ public class SuggestionService {
                 .map(Suggestion::getSourceContentRefId).collect(Collectors.toSet());
         return all.stream()
                 .filter(m -> !m.isOriginDeleted() && !seen.contains(m.getContentRefId()))
+                .filter(m -> !isCalendarInvitation(m))
                 .filter(m -> !revision(m).equals(scanned.get(m.getContentRefId())))
                 .collect(Collectors.toMap(ContentRef::getContentRefId, Function.identity(), (a, b) -> a,
                         LinkedHashMap::new))
@@ -349,6 +352,42 @@ public class SuggestionService {
     private static LocalDateTime revision(ContentRef source) {
         return source.getLastModifiedAt() != null ? source.getLastModifiedAt()
                 : source.getCreatedAt() != null ? source.getCreatedAt() : LocalDateTime.MIN;
+    }
+
+    /**
+     * Google Calendar가 보낸 초대·변경·취소·응답 메일. 이미 캘린더에 있는 일정이라 후보로 다시 내지 않는다.
+     * (예전에는 메일 속 UTC 시간을 그대로 읽어 9시간 틀린 후보가 생기고, 확정한 회의를 다시 제안했다)
+     */
+    static boolean isCalendarInvitation(ContentRef message) {
+        if (message.getProvider() != Provider.GMAIL) {
+            return false;
+        }
+        String title = Objects.requireNonNullElse(message.getTitle(), "").strip();
+        String content = Objects.requireNonNullElse(message.getContent(), "");
+        boolean calendarMail = content.contains("calendar.google.com/calendar")
+                || Objects.requireNonNullElse(message.getAuthorName(), "").contains("calendar-notification@google.com");
+        return calendarMail && CALENDAR_SUBJECT.matcher(title).find();
+    }
+
+    private static final java.util.regex.Pattern CALENDAR_SUBJECT = java.util.regex.Pattern.compile(
+            "^(Invitation|Updated invitation|Canceled event|Cancelled event|Accepted|Declined|Tentatively accepted"
+                    + "|초대장|업데이트된 초대장|취소된 일정|일정 취소|수락함|거절함|미정)[^:：]*[:：]",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** 이미 확정한 회의와 같은 날, 비슷한 제목의 일정 후보는 내지 않는다. */
+    List<Suggestion> excludeConfirmedMeetings(Long workspaceId, List<Suggestion> candidates) {
+        if (candidates.stream().noneMatch(c -> c.getType() == SuggestionType.SCHEDULE)) {
+            return candidates;
+        }
+        LocalDateTime now = LocalDateTime.now(SlackApiClient.ZONE);
+        List<com.togather.meeting.domain.Meeting> confirmed = meetingRepository.findAllByWorkspaceIdAndStatusAndStartAtBetween(
+                workspaceId, com.togather.common.enums.MeetingStatus.CONFIRMED, now.minusDays(LOOKBACK_DAYS), now.plusDays(90));
+        return candidates.stream()
+                .filter(c -> c.getType() != SuggestionType.SCHEDULE || confirmed.stream().noneMatch(m ->
+                        isSimilar(normalize(m.getTitle()), normalize(c.getTitle()))
+                                && (c.getDetectedDatetime() == null || m.getStartAt() == null
+                                || c.getDetectedDatetime().toLocalDate().equals(m.getStartAt().toLocalDate()))))
+                .toList();
     }
 
     /** 명세서 excludeDuplicateCandidates: 대기 중 후보, 개인 할 일, 담당 Task와 제목이 겹치면 제외 */

@@ -61,7 +61,7 @@ export default function DriveFolderPicker({ workspaceId, folders, connectedCount
   const [focusDepth, setFocusDepth] = useState<number | null>(null);
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 640px), (hover: none)').matches);
   const root = folders.find(folder => folder.id === activeFolderId);
-  const selectedName = path.at(-1)?.name ?? root?.name ?? (showAll ? '전체 폴더' : folders[0]?.name ?? '폴더 선택');
+  const selectedName = path.at(-1)?.name ?? root?.name ?? (showAll ? '전체 파일' : folders[0]?.name ?? '폴더 선택');
   const selectedPath = [root?.name, ...path.map(folder => folder.name)].filter(Boolean).join(' / ');
 
   const close = useCallback((restoreFocus = false) => {
@@ -205,7 +205,7 @@ export default function DriveFolderPicker({ workspaceId, folders, connectedCount
           onPointerEnter={() => setTrail([])}>
           <button type="button" role="menuitemradio" aria-checked={activeFolderId == null} data-menu-choice tabIndex={-1}
             className="drive-folder-menu__choice" onClick={() => select(null, [])}>
-            <FolderIcon /><span className="drive-folder-menu__name">전체 폴더</span>{activeFolderId == null && <span aria-hidden="true">✓</span>}
+            <FolderIcon /><span className="drive-folder-menu__name">전체 파일</span>{activeFolderId == null && <span aria-hidden="true">✓</span>}
           </button>
         </div>}
         {folders.map(folder => row(folder, 0))}

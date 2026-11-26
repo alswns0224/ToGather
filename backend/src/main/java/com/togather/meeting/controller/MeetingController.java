@@ -38,6 +38,13 @@ public class MeetingController {
 
     private final MeetingService meetingService;
     private final WorkspaceAccessChecker workspaceAccessChecker;
+    private final com.togather.common.event.WorkspaceEventService workspaceEventService;
+
+    /** 회의 화면을 보고 있는 팀원에게 바뀐 회의를 알린다. (서비스가 커밋한 뒤 호출된다) */
+    private <T> T changed(Long workspaceId, Long meetingId, T result) {
+        workspaceEventService.publish(workspaceId, "MEETING", String.valueOf(meetingId));
+        return result;
+    }
 
     @GetMapping
     public ApiResponse<List<MeetingSummaryResponse>> getMeetings(@LoginUser Long userId, @PathVariable Long workspaceId) {
@@ -50,7 +57,8 @@ public class MeetingController {
     public ApiResponse<MeetingDetailResponse> createMeeting(@LoginUser Long userId, @PathVariable Long workspaceId,
                                                             @Valid @RequestBody MeetingCreateRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.createMeeting(workspaceId, userId, request));
+        MeetingDetailResponse created = meetingService.createMeeting(workspaceId, userId, request);
+        return ApiResponse.ok(changed(workspaceId, created.meetingId(), created));
     }
 
     /** 안건으로 고를 수 있는 진행 중 Task */
@@ -72,7 +80,8 @@ public class MeetingController {
                                                             @PathVariable Long meetingId,
                                                             @Valid @RequestBody MeetingUpdateRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.updateMeeting(workspaceId, meetingId, userId, request));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.updateMeeting(workspaceId, meetingId, userId, request)));
     }
 
     @PostMapping("/{meetingId}/cancel")
@@ -80,6 +89,7 @@ public class MeetingController {
     public void cancelMeeting(@LoginUser Long userId, @PathVariable Long workspaceId, @PathVariable Long meetingId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         meetingService.cancelMeeting(workspaceId, meetingId, userId);
+        changed(workspaceId, meetingId, null);
     }
 
     // ===== 안건 =====
@@ -89,7 +99,8 @@ public class MeetingController {
                                                         @PathVariable Long meetingId,
                                                         @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.addAgenda(workspaceId, meetingId, userId, request.taskId()));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.addAgenda(workspaceId, meetingId, userId, request.taskId())));
     }
 
     @PatchMapping("/{meetingId}/agendas/{agendaId}")
@@ -97,14 +108,16 @@ public class MeetingController {
                                                            @PathVariable Long meetingId, @PathVariable Long agendaId,
                                                            @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId()));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId())));
     }
 
     @DeleteMapping("/{meetingId}/agendas/{agendaId}")
     public ApiResponse<MeetingDetailResponse> deleteAgenda(@LoginUser Long userId, @PathVariable Long workspaceId,
                                                            @PathVariable Long meetingId, @PathVariable Long agendaId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.deleteAgenda(workspaceId, meetingId, agendaId, userId));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.deleteAgenda(workspaceId, meetingId, agendaId, userId)));
     }
 
     // ===== 가용 시간 =====
@@ -122,7 +135,8 @@ public class MeetingController {
                                                               @PathVariable Long meetingId,
                                                               @Valid @RequestBody AvailabilitySaveRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.saveAvailability(workspaceId, meetingId, userId, request));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.saveAvailability(workspaceId, meetingId, userId, request)));
     }
 
     @GetMapping("/{meetingId}/responses")
@@ -146,8 +160,9 @@ public class MeetingController {
                                                              @PathVariable Long meetingId,
                                                              @Valid @RequestBody ConfirmRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.confirmMeeting(workspaceId, meetingId, userId, request.startAt(),
-                Boolean.TRUE.equals(request.force())));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.confirmMeeting(workspaceId, meetingId, userId, request.startAt(),
+                        Boolean.TRUE.equals(request.force()))));
     }
 
     /** 확정하려는 시간에 이미 다른 일정이 있는 참여자 (확정 직전 확인) */
@@ -168,6 +183,7 @@ public class MeetingController {
                                                                         @PathVariable Long workspaceId,
                                                                         @PathVariable Long meetingId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(meetingService.retryCalendarRegistration(workspaceId, meetingId, userId));
+        return ApiResponse.ok(changed(workspaceId, meetingId,
+                meetingService.retryCalendarRegistration(workspaceId, meetingId, userId)));
     }
 }

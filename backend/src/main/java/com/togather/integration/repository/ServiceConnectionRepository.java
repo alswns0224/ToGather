@@ -23,6 +23,8 @@ public interface ServiceConnectionRepository extends JpaRepository<ServiceConnec
 
     List<ServiceConnection> findAllByWorkspaceIdAndStatusNot(Long workspaceId, ConnectionStatus status);
 
+    List<ServiceConnection> findAllByWorkspaceIdAndProvider(Long workspaceId, Provider provider);
+
     /** 한 팀원이 이 워크스페이스에서 만든 연결 (해제된 것 포함) */
     List<ServiceConnection> findAllByWorkspaceIdAndUserId(Long workspaceId, Long userId);
 

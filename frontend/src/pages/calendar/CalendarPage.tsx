@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { createEvent, deleteEvent, getEvents, updateEvent, type CalendarEvent, type CalendarEventForm } from './api';
 import { getMembers, type MemberResponse } from '../workspace/api';
+import { getIntegrations, reauthUrl } from '../integration/api';
 import { useAsync } from '../../hooks/useAsync';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { ApiError } from '../../api/client';
@@ -53,6 +54,14 @@ export default function CalendarPage() {
   const to = toLocalIso(addDays(start, days));
   const events = useAsync(() => getEvents(workspaceId, from, to), [workspaceId, from, to]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
+  // 일정을 다시 불러올 때마다 내 Calendar 연결 상태도 본다. 외부에서 권한을 끊었으면 개인 일정이 빠지므로 안내한다.
+  const myCalendar = useAsync(
+    () => getIntegrations(workspaceId).then(
+      (all) => all.find((i) => i.provider === 'GOOGLE_CALENDAR')?.connections.find((c) => c.mine) ?? null,
+    ),
+    [workspaceId, events.data, events.error],
+  );
+  const needsReauth = myCalendar.data?.status === 'REAUTH_REQUIRED';
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null);
 
@@ -100,7 +109,9 @@ export default function CalendarPage() {
         description="팀의 회의와 내 일정을 한눈에 확인하세요."
         actions={
           <>
-            {!notConnected && events.data && <span className="badge badge-success">● Google Calendar 연결됨</span>}
+            {!notConnected && !needsReauth && events.data && (
+              <span className="badge badge-success">● Google Calendar 연결됨</span>
+            )}
             <button type="button" className="btn" onClick={events.reload} disabled={events.loading}>
               {events.loading ? '불러오는 중...' : '↻ 동기화'}
             </button>
@@ -115,6 +126,11 @@ export default function CalendarPage() {
         <div className="alert">
           Google Calendar가 연결되지 않았습니다. <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리</Link>
           에서 연결하세요.
+        </div>
+      ) : needsReauth && myCalendar.data ? (
+        <div className="alert">
+          Google Calendar 권한이 끊겨 내 개인 일정을 불러오지 못했어요.{' '}
+          <a href={reauthUrl(workspaceId, myCalendar.data.connectionId)}>재인증하기</a>
         </div>
       ) : (
         events.error && <ErrorBox error={events.error} onRetry={events.reload} />

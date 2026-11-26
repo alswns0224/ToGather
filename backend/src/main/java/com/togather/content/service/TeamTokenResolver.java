@@ -5,6 +5,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import com.togather.integration.service.IntegrationService;
 import com.togather.integration.service.IntegrationService.TargetAccess;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -51,6 +52,14 @@ public class TeamTokenResolver {
             throw targetOwnerError;
         }
         throw new BusinessException(ErrorCode.CONNECTION_NOT_FOUND);
+    }
+
+    /**
+     * 이 워크스페이스에서 이 서비스를 쓸 수 있는 모든 팀원 연결의 토큰. (재인증 필요·해제된 연결 제외)
+     * 한 사람의 토큰으로 "없음"이 나왔을 때, 공유가 해제된 것인지 실제로 지워진 것인지 다른 팀원 연결로 확인하는 데 쓴다.
+     */
+    public List<String> allTokens(Long workspaceId, Provider provider) {
+        return integrationService.usableAccessTokens(workspaceId, provider);
     }
 
     /** 토큰이 없으면 빈 값 (있으면 좋은 정보: 이름 표시, 담당자 매핑 등) */

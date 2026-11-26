@@ -1,6 +1,8 @@
 // UI-09 Task 협업 맥락 (담당: C)
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useParams } from 'react-router';
+import { ApiError } from '../../api/client';
 import { MUTED } from '../../components/ui';
 import NavIcon from '../../layouts/NavIcon';
 import { useAsync } from '../../hooks/useAsync';
@@ -42,7 +44,15 @@ export default function TaskContextPage() {
 function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: string }) {
   const [context, setContext] = useState<TaskContext | null>(null);
   const [contextError, setContextError] = useState<string | null>(null);
+  // 없는 작업(404)·권한 없음(403)은 다시 시도해도 같으므로 목록으로 보낸다.
+  const [contextMissing, setContextMissing] = useState(false);
   const [contextRevision, setContextRevision] = useState(0);
+  // 이 작업이 바뀌거나(다른 팀원의 수정·제출) 연결된 Drive 파일이 바뀌면 다시 불러온다.
+  useWorkspaceEvents(workspaceId ?? '', (event) => {
+    if ((event.provider === 'TASK' && event.targetId === taskId) || event.provider === 'GOOGLE_DRIVE') {
+      setContextRevision((current) => current + 1);
+    }
+  });
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [addingDeliverable, setAddingDeliverable] = useState(false);
@@ -63,7 +73,11 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
     setContextError(null);
     getTaskContext(workspaceId, taskId)
       .then(result => { if (active) setContext(result); })
-      .catch(error => { if (active) setContextError(errorText(error, '팀 작업을 불러오지 못했습니다.')); });
+      .catch(error => {
+        if (!active) return;
+        setContextError(errorText(error, '팀 작업을 불러오지 못했습니다.'));
+        setContextMissing(error instanceof ApiError && (error.status === 404 || error.status === 403));
+      });
     return () => { active = false; };
   }, [workspaceId, taskId, contextRevision]);
 
@@ -135,9 +149,13 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
       {contextError && (
         <div role="alert" className="alert alert-error">
           <span>{contextError}</span>
-          <button type="button" className="btn btn-small" onClick={() => setContextRevision((current) => current + 1)}>
-            다시 시도
-          </button>
+          {contextMissing ? (
+            <Link to={`/workspaces/${workspaceId}/tasks`} className="btn btn-small">팀 작업 목록으로</Link>
+          ) : (
+            <button type="button" className="btn btn-small" onClick={() => setContextRevision((current) => current + 1)}>
+              다시 시도
+            </button>
+          )}
         </div>
       )}
       {actionError && (
@@ -543,6 +561,11 @@ function DeliverableCard({
             )
           ) : (
             file && <span className="text-xs text-[var(--muted)]">{file.name}</span>
+          )}
+          {deliverable.submitted && deliverable.fileStatus && (
+            <span className="ml-2 text-xs text-[var(--warning)]">
+              {deliverable.fileStatus === 'TRASHED' ? '휴지통으로 이동됨' : '원본을 확인할 수 없음'}
+            </span>
           )}
         </div>
         {deliverable.submitted ? (

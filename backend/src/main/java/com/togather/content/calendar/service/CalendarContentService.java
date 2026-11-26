@@ -83,13 +83,31 @@ public class CalendarContentService {
         if (!from.isBefore(to)) {
             throw new BusinessException(ErrorCode.INVALID_TIME_RANGE);
         }
-        Optional<Access> team = integrationService.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR)
-                .map(t -> new Access(t.accessToken(), t.targetIds().get(0), null));
+        Optional<IntegrationService.TargetAccess> teamTarget =
+                integrationService.findTargetAccess(workspaceId, Provider.GOOGLE_CALENDAR);
+        Optional<Access> team = teamTarget.map(t -> new Access(t.accessToken(), t.targetIds().get(0), null));
         if (team.isEmpty()) {
             Access personal = personalAccess(workspaceId, userId);
-            return toResponses(workspaceId, personal, calendarClient.listEvents(personal.token(), personal.calendarId(), from, to));
+            try {
+                return toResponses(workspaceId, personal,
+                        calendarClient.listEvents(personal.token(), personal.calendarId(), from, to));
+            } catch (BusinessException e) {
+                if (e.getErrorCode() == ErrorCode.REAUTH_REQUIRED) {
+                    integrationService.reportUnauthorized(workspaceId, userId, Provider.GOOGLE_CALENDAR);
+                }
+                throw e;
+            }
         }
-        List<CalendarEvent> teamEvents = calendarClient.listEvents(team.get().token(), team.get().calendarId(), from, to);
+        List<CalendarEvent> teamEvents;
+        try {
+            teamEvents = calendarClient.listEvents(team.get().token(), team.get().calendarId(), from, to);
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.REAUTH_REQUIRED) {
+                // 팀장 캘린더 권한이 끊겼다. 팀장 연결을 재인증 필요로 표시한다.
+                integrationService.reportUnauthorized(teamTarget.get().connectionId());
+            }
+            throw e;
+        }
         // 참여자 캘린더에 넣은 사본은 일정 ID가 달라도 iCalUID가 같으므로 둘 다로 거른다.
         Set<String> teamEventIds = teamEvents.stream()
                 .flatMap(e -> java.util.stream.Stream.of(e.id(), e.iCalUid()))
@@ -128,6 +146,10 @@ public class CalendarContentService {
         } catch (BusinessException e) {
             log.warn("개인 캘린더 일정을 읽지 못해 팀 일정만 보여 줍니다: workspaceId={}, userId={}, code={}",
                     workspaceId, userId, e.getErrorCode());
+            if (e.getErrorCode() == ErrorCode.REAUTH_REQUIRED) {
+                // 외부에서 권한을 끊었으면 바로 재인증 필요로 표시한다. 일정 화면은 연동 상태를 보고 안내를 띄운다.
+                integrationService.reportUnauthorized(workspaceId, userId, Provider.GOOGLE_CALENDAR);
+            }
             return List.of();
         }
     }

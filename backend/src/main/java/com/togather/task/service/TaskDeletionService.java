@@ -23,6 +23,7 @@ public class TaskDeletionService {
     private final TaskRepository taskRepository;
     private final MeetingService meetingService;
     private final ApplicationEventPublisher events;
+    private final com.togather.common.event.WorkspaceEventService workspaceEventService;
 
     public List<MeetingSummary> getDeletionBlockers(Long workspaceId, Long taskId) {
         taskRepository.findById(taskId)
@@ -41,6 +42,7 @@ public class TaskDeletionService {
         }
         taskRepository.delete(task);
         events.publishEvent(new TaskDeletedEvent(workspaceId, taskId));
+        workspaceEventService.publish(workspaceId, TaskService.TASK_EVENT, String.valueOf(taskId));
     }
 
     private List<MeetingSummary> activeMeetings(Long taskId) {

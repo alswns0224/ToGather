@@ -57,6 +57,8 @@ export interface TaskDeliverable {
   fileName: string | null;
   link: string | null;
   submitted: boolean;
+  /** 제출한 Drive 파일 상태: TRASHED(휴지통으로 이동됨), DELETED(원본을 확인할 수 없음) */
+  fileStatus?: 'TRASHED' | 'DELETED' | null;
 }
 
 export interface TaskContext {
@@ -203,6 +205,14 @@ export const getTaskContext = (workspaceId: string, taskId: string) =>
 
 export const getTasksByContent = (workspaceId: string, contentRefId: number) =>
   http.get<TaskSummary[]>(ws(workspaceId, `/contents/${contentRefId}/tasks`));
+
+/** 여러 콘텐츠(메시지)에 연결된 팀 작업 수. 연결이 없는 콘텐츠는 빠진다. */
+export const getTaskCountsByContents = (workspaceId: string, contentRefIds: number[]) =>
+  contentRefIds.length === 0
+    ? Promise.resolve({} as Record<string, number>)
+    : http.get<Record<string, number>>(
+      ws(workspaceId, `/contents/task-counts?contentRefIds=${contentRefIds.join(',')}`),
+    );
 
 export const getReferenceCandidates = (
   workspaceId: string, taskId: string, provider: TaskReferenceProvider, query: string,

@@ -268,6 +268,12 @@ function ServiceCard({
         </div>
       )}
 
+      {(item.parkedTargets?.length ?? 0) > 0 && (
+        <div className="alert small">
+          연결이 끊겨 지금 쓰지 못하는 {label.target || '대상'}: <strong>{item.parkedTargets!.join(', ')}</strong>
+          <br />이 {label.target || '대상'}을(를) 볼 수 있는 계정으로 연결하면 그대로 되살아나요.
+        </div>
+      )}
       {syncError && <div className="alert alert-error small">동기화하지 못했습니다. {syncError}</div>}
 
       <div className="flex flex-wrap gap-2">

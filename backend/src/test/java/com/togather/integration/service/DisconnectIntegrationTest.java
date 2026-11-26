@@ -296,6 +296,7 @@ class DisconnectIntegrationTest extends IntegrationTestSupport {
         var saved = connections.findById(connection.getConnectionId()).orElseThrow();
         assertThat(saved.getStatus()).isEqualTo(ConnectionStatus.DISCONNECTED);
         assertThat(saved.getEncryptedTokens()).isEmpty();
-        assertThat(targets.findAllByConnectionId(connection.getConnectionId())).isEmpty();
+        // 연동 폴더는 지우지 않고 해제된 연결에 보관한다(다시 연결하면 되살림). 다만 더 이상 쓰이지는 않는다.
+        assertThat(integrations.getConnectionTargets(workspaceId, Provider.GOOGLE_DRIVE)).isEmpty();
     }
 }

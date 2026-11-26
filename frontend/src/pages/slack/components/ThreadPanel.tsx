@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createReply, deleteMessage, getThread, updateMessage, type SlackMessageResponse } from '../api';
 import { useAsync } from '../../../hooks/useAsync';
+import { getTaskCountsByContents } from '../../task/api';
 import { ErrorBox, Loading } from '../../../components/Status';
 import { BTN_AI } from '../../../components/ui';
 import Composer from './Composer';
@@ -27,6 +28,12 @@ export default function ThreadPanel({
   onAnalyze?: (root: SlackMessageResponse) => void;
 }) {
   const thread = useAsync(() => getThread(workspaceId, channelId, ts), [workspaceId, channelId, ts]);
+  // 답글 중 연결된 팀 작업이 있는 것에만 "연결된 Task"를 보여 준다.
+  const replyIds = (thread.data?.replies ?? []).map((r) => r.contentRefId).filter((id): id is number => id != null);
+  const linkedCounts = useAsync(
+    () => getTaskCountsByContents(workspaceId, replyIds).catch(() => null),
+    [workspaceId, replyIds.join(',')],
+  );
   const { reload } = thread;
   useEffect(() => {
     if (refreshKey > 0) reload();
@@ -89,6 +96,8 @@ export default function ThreadPanel({
                     key={r.ts}
                     workspaceId={workspaceId}
                     message={r}
+                    linkedTaskCount={linkedCounts.data && r.contentRefId != null
+                      ? linkedCounts.data[String(r.contentRefId)] ?? 0 : undefined}
                     onUpdate={async (text) => {
                       await updateMessage(workspaceId, channelId, r.ts, text);
                       changed();

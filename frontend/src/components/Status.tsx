@@ -26,6 +26,21 @@ export function ErrorBox({ error, onRetry }: { error: Error; onRetry?: () => voi
   if (error instanceof ApiError && error.code === 'CONTENT_ACCESS_DENIED') {
     return <div className="alert">{error.message}</div>;
   }
+  // 없는 항목(404)·권한 없음(403)은 다시 시도해도 같으므로, 갈 곳을 알려 준다.
+  if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
+    const toList = error.status === 403 || !workspaceId;
+    return (
+      <div className="alert alert-error">
+        <span>{error.message || '찾을 수 없습니다.'}</span>
+        <Link
+          to={toList ? '/workspaces' : `/workspaces/${workspaceId}/home`}
+          className="btn btn-small"
+        >
+          {toList ? '워크스페이스 목록으로' : '대시보드로 가기'}
+        </Link>
+      </div>
+    );
+  }
   return (
     <div className="alert alert-error">
       <span>{error.message || '문제가 발생했습니다.'}</span>

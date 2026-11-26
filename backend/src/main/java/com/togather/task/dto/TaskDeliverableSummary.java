@@ -12,10 +12,16 @@ public record TaskDeliverableSummary(
     String link,
     Long submittedBy,
     LocalDateTime submittedAt,
-    boolean submitted
+    boolean submitted,
+    /** 제출한 Drive 파일 상태: TRASHED(휴지통으로 이동됨), DELETED(원본을 확인할 수 없음), 그 밖에는 null */
+    String fileStatus
 ) {
 
     public static TaskDeliverableSummary from(TaskDeliverable deliverable) {
+        return from(deliverable, null);
+    }
+
+    public static TaskDeliverableSummary from(TaskDeliverable deliverable, String fileStatus) {
         return new TaskDeliverableSummary(
             deliverable.getDeliverableId(),
             deliverable.getName(),
@@ -25,7 +31,8 @@ public record TaskDeliverableSummary(
             deliverable.getLink(),
             deliverable.getSubmittedBy(),
             deliverable.getSubmittedAt(),
-            deliverable.isSubmitted()
+            deliverable.isSubmitted(),
+            fileStatus
         );
     }
 }

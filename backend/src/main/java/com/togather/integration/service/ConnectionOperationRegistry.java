@@ -31,7 +31,24 @@ public class ConnectionOperationRegistry {
         Scope scope = current.get();
         if (scope != null) {
             scope.root().reserve(key(connection));
+            if (connection.getConnectionId() != null) {
+                scope.lastUsed.put(connection.getProvider(), connection.getConnectionId());
+            }
         }
+    }
+
+    /**
+     * 지금 작업(가장 안쪽 범위부터 바깥으로)에서 이 서비스로 마지막에 쓴 연결.
+     * 외부 서비스가 "권한 없음(401)"을 돌려줬을 때 어느 연결의 권한이 끊겼는지 알아내는 데 쓴다.
+     */
+    public java.util.Optional<Long> lastUsedConnection(Provider provider) {
+        for (Scope scope = current.get(); scope != null; scope = scope.parent) {
+            Long id = scope.lastUsed.get(provider);
+            if (id != null) {
+                return java.util.Optional.of(id);
+            }
+        }
+        return java.util.Optional.empty();
     }
 
     public AutoCloseableLease beginDisconnect(ServiceConnection connection) {
@@ -120,6 +137,7 @@ public class ConnectionOperationRegistry {
     public final class Scope implements AutoCloseable {
         private final Scope parent;
         private final Set<Key> used = new HashSet<>();
+        private final Map<Provider, Long> lastUsed = new java.util.concurrent.ConcurrentHashMap<>();
         private final AtomicBoolean closed = new AtomicBoolean();
 
         private Scope(Scope parent) {

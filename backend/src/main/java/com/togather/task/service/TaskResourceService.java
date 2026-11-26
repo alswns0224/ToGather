@@ -42,6 +42,7 @@ public class TaskResourceService {
     private final NotionContentService notionContentService;
     private final DriveContentService driveContentService;
     private final ContentAccessService contentAccess;
+    private final com.togather.common.event.WorkspaceEventService workspaceEventService;
 
     public List<TaskReferenceCandidate> getCandidates(Long workspaceId, Long userId, Long taskId,
                                                       Provider provider, String query) {
@@ -127,10 +128,13 @@ public class TaskResourceService {
         }
     }
 
+    /** 작업을 바꾸기 전에 잠근다. 바꾼 뒤(커밋 성공 시)에는 작업 화면을 보고 있는 팀원에게 알린다. */
     private Task lockTask(Long workspaceId, Long userId, Long taskId) {
         accessChecker.checkMember(workspaceId, userId);
-        return taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
+        Task task = taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
+        workspaceEventService.publish(workspaceId, TaskService.TASK_EVENT, String.valueOf(taskId));
+        return task;
     }
 
     private ContentRefDTO requireTeamContent(Long workspaceId, Long contentRefId) {

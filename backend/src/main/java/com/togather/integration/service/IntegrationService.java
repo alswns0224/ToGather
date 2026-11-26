@@ -137,6 +137,10 @@ public class IntegrationService {
             }
         }
         connection.changeAccountLabel(result.accountLabel());
+        if (connection.getConnectionId() == null) {
+            connection = connectionRepository.save(connection);
+        }
+        restoreParkedTargets(connection);
         refreshTargetStatus(connection, client);
         events.publishEvent(new ServiceConnectedEvent(connection.getWorkspaceId(), connection.getUserId(), provider));
         return connection.getConnectionId();
@@ -168,9 +172,27 @@ public class IntegrationService {
             boolean configured = clients.stream().anyMatch(c -> c.supports(provider) && c.isConfigured());
             IntegrationStatusResponse.TeamTarget teamTarget = provider == Provider.GOOGLE_CALENDAR
                     ? teamCalendar(workspaceId, connections, users) : null;
-            result.add(new IntegrationStatusResponse(provider, personal, configured, list, teamTarget));
+            result.add(new IntegrationStatusResponse(provider, personal, configured, list, teamTarget,
+                    personal ? List.of() : parkedTargetNames(workspaceId, provider, connections, targets)));
         }
         return result;
+    }
+
+    /** 끊긴 연결(해제·재인증 필요)에 남아 있고, 지금 쓰는 연결에는 없는 팀 대상 이름 */
+    private List<String> parkedTargetNames(Long workspaceId, Provider provider, List<ServiceConnection> activeConnections,
+                                           Map<Long, List<IntegrationTarget>> activeTargets) {
+        Set<String> usable = activeConnections.stream()
+                .filter(c -> c.getProvider() == provider && c.getStatus() != ConnectionStatus.REAUTH_REQUIRED)
+                .flatMap(c -> activeTargets.getOrDefault(c.getConnectionId(), List.of()).stream())
+                .map(IntegrationTarget::getExternalTargetId).collect(Collectors.toSet());
+        List<IntegrationTarget> stuck = new ArrayList<>(parkedTargets(workspaceId, provider));
+        activeConnections.stream()
+                .filter(c -> c.getProvider() == provider && c.getStatus() == ConnectionStatus.REAUTH_REQUIRED)
+                .forEach(c -> stuck.addAll(activeTargets.getOrDefault(c.getConnectionId(), List.of())));
+        return stuck.stream()
+                .filter(t -> !usable.contains(t.getExternalTargetId()))
+                .map(t -> t.getName() != null ? t.getName() : t.getExternalTargetId())
+                .distinct().toList();
     }
 
     /** 팀 일정이 들어가는 캘린더: 팀장의 기본 캘린더 (팀장이 Calendar를 연결하지 않았으면 null) */
@@ -239,6 +261,11 @@ public class IntegrationService {
                                 || (visibleToMe != null && visibleToMe.contains(t.getExternalTargetId())))
                         .forEach(targetRepository::delete);
             }
+            // 끊긴 연결에 보관해 둔 대상도, 내가 볼 수 있었던 것은 이번 선택으로 정리한다. (되살아나지 않게)
+            parkedTargets(workspaceId, connection.getProvider()).stream()
+                    .filter(t -> chosen.contains(t.getExternalTargetId())
+                            || (visibleToMe != null && visibleToMe.contains(t.getExternalTargetId())))
+                    .forEach(targetRepository::delete);
         }
         if (connection.getStatus() == ConnectionStatus.TARGET_NOT_SELECTED) {
             connection.changeStatus(ConnectionStatus.CONNECTED);
@@ -322,6 +349,113 @@ public class IntegrationService {
         }
     }
 
+    /** 이 서비스를 지금 쓸 수 있는 팀원 연결들의 토큰 (먼저 연결한 순서) */
+    public List<String> usableAccessTokens(Long workspaceId, Provider provider) {
+        List<String> tokens = new ArrayList<>();
+        for (ServiceConnection c : connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(
+                workspaceId, provider, ConnectionStatus.DISCONNECTED)) {
+            if (c.getStatus() == ConnectionStatus.REAUTH_REQUIRED) {
+                continue;
+            }
+            try {
+                tokens.add(validAccessToken(c));
+            } catch (BusinessException e) {
+                log.info("토큰을 쓸 수 없는 연결 건너뜀: connectionId={}, code={}", c.getConnectionId(), e.getErrorCode());
+            }
+        }
+        return tokens;
+    }
+
+    // ===================== 연결이 끊길 때 팀 대상 지키기 =====================
+
+    /** 팀이 고른 채널·페이지를 다른 팀원 연결로 넘길 수 있는 서비스. Drive는 팀장만 폴더를 가지므로 넘기지 않고 보관만 한다. */
+    private static final Set<Provider> HANDOVER_PROVIDERS = Set.of(Provider.SLACK, Provider.NOTION);
+
+    /**
+     * 연결이 끊기거나(해제) 쓸 수 없게 되면(재인증 필요) 그 연결이 가진 팀 대상을, 그 대상을 볼 수 있는 다른 팀원 연결로 옮긴다.
+     * 아무도 볼 수 없는 대상은 원래 연결에 그대로 남겨 둔다(보관). 해제된 연결의 대상은 목록에 쓰이지 않다가,
+     * 같은 서비스를 누군가 다시 연결해 그 대상이 보이면 {@link #restoreParkedTargets}가 되살린다.
+     */
+    private void handOverTargets(ServiceConnection leaving) {
+        if (!HANDOVER_PROVIDERS.contains(leaving.getProvider())) {
+            return;
+        }
+        List<IntegrationTarget> owned = targetRepository.findAllByConnectionId(leaving.getConnectionId());
+        if (owned.isEmpty()) {
+            return;
+        }
+        List<ServiceConnection> others = connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(
+                        leaving.getWorkspaceId(), leaving.getProvider(), ConnectionStatus.DISCONNECTED).stream()
+                .filter(c -> !c.getConnectionId().equals(leaving.getConnectionId()))
+                .filter(c -> c.getStatus() != ConnectionStatus.REAUTH_REQUIRED)
+                .toList();
+        List<IntegrationTarget> remaining = new ArrayList<>(owned);
+        for (ServiceConnection other : others) {
+            if (remaining.isEmpty()) {
+                break;
+            }
+            Set<String> visible = visibleTargetOptions(other);
+            if (visible == null) {
+                continue;
+            }
+            Set<String> already = targetRepository.findAllByConnectionId(other.getConnectionId()).stream()
+                    .map(IntegrationTarget::getExternalTargetId).collect(Collectors.toSet());
+            for (IntegrationTarget target : List.copyOf(remaining)) {
+                if (visible.contains(target.getExternalTargetId())) {
+                    if (already.add(target.getExternalTargetId())) {
+                        targetRepository.save(new IntegrationTarget(other.getConnectionId(),
+                                target.getExternalTargetId(), target.getName()));
+                    }
+                    targetRepository.delete(target);
+                    remaining.remove(target);
+                }
+            }
+        }
+        log.info("연결이 끊겨 팀 대상 이관: connectionId={}, provider={}, moved={}, parked={}", leaving.getConnectionId(),
+                leaving.getProvider(), owned.size() - remaining.size(), remaining.size());
+    }
+
+    /**
+     * 새로 연결(또는 다시 연결)했을 때, 예전에 끊긴 연결에 보관해 둔 팀 대상 중 이 연결로 볼 수 있는 것을 되살린다.
+     * Drive 폴더는 팀장 연결로만 되살린다.
+     */
+    private void restoreParkedTargets(ServiceConnection connection) {
+        Provider provider = connection.getProvider();
+        if (!HANDOVER_PROVIDERS.contains(provider) && provider != Provider.GOOGLE_DRIVE) {
+            return;
+        }
+        if (provider == Provider.GOOGLE_DRIVE && !isMainOwner(connection)) {
+            return;
+        }
+        List<IntegrationTarget> parked = parkedTargets(connection.getWorkspaceId(), provider);
+        if (parked.isEmpty()) {
+            return;
+        }
+        Set<String> visible = visibleTargetOptions(connection);
+        if (visible == null) {
+            return;
+        }
+        Set<String> active = new java.util.HashSet<>(getConnectionTargets(connection.getWorkspaceId(), provider));
+        for (IntegrationTarget target : parked) {
+            if (!visible.contains(target.getExternalTargetId())) {
+                continue;
+            }
+            if (active.add(target.getExternalTargetId())) {
+                targetRepository.save(new IntegrationTarget(connection.getConnectionId(),
+                        target.getExternalTargetId(), target.getName()));
+            }
+            targetRepository.delete(target);
+        }
+    }
+
+    /** 해제된 연결에 보관된 팀 대상 */
+    private List<IntegrationTarget> parkedTargets(Long workspaceId, Provider provider) {
+        List<Long> disconnected = connectionRepository.findAllByWorkspaceIdAndProvider(workspaceId, provider).stream()
+                .filter(c -> c.getStatus() == ConnectionStatus.DISCONNECTED)
+                .map(ServiceConnection::getConnectionId).toList();
+        return disconnected.isEmpty() ? List.of() : targetRepository.findAllByConnectionIdIn(disconnected);
+    }
+
     /** 대상 선택 없이 연결을 완료한다. (Calendar 등 대상이 선택 사항인 서비스) */
     @Transactional
     public ConnectionStatusDTO skipTargetSelection(Long workspaceId, Long userId, Long connectionId) {
@@ -369,7 +503,8 @@ public class IntegrationService {
                 manualRevocationRequired = true;
                 log.info("외부 토큰 폐기를 확인하지 못함: connectionId={}, code={}", connectionId, e.getErrorCode());
             }
-            targetRepository.deleteAllByConnectionId(connectionId);
+            // 팀 대상은 지우지 않는다: 볼 수 있는 다른 팀원 연결로 넘기고, 남은 것은 이 연결에 보관했다가 다시 연결하면 되살린다.
+            handOverTargets(connection);
             connection.disconnect();
             boolean relatedReauth = !shared && !manualRevocationRequired && markRelatedGoogleConnections(connection);
             return new DisconnectResult(manualRevocationRequired, relatedReauth);
@@ -631,6 +766,53 @@ public class IntegrationService {
     }
 
     // ===================== 내부 =====================
+
+    /**
+     * 외부 서비스가 이 연결의 토큰을 "권한 없음(401)"으로 거절했다. (외부에서 권한을 끊은 경우 등)
+     * 바로 재인증 필요로 바꾸지 않고 먼저 토큰 갱신을 한 번 해 본다. 갱신되면(잠깐 만료된 토큰) 그대로 두고,
+     * 갱신할 수 없으면 REAUTH_REQUIRED로 바꿔 연동 관리·대시보드에 바로 재인증 안내가 나가게 한다.
+     *
+     * @return 재인증 필요로 바꿨으면 true
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean reportUnauthorized(Long connectionId) {
+        return connectionRepository.findById(connectionId).map(this::markUnauthorized).orElse(false);
+    }
+
+    /** 이 사용자의 개인 연결(Calendar·Gmail 등)이 권한 없음으로 거절됐을 때 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean reportUnauthorized(Long workspaceId, Long userId, Provider provider) {
+        return connectionRepository.findFirstByWorkspaceIdAndUserIdAndProviderAndStatusNot(
+                        workspaceId, userId, provider, ConnectionStatus.DISCONNECTED)
+                .map(this::markUnauthorized)
+                .orElse(false);
+    }
+
+    private boolean markUnauthorized(ServiceConnection connection) {
+        Long connectionId = connection.getConnectionId();
+        if (!connection.isActive() || connection.getStatus() == ConnectionStatus.REAUTH_REQUIRED) {
+            return false;
+        }
+        try {
+            String refreshToken = tokenCipher.decrypt(connection.getEncryptedTokens()).refreshToken();
+            if (refreshToken != null) {
+                OAuthToken refreshed = clientFor(connection.getProvider()).refresh(refreshToken);
+                if (refreshed != null && refreshed.accessToken() != null) {
+                    connection.refreshTokens(tokenCipher.encrypt(refreshed.accessToken(), refreshed.refreshToken()),
+                            refreshed.scope() != null ? refreshed.scope() : connection.getScope(),
+                            refreshed.expiresAt(LocalDateTime.now()));
+                    return false;
+                }
+            }
+        } catch (BusinessException e) {
+            log.info("권한 없음 응답 뒤 토큰 갱신 실패: connectionId={}, code={}", connectionId, e.getErrorCode());
+        }
+        connection.changeStatus(ConnectionStatus.REAUTH_REQUIRED);
+        log.warn("외부 서비스가 권한을 거절해 재인증 필요로 표시: connectionId={}, provider={}",
+                connectionId, connection.getProvider());
+        handOverTargets(connection);
+        return true;
+    }
 
     /** 토큰을 꺼내고 만료됐으면 갱신한다. 갱신할 수 없으면 REAUTH_REQUIRED로 표시하고 예외를 던진다. */
     String validAccessToken(ServiceConnection connection) {

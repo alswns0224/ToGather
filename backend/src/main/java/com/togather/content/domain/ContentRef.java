@@ -98,6 +98,12 @@ public class ContentRef {
     private boolean driveTrashed;
 
     /**
+     * Google Drive 휴지통에 들어간 것을 ToGather가 처음 본 시각(서울 시간).
+     * Drive는 휴지통에 넣은 시각을 알려 주지 않으므로, 휴지통 화면의 "삭제한 때"에 이 값을 쓴다.
+     */
+    private LocalDateTime driveTrashedAt;
+
+    /**
      * 원본이 삭제되었을 때 보관한
      * 마지막 콘텐츠 사본.
      */
@@ -217,6 +223,16 @@ public class ContentRef {
      *
      * 삭제 상태 해제는 restoreOriginDeleted()에서 처리한다.
      */
+    /**
+     * Drive 파일의 생성 시각을 원본(Google)이 준 값으로 맞춘다.
+     * 예전에 UTC로 저장된 값(V15 이전)도 다음 동기화 때 한국 시간으로 바로잡힌다.
+     */
+    public void correctCreatedAt(LocalDateTime sourceCreatedAt) {
+        if (sourceCreatedAt != null) {
+            this.createdAt = sourceCreatedAt;
+        }
+    }
+
     public void applySync(
         String title,
         String content,
@@ -350,6 +366,11 @@ public class ContentRef {
             markOriginDeleted();
         } else {
             restoreOriginDeleted();
+        }
+        if (trashed && !driveTrashed) {
+            driveTrashedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
+        } else if (!trashed) {
+            driveTrashedAt = null;
         }
         driveTrashed = trashed;
         return changed;

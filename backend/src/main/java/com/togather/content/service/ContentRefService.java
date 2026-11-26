@@ -56,6 +56,7 @@ public class ContentRefService {
         new ThreadLocal<>();
 
     private final ContentRefRepository contentRefRepository;
+    private final com.togather.content.drive.repository.DriveTrashEntryRepository driveTrashEntryRepository;
 
     /**
      * work를 실행하는 동안 실제로 바뀐 콘텐츠 수를 센다.
@@ -201,6 +202,7 @@ public class ContentRefService {
                     command.authorName()
                 );
                 if (updateFileSize) existing.updateFileSize(fileSize);
+                if (driveFile) existing.correctCreatedAt(command.createdAt());
 
                 // 5. 상위 콘텐츠 연결
                 existing.attachToParent(
@@ -333,8 +335,25 @@ public class ContentRefService {
             .filter(ref -> ref.getOwnerUserId() == null)
             .collect(Collectors.toMap(
                 ContentRef::getContentRefId,
-                ref -> new ContentState(ref.getCreatedAt(), ref.isOriginDeleted(), ref.isDriveTrashed())
+                ref -> new ContentState(ref.getCreatedAt(), ref.isOriginDeleted(),
+                    ref.isDriveTrashed() || inTogatherTrash(workspaceId, ref))
             ));
+    }
+
+    /**
+     * 산출물로 제출한 Drive 파일의 상태. TRASHED(ToGather·Google 휴지통), DELETED(원본을 확인할 수 없음), 정상·모르면 null
+     */
+    public String driveFileStatus(Long workspaceId, String fileId) {
+        return contentRefRepository.findByWorkspaceIdAndProviderAndOriginId(workspaceId, Provider.GOOGLE_DRIVE, fileId)
+            .filter(ContentRef::isOriginDeleted)
+            .map(ref -> ref.isDriveTrashed() || inTogatherTrash(workspaceId, ref) ? "TRASHED" : "DELETED")
+            .orElse(null);
+    }
+
+    /** ToGather 휴지통(팀장 Drive의 휴지통 폴더)으로 옮긴 Drive 파일. 화면에는 "휴지통으로 이동됨"으로 보인다. */
+    private boolean inTogatherTrash(Long workspaceId, ContentRef ref) {
+        return ref.getProvider() == Provider.GOOGLE_DRIVE && ref.isOriginDeleted()
+            && driveTrashEntryRepository.findByWorkspaceIdAndItemId(workspaceId, ref.getOriginId()).isPresent();
     }
 
     public record ContentState(LocalDateTime createdAt, boolean originDeleted, boolean driveTrashed) {

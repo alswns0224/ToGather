@@ -50,15 +50,25 @@ public class SyncService {
     private final SyncStateService syncStateService;
     private final WorkspaceEventService workspaceEventService;
     private final ConnectionOperationRegistry operations;
+    private final ObjectProvider<com.togather.integration.service.IntegrationService> integrations;
     private final Set<String> running = ConcurrentHashMap.newKeySet();
 
+    /** 권한 없음 표시 없이 쓰는 생성자 (테스트용) */
     public SyncService(ObjectProvider<SyncAdapter> adapters, SyncStateService syncStateService,
                        WorkspaceEventService workspaceEventService, ConnectionOperationRegistry operations) {
+        this(adapters, syncStateService, workspaceEventService, operations, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SyncService(ObjectProvider<SyncAdapter> adapters, SyncStateService syncStateService,
+                       WorkspaceEventService workspaceEventService, ConnectionOperationRegistry operations,
+                       ObjectProvider<com.togather.integration.service.IntegrationService> integrations) {
         this.adapters = adapters.orderedStream()
                 .collect(Collectors.toMap(SyncAdapter::provider, Function.identity()));
         this.syncStateService = syncStateService;
         this.workspaceEventService = workspaceEventService;
         this.operations = operations;
+        this.integrations = integrations;
     }
 
     public boolean supports(Provider provider) {
@@ -209,6 +219,7 @@ public class SyncService {
                 }
             } catch (RuntimeException e) {
                 syncStateService.recordFailure(state.getSyncStateId(), describe(e), now);
+                reportIfUnauthorized(adapter.provider(), e);
                 log.warn("동기화 실패: workspaceId={}, provider={}, target={}, error={}",
                         workspaceId, adapter.provider(), target.targetId(), describe(e));
             }
@@ -216,6 +227,25 @@ public class SyncService {
             running.remove(lockKey);
         }
         return true;
+    }
+
+    /** 외부 서비스가 권한 없음(401)으로 거절했으면, 이번 동기화에 쓴 연결을 바로 재인증 필요로 표시한다. */
+    private void reportIfUnauthorized(Provider provider, RuntimeException e) {
+        if (!(e instanceof com.togather.common.exception.BusinessException be)
+                || (be.getErrorCode() != com.togather.common.exception.ErrorCode.REAUTH_REQUIRED
+                && be.getErrorCode() != com.togather.common.exception.ErrorCode.DRIVE_OWNER_REAUTH_REQUIRED)) {
+            return;
+        }
+        if (integrations == null) {
+            return;
+        }
+        operations.lastUsedConnection(provider).ifPresent(connectionId -> {
+            try {
+                integrations.getObject().reportUnauthorized(connectionId);
+            } catch (RuntimeException ignored) {
+                log.info("재인증 필요 표시 실패: connectionId={}", connectionId);
+            }
+        });
     }
 
     static boolean isRecentlyAttempted(SyncState state, LocalDateTime now) {

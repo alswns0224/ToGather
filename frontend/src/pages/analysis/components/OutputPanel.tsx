@@ -109,6 +109,7 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
       onDone();
     } catch (err) {
       setError((err as Error).message); // 초안은 유지하고 다시 시도
+      onDone(); // 서버에 저장된 "실패" 상태를 바로 다시 불러와 배지에 보여 준다.
     } finally {
       setBusy(false);
     }
@@ -199,6 +200,7 @@ function TaskStep({
       onDone();
     } catch (err) {
       setError((err as Error).message);
+      onDone(); // 저장된 "실패" 상태를 바로 보여 준다.
     } finally {
       setBusy(false);
     }
@@ -293,6 +295,7 @@ function MeetingStep({
       onDone();
     } catch (err) {
       setError((err as Error).message);
+      onDone(); // 저장된 "실패" 상태를 바로 보여 준다.
     } finally {
       setBusy(false);
     }

@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react';
+import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   createTask,
@@ -81,6 +82,11 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
   const [deletingTaskId, setDeletingTaskId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  // 다른 팀원이 팀 작업을 만들거나 고치거나 지우면 새로고침 없이 다시 불러온다.
+  useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'TASK') setRevision((value) => value + 1);
+  });
 
   const filters = (): TaskFilters => ({
     mine: mineOnly,
@@ -288,7 +294,10 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
         setBlockingMeetings(blockers);
         return;
       }
-      if (!window.confirm('이 팀 작업과 연결된 자료·산출물 등록 정보를 삭제하시겠습니까? 원본 파일은 유지됩니다.')) {
+      const target = tasks.find((task) => task.taskId === taskId);
+      if (!window.confirm(`'${target?.title ?? '이'}' 팀 작업을 삭제할까요?
+`
+        + '연결한 자료와 산출물 등록도 함께 지워져요. Drive·Slack·Notion의 원본 파일은 그대로 남아요.')) {
         return;
       }
 

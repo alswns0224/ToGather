@@ -33,6 +33,10 @@ class TaskServiceTest {
     @Mock
     private WorkspaceMemberService workspaceMemberService;
 
+    /** 작업이 바뀌면 화면에 알린다 (실시간 갱신) */
+    @Mock
+    private com.togather.common.event.WorkspaceEventService workspaceEventService;
+
     @InjectMocks
     private TaskService taskService;
 

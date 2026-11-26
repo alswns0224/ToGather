@@ -338,9 +338,16 @@ public class DriveTrashService {
                     contentRefId, DriveTrashItem.TOGATHER));
             }
         }
-        for (ContentRefDTO file : driveContentService.getTrashFiles(workspaceId, userId)) {
+        List<ContentRefDTO> driveTrash = driveContentService.getTrashFiles(workspaceId, userId);
+        // Drive는 휴지통에 넣은 시각을 주지 않는다. ToGather가 처음 본 시각이 있으면 그것을, 없으면 수정 시각을 쓴다.
+        Map<Long, LocalDateTime> seenAt = contentRefRepository.findAllById(
+                driveTrash.stream().map(ContentRefDTO::contentRefId).toList()).stream()
+            .filter(ref -> ref.getDriveTrashedAt() != null)
+            .collect(Collectors.toMap(ContentRef::getContentRefId, ContentRef::getDriveTrashedAt));
+        for (ContentRefDTO file : driveTrash) {
             result.add(new DriveTrashItem(file.externalId(), file.title(), false, null, file.fileSize(),
-                file.lastModifiedAt(), null, null, file.contentRefId(), DriveTrashItem.DRIVE));
+                seenAt.getOrDefault(file.contentRefId(), file.lastModifiedAt()), null, null, file.contentRefId(),
+                DriveTrashItem.DRIVE));
         }
         result.sort(Comparator.comparing(DriveTrashItem::trashedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         return result;

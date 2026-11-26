@@ -17,6 +17,7 @@ import {
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
 import { getDriveOwnership } from '../drive/api';
+import { getIntegrations } from '../integration/api';
 import { useLoginUser } from '../../components/RequireAuth';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import { formatDateTime } from '../../utils/date';
@@ -35,6 +36,17 @@ export default function MembersPage() {
   // 팀장을 넘기면 Drive 파일 소유권도 새 팀장에게 넘어간다. 진행 상황을 보여 준다.
   const ownership = useAsync(() => getDriveOwnership(workspaceId).catch(() => null), [workspaceId]);
   const transfer = ownership.data?.transfer;
+  // 팀장 넘기기 경고용: 팀이 Notion 페이지를 쓰는데 새 팀장이 Notion을 연결하지 않았는지 본다.
+  const integrations = useAsync(() => getIntegrations(workspaceId).catch(() => null), [workspaceId]);
+  const notionWarning = (userId: number) => {
+    const notion = integrations.data?.find((i) => i.provider === 'NOTION');
+    const usesPages = (notion?.connections ?? []).some((c) => c.targets.length > 0);
+    const connected = (notion?.connections ?? []).some((c) => c.connectedByUserId === userId);
+    return usesPages && !connected
+      ? '\n\n새 팀장은 Notion을 연결하지 않았어요. 팀 Notion 페이지는 지금 연결한 팀원 계정으로 계속 쓰이지만, '
+        + '그 팀원이 연결을 끊으면 쓸 수 없게 될 수 있어요. Notion에서 새 팀장에게 페이지를 공유해 두는 걸 권해요.'
+      : '';
+  };
   // 팀장: 관리자 임명·해제, 팀장 넘기기, 워크스페이스 수정·삭제까지 / 관리자: 초대 링크 관리, 일반 팀원 내보내기
   const isMainOwner = workspace.data?.myRole === 'OWNER';
   const isAdmin = isMainOwner || workspace.data?.myRole === 'ADMIN';
@@ -110,7 +122,8 @@ export default function MembersPage() {
                 runRoleAction(
                   `${m.name}님에게 팀장을 넘길까요?\n넘기면 나는 팀원이 됩니다.\n\n`
                     + '팀 Drive의 파일·폴더 소유권도 새 팀장에게 차례로 넘어갑니다. '
-                    + '새 팀장이 Google Drive를 연동해 두어야 하고, 넘기는 동안에는 두 사람의 Drive 연결을 해제할 수 없어요.',
+                    + '새 팀장이 Google Drive를 연동해 두어야 하고, 넘기는 동안에는 두 사람의 Drive 연결을 해제할 수 없어요.'
+                    + notionWarning(m.userId),
                   () => transferOwner(workspaceId, m.userId),
                 ).then(() => ownership.reload())
               }
@@ -277,7 +290,11 @@ function WorkspaceSettings({
     const typed = window.prompt(
       `워크스페이스와 모든 데이터(팀 작업, 회의, 연동)가 삭제됩니다.\n삭제하려면 워크스페이스 이름 "${initial.name}"을 입력하세요.`,
     );
-    if (typed !== initial.name) return;
+    if (typed === null) return; // 취소
+    if (typed.trim() !== initial.name) {
+      setError(new Error(`이름이 맞지 않아 삭제하지 않았어요. 정확히 "${initial.name}"을(를) 입력해 주세요.`));
+      return;
+    }
     try {
       await deleteWorkspace(workspaceId);
       onDeleted();

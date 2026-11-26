@@ -38,6 +38,7 @@ function ext(name: string) {
 export default function MessageItem({
   workspaceId,
   showLinkedTasks = false,
+  linkedTaskCount,
   message,
   selected,
   onOpenThread,
@@ -46,6 +47,8 @@ export default function MessageItem({
 }: {
   workspaceId: string;
   showLinkedTasks?: boolean;
+  /** 이 메시지에 연결된 팀 작업 수 (0이면 "연결된 Task"를 숨긴다) */
+  linkedTaskCount?: number;
   message: SlackMessageResponse;
   selected?: boolean;
   onOpenThread?: () => void;
@@ -143,7 +146,8 @@ export default function MessageItem({
         {deleteError && <div className="alert alert-error">삭제하지 못했습니다. {deleteError}</div>}
 
         <LinkedMessageTasks key={`${workspaceId}/${message.contentRefId ?? message.ts}`}
-          workspaceId={workspaceId} contentRefId={message.contentRefId} initiallyOpen={showLinkedTasks} />
+          workspaceId={workspaceId} contentRefId={message.contentRefId} initiallyOpen={showLinkedTasks}
+          count={linkedTaskCount} />
 
         {onOpenThread && message.replyCount > 0 && (
           <span className="slack-reply-count">답글 {message.replyCount}개</span>

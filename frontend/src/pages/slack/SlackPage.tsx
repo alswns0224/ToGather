@@ -11,6 +11,7 @@ import {
   type SlackMessageResponse,
 } from './api';
 import { useAsync } from '../../hooks/useAsync';
+import { getTaskCountsByContents } from '../task/api';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
@@ -243,6 +244,12 @@ function ChannelMessages({
   // 서버는 최신순으로 주므로 화면에서는 시간순으로 뒤집는다.
   const items: SlackMessageResponse[] = [...(messages.data?.items ?? [])].reverse();
   const hasMore = messages.data ? messages.data.total > messages.data.items.length : false;
+  // 연결된 팀 작업이 있는 메시지에만 "연결된 Task"를 보여 주려고 수를 한 번에 가져온다.
+  const contentIds = items.map((m) => m.contentRefId).filter((id): id is number => id != null);
+  const linkedCounts = useAsync(
+    () => getTaskCountsByContents(workspaceId, contentIds).catch(() => null),
+    [workspaceId, contentIds.join(',')],
+  );
   const slackLink = items.find((m) => m.deepLink)?.deepLink?.replace(/\/p\d+.*$/, '');
 
   return (
@@ -292,6 +299,8 @@ function ChannelMessages({
                     <MessageItem
                       workspaceId={workspaceId}
                       message={m}
+                      linkedTaskCount={linkedCounts.data && m.contentRefId != null
+                        ? linkedCounts.data[String(m.contentRefId)] ?? 0 : undefined}
                       selected={m.ts === selectedTs}
                       onOpenThread={() => onOpenThread(m.ts)}
                       onUpdate={async (text) => {

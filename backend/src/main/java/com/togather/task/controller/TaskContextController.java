@@ -91,6 +91,28 @@ public class TaskContextController {
         return ApiResponse.ok(tasks);
     }
 
+    /**
+     * 여러 콘텐츠(메시지 등)에 연결된 이 워크스페이스 팀 작업 수. 화면이 "연결된 Task"를 연결이 있을 때만 보여 주는 데 쓴다.
+     * 다른 워크스페이스의 작업은 세지 않는다.
+     */
+    @GetMapping("/contents/task-counts")
+    public ApiResponse<java.util.Map<Long, Integer>> getTaskCountsByContents(
+        @LoginUser Long userId,
+        @PathVariable Long workspaceId,
+        @org.springframework.web.bind.annotation.RequestParam List<Long> contentRefIds
+    ) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        List<Long> ids = contentRefIds.stream().limit(500).toList();
+        java.util.Map<Long, Integer> counts = new java.util.LinkedHashMap<>();
+        taskContextService.getTasksByContents(ids).forEach((contentRefId, tasks) -> {
+            int count = (int) tasks.stream().filter(task -> workspaceId.equals(task.workspaceId())).count();
+            if (count > 0) {
+                counts.put(contentRefId, count);
+            }
+        });
+        return ApiResponse.ok(counts);
+    }
+
     private void validateTaskWorkspace(
         Long workspaceId,
         Long taskId

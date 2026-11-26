@@ -119,7 +119,9 @@ public class NotionContentService {
                 }
             } catch (BusinessException e) {
                 if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) {
-                    contentRefService.markOriginDeleted(contentRefId);
+                    // Notion은 공유가 해제된 페이지도 "없음"으로 답한다. 실제로 지워졌는지 다른 팀원 연결로 확인한다.
+                    bodyEditable = reloadWithOtherConnection(workspaceId, ref);
+                    refreshFailed = !bodyEditable && !getPageRef(workspaceId, contentRefId).isOriginDeleted();
                 } else {
                     log.info("Notion 문서 새로고침 실패: workspaceId={}, error={}", workspaceId, e.getErrorCode());
                     refreshFailed = true;
@@ -254,6 +256,34 @@ public class NotionContentService {
     }
 
     /** 데이터베이스를 연동 대상으로 고른 연결의 토큰 (TeamTokenResolver). Notion 통합은 공유받은 DB만 볼 수 있다. */
+    /**
+     * 내 토큰으로는 "없음"이었던 페이지를 다른 팀원 연결로 다시 읽는다.
+     * 읽히면 그 내용으로 저장하고 true, 휴지통(archived)이면 원본 삭제로 표시, 아무도 못 읽으면 삭제로 단정하지 않고
+     * 동기화 실패(접근 불가)로만 표시해 저장된 내용을 계속 보여 준다.
+     */
+    private boolean reloadWithOtherConnection(Long workspaceId, ContentRef ref) {
+        for (String other : teamTokenResolver.allTokens(workspaceId, Provider.NOTION)) {
+            try {
+                NotionPage page = notionApiClient.getPage(other, ref.getOriginId());
+                if (page.archived()) {
+                    contentRefService.markOriginDeleted(ref.getContentRefId());
+                    return false;
+                }
+                NotionApiClient.PageContent content = notionApiClient.getPageContent(other, page.id());
+                notionSyncAdapter.save(workspaceId, other, page, content.text(), ref.getChannelId());
+                return content.editable();
+            } catch (BusinessException e) {
+                if (e.getErrorCode() != ErrorCode.RESOURCE_NOT_FOUND) {
+                    log.info("다른 연결로 Notion 문서 확인 실패: workspaceId={}, error={}", workspaceId, e.getErrorCode());
+                }
+            }
+        }
+        log.info("Notion 문서에 접근할 수 있는 연결이 없어 접근 불가로 표시: workspaceId={}, contentRefId={}",
+                workspaceId, ref.getContentRefId());
+        contentRefService.markSyncFailed(workspaceId, Provider.NOTION, ref.getOriginId());
+        return false;
+    }
+
     private String token(Long workspaceId, String databaseId, Long userId) {
         return teamTokenResolver.tokenFor(workspaceId, Provider.NOTION, databaseId, userId);
     }

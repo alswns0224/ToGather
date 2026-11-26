@@ -5,12 +5,17 @@ import { ErrorBox, Loading } from '../../../components/Status';
 import { useAsync } from '../../../hooks/useAsync';
 import { getTasksByContent } from '../../task/api';
 
-export default function LinkedMessageTasks({ workspaceId, contentRefId, initiallyOpen = false }: {
+export default function LinkedMessageTasks({ workspaceId, contentRefId, initiallyOpen = false, count }: {
   workspaceId: string;
   contentRefId: number | null;
   initiallyOpen?: boolean;
+  /** 연결된 작업 수. 0이면 아무것도 보여 주지 않는다. 모르면(undefined) 펼쳐서 확인할 수 있게 둔다. */
+  count?: number;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
+  if (count === 0 && !initiallyOpen) {
+    return null;
+  }
 
   if (contentRefId === null) {
     return <p className="mb-0 mt-2 text-xs text-[var(--muted)]">연결된 Task는 메시지 동기화 후 확인할 수 있어요.</p>;
@@ -18,7 +23,9 @@ export default function LinkedMessageTasks({ workspaceId, contentRefId, initiall
   return (
     <div className="mt-2" onClick={(event) => event.stopPropagation()}>
       <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-        <summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">연결된 Task</summary>
+        <summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">
+          연결된 Task{count ? ` ${count}개` : ''}
+        </summary>
         {open && <MessageTaskList key={`${workspaceId}/${contentRefId}`} workspaceId={workspaceId} contentRefId={contentRefId} />}
       </details>
     </div>

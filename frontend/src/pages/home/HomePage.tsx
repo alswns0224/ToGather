@@ -333,7 +333,12 @@ export default function HomePage() {
                 {(d.integrations ?? []).map((item) => {
                   const conn = item.connections.find((c) => c.mine);
                   const [text, cls] = CONN_BADGE[conn?.status ?? 'DISCONNECTED'];
-                  const targets = conn?.targets.map((t) => t.name ?? t.id).join(', ');
+                  // 연동 관리 화면과 같은 기준: 팀 자료 서비스는 팀이 고른 대상, Gmail은 내 메일함, Calendar는 팀장 캘린더
+                  const targets = item.provider === 'GMAIL'
+                    ? (conn ? '내 메일함' : '')
+                    : item.provider === 'GOOGLE_CALENDAR'
+                      ? (conn ? `팀 일정: 팀장${item.teamTarget?.chosenByName ? `(${item.teamTarget.chosenByName})` : ''} 캘린더` : '')
+                      : [...new Set(item.connections.flatMap((c) => c.targets.map((t) => t.name ?? t.id)))].join(', ');
                   return (
                     <div key={item.provider} className="home-conn">
                       <span className="inline-flex h-5 w-5 flex-shrink-0">

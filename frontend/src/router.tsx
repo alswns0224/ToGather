@@ -19,6 +19,7 @@ import MeetingListPage from './pages/meeting/MeetingListPage';
 import MeetingDetailPage from './pages/meeting/MeetingDetailPage';
 import SearchPage from './pages/search/SearchPage';
 import AssistantPage from './pages/assistant/AssistantPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 export const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/workspaces" replace /> },
@@ -63,6 +64,8 @@ export const router = createBrowserRouter([
       { path: 'assistant', element: <AssistantPage /> },
       { path: 'integrations', element: <IntegrationsPage /> },
       { path: 'members', element: <MembersPage /> },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
+  { path: '*', element: <NotFoundPage /> },
 ]);

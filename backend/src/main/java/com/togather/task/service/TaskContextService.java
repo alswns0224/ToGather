@@ -80,7 +80,8 @@ public class TaskContextService {
                 .sorted(Comparator.comparing(
                     TaskDeliverable::getDeliverableId
                 ))
-                .map(TaskDeliverableSummary::from)
+                .map(d -> TaskDeliverableSummary.from(d,
+                    d.getFileId() == null ? null : contentRefService.driveFileStatus(task.getWorkspaceId(), d.getFileId())))
                 .toList();
 
         AnalysisItemDTO originDecision = null;
