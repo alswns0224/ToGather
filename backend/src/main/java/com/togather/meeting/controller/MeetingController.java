@@ -100,7 +100,7 @@ public class MeetingController {
                                                         @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         return ApiResponse.ok(changed(workspaceId, meetingId,
-                meetingService.addAgenda(workspaceId, meetingId, userId, request.taskId())));
+                meetingService.addAgenda(workspaceId, meetingId, userId, request.taskId(), request.title())));
     }
 
     @PatchMapping("/{meetingId}/agendas/{agendaId}")
@@ -109,7 +109,8 @@ public class MeetingController {
                                                            @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         return ApiResponse.ok(changed(workspaceId, meetingId,
-                meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId())));
+                meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId(),
+                        request.title())));
     }
 
     @DeleteMapping("/{meetingId}/agendas/{agendaId}")
