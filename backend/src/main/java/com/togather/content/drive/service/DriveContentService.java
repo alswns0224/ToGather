@@ -11,6 +11,7 @@ import com.togather.content.access.ContentAccessService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveFile;
+import com.togather.integration.client.OAuthProviderClient.TargetOption;
 import com.togather.content.drive.dto.DriveUploadCandidate;
 import com.togather.content.drive.dto.DriveUploadMode;
 import com.togather.content.dto.ContentRefDTO;
@@ -237,6 +238,30 @@ public class DriveContentService {
                 f.fileSize()
             ))
             .toList();
+    }
+
+    /**
+     * 연동 폴더(또는 그 아래 폴더) 안에 새 폴더를 만든다. 팀원이 만들어도 팀장 토큰으로 만들어 팀장 소유가 된다.
+     * 연동 폴더 바로 아래에 만들면 새 폴더도 연동 폴더에 더한다. (선택 창에서 폴더를 고르면 하위 폴더도 함께 고르는 것과 같은 규칙)
+     */
+    public DriveSubfolderResponse createFolder(Long workspaceId, Long userId, String parentFolderId, String name) {
+        workspaceAccessChecker.checkMember(workspaceId, userId);
+        validateFileName(name);
+        String folderName = name.trim();
+        String rootId = uploadRoot(workspaceId, userId, parentFolderId);
+        String token = resolveToken(workspaceId, userId, rootId);
+
+        DriveApiClient.DriveItem folder = driveApiClient.createFolder(token, folderName, parentFolderId, Map.of());
+
+        if (getSelectedFolders(workspaceId, userId).contains(parentFolderId)) {
+            integrationService.addDriveTargets(workspaceId,
+                List.of(new TargetOption(folder.id(), folder.name(), parentFolderId)));
+            // 팀원별로 잠깐 저장해 둔 "볼 수 있는 연동 폴더"를 버려야 새 폴더가 바로 연동 폴더로 보인다.
+            contentAccess.forget(workspaceId, null);
+        }
+        publishDriveChanged(workspaceId, rootId);
+        log.info("Drive 폴더 생성: workspaceId={}, parent={}, folderId={}", workspaceId, parentFolderId, folder.id());
+        return new DriveSubfolderResponse(folder.id(), folder.name());
     }
 
     /** 연동 폴더 안의 폴더만 둘러볼 수 있다. 그 연동 폴더의 토큰을 돌려준다. */

@@ -6,6 +6,8 @@ export type ConnectionStatus = 'TARGET_NOT_SELECTED' | 'CONNECTED' | 'REAUTH_REQ
 export interface TargetItem {
   id: string;
   name: string | null;
+  /** Drive 폴더의 상위 폴더. 폴더를 고르면 그 아래 폴더도 함께 고르는 데 쓴다. */
+  parentId?: string | null;
 }
 
 export interface ConnectionStatusDTO {
@@ -26,6 +28,8 @@ export interface IntegrationStatusResponse {
   personal: boolean;
   configured: boolean;
   connections: ConnectionStatusDTO[];
+  /** 팀장이 고른 팀 캘린더 (Calendar만). 아직 안 골랐으면 null */
+  teamTarget?: { id: string; name: string; chosenByUserId: number; chosenByName: string | null } | null;
 }
 
 export const PROVIDER_LABELS: Record<Provider, { name: string; target: string; description: string }> = {
@@ -38,8 +42,8 @@ export const PROVIDER_LABELS: Record<Provider, { name: string; target: string; d
   GOOGLE_DRIVE: { name: 'Google Drive', target: '폴더', description: '폴더의 파일과 산출물을 관리합니다.' },
   GOOGLE_CALENDAR: {
     name: 'Google Calendar',
-    target: '팀 캘린더',
-    description: '일정을 관리하고, 회의 가용 시간에 내 일정을 반영합니다. 팀 캘린더를 고르면 팀 일정이 그 캘린더에 등록됩니다.',
+    target: '',
+    description: '일정을 관리하고, 회의 가용 시간에 내 일정을 반영합니다. 팀 일정은 팀장 캘린더에 등록되고 참여자 캘린더에도 들어갑니다.',
   },
   GMAIL: { name: 'Gmail', target: '', description: '메일에서 일정·할 일 후보를 찾습니다. (나만 볼 수 있음)' },
 };

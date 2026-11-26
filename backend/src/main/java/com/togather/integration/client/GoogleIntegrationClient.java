@@ -104,15 +104,20 @@ public class GoogleIntegrationClient implements OAuthProviderClient {
         String uri = UriComponentsBuilder.fromUriString("https://www.googleapis.com/drive/v3/files")
                 // 팀 Drive의 모든 항목을 팀장 소유로 두므로, 팀장이 소유한 폴더만 고를 수 있다.
                 .queryParam("q", "mimeType='application/vnd.google-apps.folder' and trashed=false and 'me' in owners")
-                .queryParam("fields", "files(id,name,appProperties)")
+                .queryParam("fields", "files(id,name,appProperties,parents)")
                 .queryParam("orderBy", "modifiedTime desc")
                 .queryParam("pageSize", 100)
                 .encode().build().toUriString();
         return list(get(uri, accessToken), "files").stream()
                 // ToGather 휴지통 폴더는 진짜 휴지통처럼 쓰므로 연동할 폴더로 고를 수 없다.
                 .filter(f -> !"true".equals(obj(f, "appProperties").get(DRIVE_TRASH_MARKER)))
-                .map(f -> new TargetOption(str(f, "id"), str(f, "name")))
+                .map(f -> new TargetOption(str(f, "id"), str(f, "name"), firstParent(f)))
                 .toList();
+    }
+
+    private static String firstParent(Map<String, Object> file) {
+        return file.get("parents") instanceof List<?> parents && !parents.isEmpty()
+                ? String.valueOf(parents.getFirst()) : null;
     }
 
     private List<TargetOption> getCalendars(String accessToken) {

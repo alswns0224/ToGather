@@ -20,6 +20,7 @@ import {
 
 import {
   canPreviewDriveFile,
+  createDriveFolder,
   deleteDriveFile,
   deleteDriveTrashItem,
   emptyDriveTrash,
@@ -71,6 +72,7 @@ type WorkingAction =
   | 'delete'
   | 'restore'
   | 'empty'
+  | 'create-folder'
   | null;
 
 // 화면 데이터 자동 조회 간격: 60초
@@ -223,6 +225,8 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
 
   const workingRef = useRef(false);
   const dataVersionRef = useRef(0);
+  // 새 폴더 이름 입력칸. null이면 닫혀 있다.
+  const [newFolderName, setNewFolderName] = useState<string | null>(null);
 
   const isBusy = working !== null;
 
@@ -1034,6 +1038,30 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   // 15. Google Drive 휴지통 복원
   // ===================================================
 
+  // ===================================================
+  // 새 폴더 만들기: 지금 보고 있는 폴더 안에 만든다.
+  // ===================================================
+
+  /** 새 폴더를 만들 곳. "전체 폴더"를 보고 있으면 연결된 폴더가 하나일 때만 그 폴더 */
+  const createFolderParentId = showTrash
+    ? null
+    : currentBrowseFolderId ?? (folderIds.length === 1 ? folderIds[0] : null);
+  const createFolderParentName = createFolderParentId
+    ? (folderPath.length > 0 ? folderPath[folderPath.length - 1].name : null)
+      ?? folderNames[createFolderParentId] ?? '현재 폴더'
+    : null;
+
+  async function handleCreateFolder() {
+    const name = (newFolderName ?? '').trim();
+    if (!workspaceId || !createFolderParentId || !name) return;
+    await runTrashAction('create-folder', null, async () => {
+      const folder = await createDriveFolder(workspaceId, createFolderParentId, name);
+      setNewFolderName(null);
+      setFolderHierarchyVersion((value) => value + 1);
+      return `'${folder.name ?? name}' 폴더를 만들었습니다.`;
+    });
+  }
+
   /** 휴지통 동작 공통: 진행 표시 → 실행 → 목록 다시 불러오기 */
   async function runTrashAction(
     action: WorkingAction,
@@ -1342,6 +1370,17 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
                   {working === 'empty' ? '비우는 중...' : '휴지통 비우기'}
                 </button>
               )}
+              {!showTrash && folderIds.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={isBusy || !createFolderParentId}
+                  title={createFolderParentId ? undefined : '연결된 폴더에서 폴더를 먼저 고르세요.'}
+                  onClick={() => setNewFolderName((value) => (value === null ? '' : null))}
+                >
+                  + 새 폴더
+                </button>
+              )}
               <a
                 href="https://drive.google.com/drive/my-drive"
                 target="_blank"
@@ -1352,6 +1391,34 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               </a>
             </div>
           </div>
+
+          {newFolderName !== null && createFolderParentId && !showTrash && (
+            <form
+              className="flex flex-wrap items-center gap-2 border-b border-[var(--border-soft)] px-5 pb-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateFolder();
+              }}
+            >
+              <span className="text-xs text-[var(--muted)]">'{createFolderParentName}' 안에</span>
+              <input
+                className="input !w-auto flex-1"
+                aria-label="새 폴더 이름"
+                placeholder="새 폴더 이름"
+                maxLength={255}
+                autoFocus
+                value={newFolderName}
+                disabled={isBusy}
+                onChange={(event) => setNewFolderName(event.target.value)}
+              />
+              <button type="submit" className="btn btn-small btn-primary" disabled={isBusy || !newFolderName.trim()}>
+                {working === 'create-folder' ? '만드는 중...' : '만들기'}
+              </button>
+              <button type="button" className="btn btn-small" disabled={isBusy} onClick={() => setNewFolderName(null)}>
+                취소
+              </button>
+            </form>
+          )}
 
           {/* 연결된 폴더 드롭다운 · 하위 폴더 탐색 */}
           {folderIds.length > 0 && !showTrash && (

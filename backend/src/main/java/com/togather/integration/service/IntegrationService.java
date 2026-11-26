@@ -166,9 +166,28 @@ public class IntegrationService {
                             targets.getOrDefault(c.getConnectionId(), List.of())))
                     .toList();
             boolean configured = clients.stream().anyMatch(c -> c.supports(provider) && c.isConfigured());
-            result.add(new IntegrationStatusResponse(provider, personal, configured, list));
+            IntegrationStatusResponse.TeamTarget teamTarget = provider == Provider.GOOGLE_CALENDAR
+                    ? teamCalendar(workspaceId, connections, users) : null;
+            result.add(new IntegrationStatusResponse(provider, personal, configured, list, teamTarget));
         }
         return result;
+    }
+
+    /** 팀 일정이 들어가는 캘린더: 팀장의 기본 캘린더 (팀장이 Calendar를 연결하지 않았으면 null) */
+    private IntegrationStatusResponse.TeamTarget teamCalendar(Long workspaceId, List<ServiceConnection> connections,
+                                                             Map<Long, UserSummary> users) {
+        return workspaceAccessChecker.findMainOwner(workspaceId)
+                .flatMap(owner -> connections.stream()
+                        .filter(c -> c.getProvider() == Provider.GOOGLE_CALENDAR && c.getUserId().equals(owner))
+                        .filter(c -> c.getExternalAccountId() != null)
+                        .findFirst())
+                .map(c -> {
+                    UserSummary by = users.get(c.getUserId());
+                    String account = c.getAccountLabel() != null ? c.getAccountLabel() : c.getExternalAccountId();
+                    return new IntegrationStatusResponse.TeamTarget(c.getExternalAccountId(), account,
+                            c.getUserId(), by == null ? null : by.name());
+                })
+                .orElse(null);
     }
 
     // ===================== 연동 대상 =====================
@@ -227,12 +246,60 @@ public class IntegrationService {
         return toDto(connection, userId, userService.getUser(connection.getUserId()), saved);
     }
 
-    /** Drive 폴더는 팀장이 자기 연결로만 고른다. 팀 Drive의 모든 항목을 팀장 소유로 두기 위해서다. */
+    /**
+     * Drive 폴더는 팀장이 자기 연결로만 고른다. 팀 Drive의 모든 항목을 팀장 소유로 두기 위해서다.
+     * Calendar는 고를 대상이 없다. 팀 일정은 늘 팀장의 기본 캘린더에 들어간다. (Gmail처럼 연결만 한다)
+     */
     private void requireDriveOwnerSelection(ServiceConnection connection, Long userId) {
+        if (connection.getProvider() == Provider.GOOGLE_CALENDAR) {
+            throw new BusinessException(ErrorCode.CALENDAR_TARGET_NOT_SELECTABLE);
+        }
         if (connection.getProvider() == Provider.GOOGLE_DRIVE
                 && (!connection.getUserId().equals(userId) || !isMainOwner(connection))) {
             throw new BusinessException(ErrorCode.DRIVE_TARGET_OWNER_ONLY);
         }
+    }
+
+    // ===================== Drive 하위 폴더 연동 =====================
+
+    /**
+     * 연동한 Drive 폴더 아래에 새로 생긴 폴더(ToGather에서 만든 폴더, 휴지통에서 복원한 폴더)를 연동 폴더에 더한다.
+     * 선택 창에서 폴더를 고르면 그 아래 폴더도 함께 고르는 것과 같은 규칙이다. 이미 있는 폴더는 건너뛴다.
+     */
+    @Transactional
+    public void addDriveTargets(Long workspaceId, List<TargetOption> folders) {
+        List<ServiceConnection> drives = connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(
+                workspaceId, Provider.GOOGLE_DRIVE, ConnectionStatus.DISCONNECTED);
+        Map<Long, List<IntegrationTarget>> existing = targetRepository
+                .findAllByConnectionIdIn(drives.stream().map(ServiceConnection::getConnectionId).toList())
+                .stream().collect(Collectors.groupingBy(IntegrationTarget::getConnectionId));
+        // 지금 폴더를 가진 연결(보통 팀장)에 붙인다. 아직 없으면 팀장 연결.
+        Optional<ServiceConnection> holder = drives.stream().filter(c -> existing.containsKey(c.getConnectionId())).findFirst()
+                .or(() -> drives.stream().filter(this::isMainOwner).findFirst());
+        if (holder.isEmpty()) {
+            return;
+        }
+        Set<String> known = existing.values().stream().flatMap(List::stream)
+                .map(IntegrationTarget::getExternalTargetId).collect(Collectors.toSet());
+        List<IntegrationTarget> added = folders.stream()
+                .filter(f -> f.id() != null && known.add(f.id()))
+                .map(f -> new IntegrationTarget(holder.get().getConnectionId(), f.id(), f.name()))
+                .toList();
+        targetRepository.saveAll(added);
+    }
+
+    /** 휴지통으로 옮긴 Drive 폴더(와 그 아래 연동 폴더)를 연동 폴더에서 뺀다. */
+    @Transactional
+    public void removeDriveTargets(Long workspaceId, java.util.Collection<String> folderIds) {
+        if (folderIds.isEmpty()) {
+            return;
+        }
+        List<Long> drives = connectionRepository.findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(
+                        workspaceId, Provider.GOOGLE_DRIVE, ConnectionStatus.DISCONNECTED).stream()
+                .map(ServiceConnection::getConnectionId).toList();
+        targetRepository.findAllByConnectionIdIn(drives).stream()
+                .filter(t -> folderIds.contains(t.getExternalTargetId()))
+                .forEach(targetRepository::delete);
     }
 
     private boolean isMainOwner(ServiceConnection connection) {
@@ -516,6 +583,9 @@ public class IntegrationService {
     private Optional<TargetAccess> resolveTargetAccess(Long workspaceId, Provider provider, String targetId) {
         List<ServiceConnection> connections = connectionRepository
                 .findAllByWorkspaceIdAndProviderAndStatusNotOrderByCreatedAtAsc(workspaceId, provider, ConnectionStatus.DISCONNECTED);
+        if (provider == Provider.GOOGLE_CALENDAR) {
+            return teamCalendarAccess(workspaceId, connections, targetId);
+        }
         Map<Long, List<String>> targets = targetRepository
                 .findAllByConnectionIdIn(connections.stream().map(ServiceConnection::getConnectionId).toList())
                 .stream().collect(Collectors.groupingBy(IntegrationTarget::getConnectionId,
@@ -526,6 +596,22 @@ public class IntegrationService {
                 .findFirst()
                 .map(c -> new TargetAccess(c.getConnectionId(), c.getUserId(), validAccessToken(c),
                         targets.get(c.getConnectionId())));
+    }
+
+    /**
+     * 팀 캘린더 = 팀장의 기본 캘린더. 따로 고르지 않는다. (Gmail처럼 각자 연결만 한다)
+     * calendarId가 있으면(이미 등록한 팀 일정) 그 캘린더 주인의 연결을 쓴다. 팀장을 넘긴 뒤에도 예전 팀장 캘린더의 일정을 고칠 수 있게 하려는 것이다.
+     * Google 기본 캘린더 ID는 계정 이메일이고, 연결의 externalAccountId도 그 이메일이다.
+     */
+    private Optional<TargetAccess> teamCalendarAccess(Long workspaceId, List<ServiceConnection> connections,
+                                                      String calendarId) {
+        Optional<ServiceConnection> chosen = calendarId != null
+                ? connections.stream().filter(c -> calendarId.equalsIgnoreCase(c.getExternalAccountId())).findFirst()
+                : workspaceAccessChecker.findMainOwner(workspaceId)
+                        .flatMap(owner -> connections.stream().filter(c -> c.getUserId().equals(owner)).findFirst());
+        return chosen.filter(c -> c.getExternalAccountId() != null)
+                .map(c -> new TargetAccess(c.getConnectionId(), c.getUserId(), validAccessToken(c),
+                        List.of(c.getExternalAccountId())));
     }
 
     public record TargetAccess(Long connectionId, Long ownerUserId, String accessToken, List<String> targetIds) {

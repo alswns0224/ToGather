@@ -154,8 +154,9 @@ class TargetAccessSelectionTest extends IntegrationTestSupport {
         return connection;
     }
 
+    /** Calendar 연결. 팀 캘린더는 캘린더 주인의 기본 캘린더(=계정 이메일)라 계정 ID를 캘린더 ID로 둔다. */
     private ServiceConnection save(Long owner, String calendarId, String token) {
-        var connection = new ServiceConnection(workspaceId, owner, Provider.GOOGLE_CALENDAR, UUID.randomUUID().toString(),
+        var connection = new ServiceConnection(workspaceId, owner, Provider.GOOGLE_CALENDAR, calendarId,
             cipher.encrypt(token, "test-refresh"), "test-scope", LocalDateTime.now().plusDays(1));
         connection.changeStatus(ConnectionStatus.CONNECTED);
         connection = connections.save(connection);

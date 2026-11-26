@@ -21,6 +21,8 @@ import com.togather.content.drive.service.DriveOwnerAccess.OwnerToken;
 import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.service.ContentRefService;
 import com.togather.integration.client.GoogleIntegrationClient;
+import com.togather.integration.client.OAuthProviderClient.TargetOption;
+import com.togather.integration.service.IntegrationService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -60,6 +62,8 @@ public class DriveTrashService {
     private final WorkspaceAccessChecker workspaceAccessChecker;
     private final WorkspaceEventService workspaceEventService;
     private final UserService userService;
+    private final IntegrationService integrationService;
+    private final com.togather.content.access.ContentAccessService contentAccess;
     private final JdbcTemplate jdbc;
 
     public record EmptyResult(int deleted, int failed) {
@@ -140,13 +144,29 @@ public class DriveTrashService {
         trash(workspaceId, userId, file.getOriginId());
     }
 
-    /** 연동 폴더 안의 파일·폴더를 휴지통 폴더로 옮긴다. 연동 폴더 자신은 옮길 수 없다. */
+    /**
+     * 연동 폴더 안의 파일·폴더를 휴지통 폴더로 옮긴다. 맨 위 연동 폴더 자신은 옮길 수 없다.
+     * 상위 연동 폴더를 고를 때 함께 연동된 하위 폴더는 옮길 수 있고, 옮기면 그 폴더(와 그 아래 연동 폴더)를 연동에서 뺀다.
+     */
     public void trash(Long workspaceId, Long userId, String itemId) {
         List<String> roots = driveContentService.getFolders(workspaceId, userId);
-        if (roots.contains(itemId)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "연동한 폴더 자체는 휴지통으로 옮길 수 없습니다.");
+        // 볼 수 있는 연동 폴더는 잠깐 저장해 두고 쓰므로 방금 더한 폴더가 빠져 있을 수 있다. 연동 여부는 저장된 목록으로 본다.
+        List<String> linked = integrationService.getConnectionTargets(workspaceId, PROVIDER);
+        boolean connectedFolder = roots.contains(itemId) || linked.contains(itemId);
+        OwnerToken owner = null;
+        if (connectedFolder) {
+            List<String> others = roots.stream().filter(r -> !r.equals(itemId)).toList();
+            owner = ownerAccess.requireOwnerToken(workspaceId);
+            DriveItem self = driveApiClient.getItem(owner.accessToken(), itemId);
+            boolean nested = !self.parents().isEmpty() && !others.isEmpty()
+                && locator.rootOf(owner.accessToken(), self.parents().getFirst(), others).isPresent();
+            if (!nested) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "연동한 폴더 자체는 휴지통으로 옮길 수 없습니다.");
+            }
         }
-        OwnerToken owner = ownerAccess.requireOwnerToken(workspaceId);
+        if (owner == null) {
+            owner = ownerAccess.requireOwnerToken(workspaceId);
+        }
         String trashFolder = ensureTrashFolder(workspaceId, owner);
         if (itemId.equals(trashFolder)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -156,10 +176,22 @@ public class DriveTrashService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
         String parentId = item.parents().getFirst();
-        String rootId = locator.rootOf(owner.accessToken(), parentId, roots)
+        List<String> parentRoots = roots.stream().filter(r -> !r.equals(itemId)).toList();
+        String rootId = locator.rootOf(owner.accessToken(), parentId, parentRoots)
             .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        // 폴더를 옮기면 그 폴더와 그 안의 연동 폴더는 연동에서 뺀다. (휴지통 폴더는 연동 폴더 밖이라 그대로 두면 동기화가 꼬인다)
+        List<String> unlinked = new ArrayList<>();
+        if (item.isFolder()) {
+            String token = owner.accessToken();
+            for (String root : linked) {
+                if (root.equals(itemId) || locator.rootOf(token, root, List.of(itemId)).isPresent()) {
+                    unlinked.add(root);
+                }
+            }
+        }
 
         driveApiClient.moveItem(owner.accessToken(), itemId, parentId, trashFolder);
+        integrationService.removeDriveTargets(workspaceId, unlinked);
 
         entryRepository.findByWorkspaceIdAndItemId(workspaceId, itemId).ifPresent(entryRepository::delete);
         entryRepository.save(new DriveTrashEntry(workspaceId, itemId, item.name(), item.isFolder(), rootId, parentId,
@@ -188,6 +220,15 @@ public class DriveTrashService {
         String target = entry.map(e -> restoreTarget(owner.accessToken(), e, roots)).orElse(roots.getFirst());
 
         driveApiClient.moveItem(owner.accessToken(), itemId, trashFolder, target);
+
+        // 연동 폴더 바로 아래로 돌아온 폴더는 그 아래 폴더까지 다시 연동한다. (휴지통으로 옮길 때 연동에서 뺐으므로)
+        if (item.isFolder() && roots.contains(target)) {
+            integrationService.addDriveTargets(workspaceId, locator.collect(owner.accessToken(), List.of(itemId), 500).stream()
+                .filter(DriveItem::isFolder)
+                .map(f -> new TargetOption(f.id(), f.name(), f.parents().isEmpty() ? null : f.parents().getFirst()))
+                .toList());
+            contentAccess.forget(workspaceId, null);
+        }
 
         entry.ifPresent(entryRepository::delete);
         if (roots.contains(target)) {

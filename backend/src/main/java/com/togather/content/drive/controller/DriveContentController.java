@@ -132,6 +132,28 @@ public class DriveContentController {
         return ApiResponse.ok(driveContentService.getFolderHierarchy(workspaceId, userId));
     }
 
+    /** 새 폴더 만들기 요청. parentId는 연동 폴더 또는 그 아래 폴더 */
+    public record CreateFolderRequest(
+        @jakarta.validation.constraints.NotBlank String parentId,
+        @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String name
+    ) {
+    }
+
+    /**
+     * 지금 보고 있는 폴더 안에 새 폴더를 만든다.
+     *
+     * POST /api/workspaces/{workspaceId}/drive/folders
+     */
+    @PostMapping("/folders")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<DriveContentService.DriveSubfolderResponse> createFolder(
+        @LoginUser Long userId,
+        @PathVariable Long workspaceId,
+        @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody CreateFolderRequest request
+    ) {
+        return ApiResponse.ok(driveContentService.createFolder(workspaceId, userId, request.parentId(), request.name()));
+    }
+
     /**
      * 하위 폴더 목록 조회.
      *

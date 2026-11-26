@@ -10,7 +10,6 @@ import {
   getSyncStatuses,
   reauthUrl,
   selectTargets,
-  skipTargets,
   syncNow,
   type ConnectionStatus,
   type ConnectionStatusDTO,
@@ -221,12 +220,19 @@ function ServiceCard({
     }
   };
 
+  // Calendar는 Gmail처럼 연결만 한다. 팀 일정은 늘 팀장의 기본 캘린더에 들어가므로 고를 것이 없다.
+  const isCalendar = item.provider === 'GOOGLE_CALENDAR';
+  const teamCalendarText = item.teamTarget
+    ? `팀장(${item.teamTarget.chosenByName ?? item.teamTarget.name}) 캘린더`
+    : '팀장이 Calendar를 연결하면 팀장 캘린더';
   const myTargetText = mine
-    ? mine.targets.length > 0
-      ? mine.targets.map((t) => t.name ?? t.id).join(', ')
-      : label.target
-        ? '미선택'
-        : '내 메일함'
+    ? isCalendar
+      ? teamCalendarText
+      : mine.targets.length > 0
+        ? mine.targets.map((t) => t.name ?? t.id).join(', ')
+        : label.target
+          ? '미선택'
+          : '내 메일함'
     : '-';
 
   return (
@@ -248,7 +254,7 @@ function ServiceCard({
 
       {mine && (
         <div className="text-[13px] text-[var(--muted)]">
-          {item.personal ? '수집 대상' : `연동한 ${label.target}`}:{' '}
+          {isCalendar ? '팀 일정 등록' : item.personal ? '수집 대상' : `연동한 ${label.target}`}:{' '}
           <strong className="text-[var(--text)]">
             {item.personal
               ? myTargetText
@@ -320,6 +326,50 @@ function ServiceCard({
   );
 }
 
+/**
+ * Drive 폴더 목록을 상위 폴더 기준 트리 순서로 펼친다. 상위 폴더가 목록에 없으면(내 드라이브 바로 아래 등) 맨 위로 둔다.
+ * descendants(id)는 그 폴더 아래 모든 폴더 ID.
+ */
+function buildFolderTree(options: TargetItem[]) {
+  const ids = new Set(options.map((o) => o.id));
+  const children = new Map<string, TargetItem[]>();
+  const roots: TargetItem[] = [];
+  for (const o of options) {
+    if (o.parentId && ids.has(o.parentId) && o.parentId !== o.id) {
+      children.set(o.parentId, [...(children.get(o.parentId) ?? []), o]);
+    } else {
+      roots.push(o);
+    }
+  }
+  const byName = (a: TargetItem, b: TargetItem) => (a.name ?? a.id).localeCompare(b.name ?? b.id, 'ko');
+  const ordered: { option: TargetItem; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (o: TargetItem, depth: number) => {
+    if (seen.has(o.id)) return;
+    seen.add(o.id);
+    ordered.push({ option: o, depth });
+    [...(children.get(o.id) ?? [])].sort(byName).forEach((c) => walk(c, depth + 1));
+  };
+  roots.forEach((r) => walk(r, 0));
+  // 상위 폴더끼리 서로를 가리키는 이상한 경우에도 빠지는 폴더가 없게 한다.
+  options.forEach((o) => walk(o, 0));
+
+  const descendants = (id: string): string[] => {
+    const result: string[] = [];
+    const stack = [...(children.get(id) ?? [])];
+    const visited = new Set<string>([id]);
+    while (stack.length > 0) {
+      const c = stack.pop()!;
+      if (visited.has(c.id)) continue;
+      visited.add(c.id);
+      result.push(c.id);
+      stack.push(...(children.get(c.id) ?? []));
+    }
+    return result;
+  };
+  return { ordered, descendants };
+}
+
 function TargetSelectDialog({
   workspaceId,
   connection,
@@ -339,14 +389,18 @@ function TargetSelectDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set(connection.targets.map((t) => t.id)));
   const [error, setError] = useState<Error>();
   const [saving, setSaving] = useState(false);
-  // 팀 캘린더는 하나만 고른다.
-  const single = connection.provider === 'GOOGLE_CALENDAR';
-  const optional = connection.provider === 'GOOGLE_CALENDAR';
+  // Drive 폴더는 트리로 보여 주고, 폴더를 고르거나 빼면 그 아래 폴더도 함께 고르거나 뺀다.
+  const isDrive = connection.provider === 'GOOGLE_DRIVE';
+  const tree = buildFolderTree(isDrive ? options.data ?? [] : []);
+  const rows: { option: TargetItem; depth: number }[] = isDrive
+    ? tree.ordered
+    : (options.data ?? []).map((option) => ({ option, depth: 0 }));
 
   const toggle = (id: string) => {
-    const next = new Set(single ? [] : selected);
-    if (selected.has(id) && !single) next.delete(id);
-    else next.add(id);
+    const next = new Set(selected);
+    const ids = isDrive ? [id, ...tree.descendants(id)] : [id];
+    if (selected.has(id)) ids.forEach((i) => next.delete(i));
+    else ids.forEach((i) => next.add(i));
     setSelected(next);
   };
 
@@ -354,21 +408,14 @@ function TargetSelectDialog({
     setSaving(true);
     setError(undefined);
     try {
-      const targets: TargetItem[] = (options.data ?? []).filter((o) => selected.has(o.id));
+      const targets: TargetItem[] = (options.data ?? [])
+        .filter((o) => selected.has(o.id))
+        .map((o) => ({ id: o.id, name: o.name }));
       await selectTargets(workspaceId, connection.connectionId, targets);
       onSaved();
     } catch (err) {
       setError(err as Error);
       setSaving(false);
-    }
-  };
-
-  const skip = async () => {
-    try {
-      await skipTargets(workspaceId, connection.connectionId);
-      onSaved();
-    } catch (err) {
-      setError(err as Error);
     }
   };
 
@@ -379,9 +426,8 @@ function TargetSelectDialog({
           {label.name} {label.target} 선택
         </h2>
         <p className="muted small">
-          {optional
-            ? '팀 일정을 등록할 캘린더를 고르세요. 고르지 않으면 각자 기본 캘린더를 사용합니다.'
-            : `워크스페이스에서 사용할 ${label.target}을(를) 고르세요.`}
+          {`워크스페이스에서 사용할 ${label.target}을(를) 고르세요.`}
+          {isDrive && ' 폴더를 고르면 그 아래 폴더도 함께 골라져요.'}
         </p>
         {options.loading && <Loading />}
         {options.error && <ErrorBox error={options.error} onRetry={options.reload} />}
@@ -393,11 +439,11 @@ function TargetSelectDialog({
         )}
         {options.data && options.data.length > 0 && (
           <ul className="list scroll">
-            {options.data.map((o) => (
-              <li key={o.id}>
+            {rows.map(({ option: o, depth }) => (
+              <li key={o.id} style={depth > 0 ? { paddingLeft: depth * 20 } : undefined}>
                 <label className="row">
                   <input
-                    type={single ? 'radio' : 'checkbox'}
+                    type="checkbox"
                     checked={selected.has(o.id)}
                     onChange={() => toggle(o.id)}
                   />
@@ -412,11 +458,6 @@ function TargetSelectDialog({
           <button className="btn btn-primary" onClick={save} disabled={saving || selected.size === 0}>
             저장
           </button>
-          {optional && (
-            <button className="btn" onClick={skip}>
-              선택하지 않기
-            </button>
-          )}
           <span className="spacer" />
           <button className="btn" onClick={onClose}>
             닫기

@@ -39,6 +39,13 @@ public interface OAuthProviderClient {
     record AuthResult(OAuthToken token, String externalAccountId, String accountLabel) {
     }
 
-    record TargetOption(String id, String name) {
+    /**
+     * @param parentId Drive 폴더의 상위 폴더 ID. 선택 창에서 폴더를 고르면 그 아래 폴더도 함께 고르는 데 쓴다. 그 밖에는 null
+     */
+    record TargetOption(String id, String name, String parentId) {
+
+        public TargetOption(String id, String name) {
+            this(id, name, null);
+        }
     }
 }

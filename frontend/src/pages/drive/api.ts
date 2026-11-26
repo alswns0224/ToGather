@@ -167,6 +167,18 @@ export const getDriveSubfolders = (
     ws(workspaceId, `/drive/folders/${encodeURIComponent(folderId)}/subfolders`),
   );
 
+/**
+ * POST /api/workspaces/{workspaceId}/drive/folders
+ *
+ * 지금 보고 있는 폴더(연동 폴더 또는 그 아래 폴더) 안에 새 폴더를 만든다. 팀장 소유로 만들어진다.
+ */
+export const createDriveFolder = (
+  workspaceId: string,
+  parentId: string,
+  name: string,
+): Promise<DriveSubfolder> =>
+  http.post<DriveSubfolder>(ws(workspaceId, '/drive/folders'), { parentId, name });
+
 export interface DriveDirectFile {
   id: string;
   name: string | null;
