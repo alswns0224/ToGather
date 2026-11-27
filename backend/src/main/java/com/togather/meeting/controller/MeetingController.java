@@ -109,7 +109,8 @@ public class MeetingController {
                                                            @Valid @RequestBody AgendaRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         return ApiResponse.ok(changed(workspaceId, meetingId,
-                meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId(), request.title())));
+                meetingService.changeAgenda(workspaceId, meetingId, agendaId, userId, request.taskId(),
+                        request.title())));
     }
 
     @DeleteMapping("/{meetingId}/agendas/{agendaId}")
