@@ -1,5 +1,5 @@
 // UI-10 회의 상세 · 안건 · 가용 시간 · 추천 · 확정 (담당: A)
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useParams } from 'react-router';
 import {
@@ -22,6 +22,7 @@ import {
 } from './api';
 import { MEETING_BADGE, STATUS_TEXT } from './MeetingListPage';
 import MeetingEditForm from './MeetingEditForm';
+import MeetingFormIcon from './MeetingFormIcon';
 import './MeetingAvailabilityGrid.css';
 import MeetingAgendaCard from './MeetingAgendaCard';
 import { useAsync } from '../../hooks/useAsync';
@@ -95,7 +96,7 @@ export default function MeetingDetailPage() {
       )}
 
       <div className={scheduling ? 'meeting-board' : 'flex flex-col gap-4'}>
-        <div className="card meeting-main">
+        <div className="card meeting-main min-w-0">
           {/* 머리: 아이콘 · 제목 · 상태 · 요약 */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -320,6 +321,7 @@ function AvailabilityGrid({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error>();
   const brush = useRef<SlotPreference | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!data.data) return;
@@ -331,11 +333,113 @@ function AvailabilityGrid({
     setDirty(false);
   }, [data.data]);
 
-  useEffect(() => {
-    const stop = () => (brush.current = null);
-    window.addEventListener('mouseup', stop);
-    return () => window.removeEventListener('mouseup', stop);
+  const paint = useCallback((cell: string, pref: SlotPreference) => {
+    setPrefs((prev) => {
+      if ((prev.get(cell) ?? 'UNAVAILABLE') === pref) return prev;
+      const next = new Map(prev);
+      if (pref === 'UNAVAILABLE') next.delete(cell);
+      else next.set(cell, pref);
+      return next;
+    });
+    setDirty(true);
   }, []);
+
+  useEffect(() => {
+    let frame = 0;
+    let previousTime = 0;
+    let lastCell: string | undefined;
+    let pointer: { x: number; y: number } | null = null;
+
+    const stop = () => {
+      brush.current = null;
+      pointer = null;
+      lastCell = undefined;
+      previousTime = 0;
+      cancelAnimationFrame(frame);
+      frame = 0;
+    };
+    const paintAt = (x: number, y: number) => {
+      const button = document.elementFromPoint(x, y)?.closest<HTMLButtonElement>('[data-slot-key]');
+      const cell = button?.dataset.slotKey;
+      if (!cell || !brush.current || cell === lastCell || !scrollRef.current?.contains(button!)) return;
+      lastCell = cell;
+      paint(cell, brush.current);
+    };
+    const edgeSpeed = (position: number, start: number, end: number) => {
+      const edge = Math.min(40, (end - start) / 3);
+      if (position < start + edge) return -Math.min(1, (start + edge - position) / edge);
+      if (position > end - edge) return Math.min(1, (position - end + edge) / edge);
+      return 0;
+    };
+    const tick = (time: number) => {
+      const scroll = scrollRef.current;
+      if (!scroll || !pointer || !brush.current) return stop();
+      const bounds = scroll.getBoundingClientRect();
+      const page = scroll.closest('main');
+      const pageBounds = page?.getBoundingClientRect();
+      const top = Math.max(bounds.top, pageBounds?.top ?? 0, 0);
+      const bottom = Math.min(bounds.bottom, pageBounds?.bottom ?? innerHeight, innerHeight);
+      const left = Math.max(bounds.left, pageBounds?.left ?? 0, 0);
+      const right = Math.min(bounds.right, pageBounds?.right ?? innerWidth, innerWidth);
+      const dt = previousTime ? Math.min(time - previousTime, 32) : 16;
+      previousTime = time;
+
+      if (bottom > top && right > left && pointer.x >= left - 40 && pointer.x <= right + 40 && pointer.y >= top - 40 && pointer.y <= bottom + 40) {
+        const dy = edgeSpeed(pointer.y, top, bottom) * 660 * dt / 1000;
+        const dx = edgeSpeed(pointer.x, left, right) * 500 * dt / 1000;
+        const previousTop = scroll.scrollTop;
+        scroll.scrollBy({ top: dy, left: dx, behavior: 'instant' });
+        // Reveal the remainder of a grid clipped by the page after its own scroll reaches an end.
+        if (page && Math.abs(scroll.scrollTop - previousTop) < 0.5 &&
+          ((dy > 0 && bounds.bottom > bottom + 1) || (dy < 0 && bounds.top < top - 1))) {
+          page.scrollBy({ top: dy, behavior: 'instant' });
+        }
+        const headingBottom = scroll.querySelector('thead th')?.getBoundingClientRect().bottom ?? top;
+        if (bottom > Math.max(top, headingBottom) + 4) {
+          paintAt(Math.min(right - 3, Math.max(left + 3, pointer.x)),
+            Math.min(bottom - 3, Math.max(top + 3, headingBottom + 3, pointer.y)));
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    const start = (event: MouseEvent) => {
+      if (event.button !== 0 || !brush.current || !(event.target instanceof Element) ||
+        !scrollRef.current?.contains(event.target.closest('[data-slot-key]'))) return;
+      pointer = { x: event.clientX, y: event.clientY };
+      lastCell = event.target.closest<HTMLButtonElement>('[data-slot-key]')?.dataset.slotKey;
+      cancelAnimationFrame(frame);
+      previousTime = 0;
+      frame = requestAnimationFrame(tick);
+    };
+    const move = (event: MouseEvent) => {
+      if (!brush.current) return;
+      if (!(event.buttons & 1)) return stop();
+      const next = { x: event.clientX, y: event.clientY };
+      if (pointer) {
+        const steps = Math.ceil(Math.hypot(next.x - pointer.x, next.y - pointer.y) / 10);
+        for (let i = 1; i <= steps; i++) {
+          paintAt(pointer.x + (next.x - pointer.x) * i / steps, pointer.y + (next.y - pointer.y) * i / steps);
+        }
+      }
+      pointer = next;
+      paintAt(next.x, next.y);
+    };
+    window.addEventListener('mousedown', start);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', stop);
+    window.addEventListener('blur', stop);
+    window.addEventListener('pointercancel', stop);
+    document.addEventListener('visibilitychange', stop);
+    return () => {
+      stop();
+      window.removeEventListener('mousedown', start);
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', stop);
+      window.removeEventListener('blur', stop);
+      window.removeEventListener('pointercancel', stop);
+      document.removeEventListener('visibilitychange', stop);
+    };
+  }, [paint]);
 
   const grid = useMemo(() => (data.data ? buildGrid(data.data) : null), [data.data]);
   const busy = useMemo(() => new Set((data.data?.busySlots ?? []).map(slotKey)), [data.data]);
@@ -343,16 +447,6 @@ function AvailabilityGrid({
   if (data.loading) return <Loading />;
   if (data.error) return <ErrorBox error={data.error} onRetry={data.reload} />;
   if (!data.data || !grid) return null;
-
-  const paint = (cell: string, pref: SlotPreference) => {
-    setPrefs((prev) => {
-      const next = new Map(prev);
-      if (pref === 'UNAVAILABLE') next.delete(cell);
-      else next.set(cell, pref);
-      return next;
-    });
-    setDirty(true);
-  };
 
   const save = async () => {
     setSaving(true);
@@ -369,73 +463,104 @@ function AvailabilityGrid({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-[var(--border)] p-4">
-      <div className="row">
-        <strong className="text-sm">내 가용 시간</strong>
-        {data.data.hasResponded && !dirty && <span className="badge badge-success">응답 완료</span>}
-        <span className="spacer" />
-        <button className="btn btn-primary btn-small" onClick={save} disabled={saving}>
-          {saving ? '저장 중...' : '저장'}
+    <section className="availability-panel" aria-label="내 참여 가능 시간">
+      <div className="availability-panel__head">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="availability-panel__icon"><MeetingFormIcon name="calendar" className="h-[18px] w-[18px]" /></span>
+          <div className="min-w-0">
+            <strong className="block text-sm">내 참여 가능 시간</strong>
+            <span className="mt-0.5 block text-xs text-[var(--muted)]">함께할 수 있는 시간을 알려주세요</span>
+          </div>
+        </div>
+        <button type="button" className="btn btn-primary btn-small availability-save" onClick={save} disabled={saving}>
+          <MeetingFormIcon name="check" />{saving ? '저장 중...' : '응답 저장'}
         </button>
       </div>
-      <p className="muted small">
-        칸을 누르거나 끌어서 칠하세요. 누를 때마다 가능 → 비선호 → 불가능으로 바뀝니다. 칠하지 않은 칸은 불가능입니다.
-        {data.data.calendarConnected
-          ? ' 회색 칸은 내 Google Calendar에 일정이 있어 자동으로 불가능 처리됩니다.'
-          : ' Google Calendar를 연동하면 일정이 있는 시간이 자동으로 불가능 처리됩니다.'}
-      </p>
-      <div className="legend-row small">
-        <span className="legend available" /> 가능 <span className="legend not_preferred" /> 비선호{' '}
-        <span className="legend busy" /> 캘린더 일정
+
+      <div className="availability-panel__guide">
+        <span>드래그로 선택 · 가장자리에서 자동 스크롤</span>
+        <span className="availability-unit"><MeetingFormIcon name="clock" className="h-3.5 w-3.5" />{data.data.slotMinutes}분 단위 · 한국 시간</span>
       </div>
-      {error && <ErrorBox error={error} />}
-      <div className="avail-scroll">
-        <table className="avail-grid avail-grid--boundaries" aria-label="참여 가능 시간 선택" onMouseLeave={() => (brush.current = null)}>
-          <thead>
-            <tr>
-              <th />
-              {grid.days.map((d) => (
-                <th key={d.toDateString()}>{formatDate(d)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grid.times.map((t) => (
-              <tr key={t}>
-                <th scope="row" aria-label={t}>
-                  {t.endsWith(':00') && <span className="availability-time" aria-hidden="true">{t}</span>}
-                </th>
-                {grid.days.map((d) => {
-                  const cell = grid.cell(d, t);
-                  if (!cell) return <td key={d.toDateString()} className="cell-disabled" />;
-                  if (busy.has(cell)) return <td key={cell} className="cell-busy" title="캘린더 일정" />;
-                  const pref = prefs.get(cell) ?? 'UNAVAILABLE';
-                  return (
-                    <td
-                      key={cell}
-                      className={`cell-${pref.toLowerCase()}`}
-                      title={`${formatDate(d)} ${t} ${PREF_TEXT[pref]}`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        brush.current = NEXT[pref];
-                        paint(cell, NEXT[pref]);
-                      }}
-                      onMouseEnter={() => brush.current && paint(cell, brush.current)}
-                    />
-                  );
-                })}
+      <div className="availability-legend" aria-label="시간 상태 안내">
+        <span><i className="availability-swatch is-available" />가능</span>
+        <span><i className="availability-swatch is-not-preferred" />비선호</span>
+        <span><i className="availability-swatch is-unavailable" />불가</span>
+        <span><i className="availability-swatch is-busy" />캘린더 일정</span>
+      </div>
+      {error && <div className="px-4"><ErrorBox error={error} /></div>}
+      <div className="availability-calendar">
+        <div ref={scrollRef} className="avail-scroll availability-calendar__scroll" role="region" aria-label="시간표, 좌우와 위아래로 스크롤할 수 있습니다" tabIndex={0}>
+          <table className="avail-grid avail-grid--boundaries availability-calendar__grid"
+            style={{ minWidth: 56 + grid.days.length * 72 }}
+            aria-label="참여 가능 시간 선택">
+            <colgroup><col style={{ width: 56 }} />{grid.days.map((d) => <col key={d.toDateString()} />)}</colgroup>
+            <thead>
+              <tr>
+                <th className="availability-axis-title" scope="col"><MeetingFormIcon name="clock" className="h-3.5 w-3.5" /><span className="sr-only">시간</span></th>
+                {grid.days.map((d) => (
+                  <th key={d.toDateString()} scope="col" aria-label={formatDate(d)}>
+                    <div className={`availability-day${d.getDay() === 0 || d.getDay() === 6 ? ' is-weekend' : ''}`}>
+                      <span>{['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][d.getDay()]}</span>
+                      <strong>{d.getMonth() + 1}.{String(d.getDate()).padStart(2, '0')}</strong>
+                    </div>
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th scope="row"><span className="availability-time">{String(data.data.dayEndHour).padStart(2, '0')}:00</span></th>
-              <td colSpan={grid.days.length} aria-hidden="true" />
-            </tr>
-          </tfoot>
-        </table>
+            </thead>
+            <tbody>
+              {grid.times.map((t) => (
+                <tr key={t} className={t.endsWith(':00') ? 'availability-hour-start' : undefined}>
+                  <th scope="row" aria-label={t}>
+                    {t.endsWith(':00') && <span className="availability-time" aria-hidden="true">{t}</span>}
+                  </th>
+                  {grid.days.map((d) => {
+                    const cell = grid.cell(d, t);
+                    if (!cell) return <td key={d.toDateString()} className="cell-disabled" aria-label={`${formatDate(d)} ${t}, 후보 기간 밖`} />;
+                    const endTime = formatTime(new Date(fromLocalIso(cell).getTime() + data.data!.slotMinutes * 60_000));
+                    if (busy.has(cell)) return <td key={cell} className="cell-busy" title={`${formatDate(d)} ${t}–${endTime} · 캘린더 일정`} aria-label={`${formatDate(d)} ${t}–${endTime}, 캘린더 일정`} />;
+                    const pref = prefs.get(cell) ?? 'UNAVAILABLE';
+                    return (
+                      <td key={cell} className={`cell-${pref.toLowerCase()}`}>
+                        <button type="button" className="availability-cell" data-slot-key={cell}
+                          aria-label={`${formatDate(d)} ${t}–${endTime}, ${PREF_TEXT[pref]}`}
+                          aria-pressed={pref !== 'UNAVAILABLE'}
+                          title={`${formatDate(d)} ${t}–${endTime} · ${PREF_TEXT[pref]}`}
+                          onMouseDown={(e) => {
+                            if (e.button !== 0) return;
+                            e.preventDefault();
+                            brush.current = NEXT[pref];
+                            paint(cell, NEXT[pref]);
+                          }}
+                          onClick={(e) => { if (e.detail === 0) paint(cell, NEXT[pref]); }}>
+                          {pref === 'AVAILABLE' && <MeetingFormIcon name="check" className="h-3 w-3" />}
+                          {pref === 'NOT_PREFERRED' && <span className="availability-preference-dot" aria-hidden="true" />}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row"><span className="availability-time">{String(data.data.dayEndHour).padStart(2, '0')}:00</span></th>
+                <td colSpan={grid.days.length} aria-hidden="true" />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
-    </div>
+      <div className="availability-panel__foot">
+        <span className={`availability-response${dirty ? ' is-dirty' : ''}`}>
+          {dirty ? <><i />저장하지 않은 변경사항</> : data.data.hasResponded ? <><MeetingFormIcon name="check" className="h-3.5 w-3.5" />응답 완료</> : '선택한 시간은 저장 후 팀에 반영돼요'}
+        </span>
+        <span>가능 → 비선호 → 불가</span>
+      </div>
+      <p className="availability-calendar-note">
+        <MeetingFormIcon name="calendar" className="h-3.5 w-3.5" />
+        {data.data.calendarConnected ? 'Google Calendar의 일정은 회색으로 표시돼요.' : 'Google Calendar를 연결하면 일정이 있는 시간을 자동으로 표시해요.'}
+      </p>
+    </section>
   );
 }
 
