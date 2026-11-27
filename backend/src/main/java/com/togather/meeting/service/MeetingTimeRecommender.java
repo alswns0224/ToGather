@@ -17,7 +17,9 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>후보 시작 시각은 후보 기간 안에서 30분 간격, 하루 중 {@value #DAY_START_HOUR}시 ~ {@value #DAY_END_HOUR}시 사이만 본다.</li>
  *   <li>참여자가 회의 시간의 모든 칸을 "가능" 또는 "비선호"로 표시했으면 참석 가능. 표시하지 않은 칸이나 "불가능"이 하나라도 있으면 불가능.</li>
- *   <li>가능 인원이 많은 순 → 비선호 인원이 적은 순 → 이른 시각 순으로 정렬하고, 서로 겹치지 않는 후보를 고른다.</li>
+ *   <li>가능 인원이 많은 순 → 비선호 인원이 적은 순 → 이른 시각 순으로 정렬한다.</li>
+ *   <li>후보끼리 시간이 겹쳐도 모두 보여 준다. (예: 10~14시 가능, 2시간 회의 → 10~12, 10:30~12:30, 11~13,
+ *       11:30~13:30, 12~14)</li>
  *   <li>가능 인원과 비선호 인원이 같으면 공동 순위다. 다음 순위는 공동 개수만큼 건너뛴다. (예: 1, 1, 1, 4)</li>
  *   <li>가용 시간에 응답하지 않은 참여자는 계산에서 뺀다.</li>
  * </ul>
@@ -60,16 +62,10 @@ public class MeetingTimeRecommender {
                 .thenComparingInt(Scored::nonPreferredCount)
                 .thenComparing(Scored::startAt));
 
-        List<Scored> selected = new ArrayList<>();
-        for (Scored candidate : scores) {
-            if (selected.size() >= MAX_CANDIDATES || candidate.availableCount() == 0) {
-                break;
-            }
-            boolean overlaps = selected.stream().anyMatch(s -> overlaps(s.startAt(), candidate.startAt(), durationMinutes));
-            if (!overlaps) {
-                selected.add(candidate);
-            }
-        }
+        List<Scored> selected = scores.stream()
+                .filter(candidate -> candidate.availableCount() > 0)
+                .limit(MAX_CANDIDATES)
+                .toList();
         return assignRanks(selected);
     }
 
@@ -144,10 +140,6 @@ public class MeetingTimeRecommender {
             }
         }
         return new Scored(0, start, available, nonPreferred, unavailable);
-    }
-
-    private static boolean overlaps(LocalDateTime a, LocalDateTime b, int durationMinutes) {
-        return a.isBefore(b.plusMinutes(durationMinutes)) && b.isBefore(a.plusMinutes(durationMinutes));
     }
 
     /** 같은 날, DAY_START ~ DAY_END 안에 들어가는지 */

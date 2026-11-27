@@ -13,6 +13,7 @@ import {
 } from '../api';
 import { getMembers, type MemberResponse } from '../../workspace/api';
 import { useAsync } from '../../../hooks/useAsync';
+import { useUndo } from '../../../hooks/useUndo';
 import { formatDateTime } from '../../../utils/date';
 
 /**
@@ -86,12 +87,14 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
   const [draft, setDraft] = useState<{ title: string; body: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const undo = useUndo(draft, setDraft);
 
   const preview = async () => {
     setBusy(true);
     setError(null);
     try {
       setDraft(await getNotionDraft(workspaceId, analysisId));
+      undo.reset();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -126,7 +129,7 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
     );
   }
   return (
-    <form className="form" onSubmit={submit}>
+    <form className="form" onSubmit={submit} onKeyDown={undo.onKeyDown}>
       <label>
         제목
         <input
@@ -134,7 +137,7 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
           required
           maxLength={200}
           value={draft.title}
-          onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+          onChange={(e) => { undo.record('title'); setDraft({ ...draft, title: e.target.value }); }}
         />
       </label>
       <label>
@@ -144,7 +147,7 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
           style={{ minHeight: 220 }}
           required
           value={draft.body}
-          onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+          onChange={(e) => { undo.record('body'); setDraft({ ...draft, body: e.target.value }); }}
         />
       </label>
       {error && <div className="alert alert-error small">문서를 만들지 못했습니다. {error}</div>}

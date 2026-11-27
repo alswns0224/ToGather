@@ -1,5 +1,6 @@
 // UI-10 회의 상세 · 안건 · 가용 시간 · 추천 · 확정 (담당: A)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useUndo } from '../../hooks/useUndo';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useParams } from 'react-router';
 import {
@@ -201,7 +202,7 @@ export default function MeetingDetailPage() {
 
         {scheduling && (
           <Recommendations
-            key={`rec-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}-${responded}`}
+            key={`rec-${m.candidateStartAt}-${m.candidateEndAt}-${m.durationMinutes}`}
             workspaceId={workspaceId}
             meeting={m}
             onConfirm={(startAt, force) => run(() => confirmMeeting(workspaceId, m.meetingId, startAt, force))}
@@ -322,6 +323,12 @@ function AvailabilityGrid({
   const [error, setError] = useState<Error>();
   const brush = useRef<SlotPreference | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Ctrl+Z: 저장한 응답이 아니라 방금 칠한 것(드래그 한 번, 전체 지우기 한 번)을 한 단계씩 되돌린다.
+  const undo = useUndo(prefs, (snapshot) => {
+    setPrefs(snapshot);
+    setDirty(true);
+  });
+  const { reset: resetUndo, onKeyDown: undoKey } = undo;
 
   useEffect(() => {
     if (!data.data) return;
@@ -331,7 +338,19 @@ function AvailabilityGrid({
       ),
     );
     setDirty(false);
-  }, [data.data]);
+    resetUndo();
+  }, [data.data, resetUndo]);
+
+  useEffect(() => {
+    // 시간표 칸은 포커스를 받지 않으므로 화면 전체에서 받는다. 글을 쓰는 칸(안건 입력 등)에서는 그 칸의 되돌리기를 쓴다.
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      undoKey(e);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undoKey]);
 
   const paint = useCallback((cell: string, pref: SlotPreference) => {
     setPrefs((prev) => {
@@ -472,13 +491,20 @@ function AvailabilityGrid({
             <span className="mt-0.5 block text-xs text-[var(--muted)]">함께할 수 있는 시간을 알려주세요</span>
           </div>
         </div>
-        <button type="button" className="btn btn-primary btn-small availability-save" onClick={save} disabled={saving}>
-          <MeetingFormIcon name="check" />{saving ? '저장 중...' : '응답 저장'}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" className="btn btn-small" disabled={saving || prefs.size === 0}
+            title="칠한 칸을 모두 불가로 되돌립니다. Ctrl+Z로 취소할 수 있고, 저장해야 반영돼요."
+            onClick={() => { undo.record(); setPrefs(new Map()); setDirty(true); }}>
+            전체 지우기
+          </button>
+          <button type="button" className="btn btn-primary btn-small availability-save" onClick={save} disabled={saving}>
+            <MeetingFormIcon name="check" />{saving ? '저장 중...' : '응답 저장'}
+          </button>
+        </div>
       </div>
 
       <div className="availability-panel__guide">
-        <span>드래그로 선택 · 가장자리에서 자동 스크롤</span>
+        <span>드래그로 선택 · 가장자리에서 자동 스크롤 · Ctrl+Z 되돌리기</span>
         <span className="availability-unit"><MeetingFormIcon name="clock" className="h-3.5 w-3.5" />{data.data.slotMinutes}분 단위 · 한국 시간</span>
       </div>
       <div className="availability-legend" aria-label="시간 상태 안내">
@@ -528,10 +554,11 @@ function AvailabilityGrid({
                           onMouseDown={(e) => {
                             if (e.button !== 0) return;
                             e.preventDefault();
+                            undo.record();
                             brush.current = NEXT[pref];
                             paint(cell, NEXT[pref]);
                           }}
-                          onClick={(e) => { if (e.detail === 0) paint(cell, NEXT[pref]); }}>
+                          onClick={(e) => { if (e.detail === 0) { undo.record(); paint(cell, NEXT[pref]); } }}>
                           {pref === 'AVAILABLE' && <MeetingFormIcon name="check" className="h-3 w-3" />}
                           {pref === 'NOT_PREFERRED' && <span className="availability-preference-dot" aria-hidden="true" />}
                         </button>
@@ -603,16 +630,21 @@ function Recommendations({
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
-  const [pickedId, setPickedId] = useState<string | number | null>(null);
+  // 후보 ID는 추천할 때마다 새로 생기므로, 고른 후보는 시작 시각으로 기억한다.
+  const [pickedStartAt, setPickedStartAt] = useState<string | null>(null);
   const responded = meeting.participants.filter((p) => p.hasResponded).length;
 
-  const recommend = async () => {
+  /** keep: 응답이 바뀌어 다시 불러올 때는 고른 후보와 "더 보기" 개수를 그대로 둔다. (고른 후보가 사라지면 1순위) */
+  const recommend = async (keep = false) => {
     setLoading(true);
     setError(undefined);
     try {
-      setCandidates(await recommendTimes(workspaceId, meeting.meetingId));
-      setVisible(PAGE_SIZE);
-      setPickedId(null);
+      const next = await recommendTimes(workspaceId, meeting.meetingId);
+      setCandidates(next);
+      if (!keep) {
+        setVisible(PAGE_SIZE);
+        setPickedStartAt(null);
+      }
     } catch (err) {
       setError(err as Error);
     } finally {
@@ -620,13 +652,18 @@ function Recommendations({
     }
   };
 
-  // 응답이 있으면 들어오자마자 추천을 보여준다.
+  // 회의 정보를 다시 받을 때마다(내가 응답을 저장하거나, 다른 참여자가 저장해 실시간으로 갱신될 때) 추천도 다시 계산한다.
+  // 처음 들어올 때도 응답이 있으면 바로 보여준다.
+  const firstLoad = useRef(true);
   useEffect(() => {
-    if (responded > 0) void recommend();
+    const keep = !firstLoad.current;
+    firstLoad.current = false;
+    if (responded > 0) void recommend(keep);
+    else setCandidates(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [meeting]);
 
-  const picked = candidates?.find((c) => c.candidateId === pickedId) ?? candidates?.[0] ?? null;
+  const picked = candidates?.find((c) => c.startAt === pickedStartAt) ?? candidates?.[0] ?? null;
 
   // 확정 직전에 참여자들의 지금 일정을 다시 확인한다. 응답한 뒤에 다른 회의가 잡혔을 수 있다.
   const confirm = async () => {
@@ -665,7 +702,7 @@ function Recommendations({
           <strong className="text-base">추천 시간</strong>
           {candidates && <span className="badge badge-primary">후보 {candidates.length}개</span>}
           <span className="flex-1" />
-          <button type="button" className="analysis-ghost" onClick={recommend} disabled={loading || responded === 0}>
+          <button type="button" className="analysis-ghost" onClick={() => void recommend()} disabled={loading || responded === 0}>
             {loading ? '계산 중...' : '↻ 다시 추천'}
           </button>
         </div>
@@ -693,7 +730,7 @@ function Recommendations({
                   key={c.candidateId}
                   type="button"
                   className={`meeting-cand${active ? ' active' : ''}`}
-                  onClick={() => setPickedId(c.candidateId)}
+                  onClick={() => setPickedStartAt(c.startAt)}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2">

@@ -4,6 +4,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { getPageBlocks, savePageBlocks, uploadPageImage, type NotionBlock, type NotionSaveItem } from './api';
 import { ErrorBox, Loading } from '../../components/Status';
+import { useUndo } from '../../hooks/useUndo';
 
 type TextItem = { key: string; kind: 'TEXT'; blockIds: string[]; original: string; text: string };
 type FixedItem = { key: string; kind: 'FIXED'; id: string; label: string };
@@ -92,6 +93,22 @@ function toItems(blocks: NotionBlock[]): Item[] {
   return items;
 }
 
+type Snapshot = { title: string; items: Item[] | null };
+
+/**
+ * 되돌릴 때 이미지 올리기 상태는 지금 것을 쓴다. (올리는 중에 찍힌 단계로 돌아가도 "올리는 중"에 멈추지 않게)
+ * 올리는 중이던 새 이미지가 지금은 없으면 뺀다.
+ */
+function withCurrentUploads(snapshot: Item[] | null, current: Item[] | null): Item[] | null {
+  if (!snapshot) return snapshot;
+  return snapshot.flatMap((it) => {
+    if (it.kind !== 'IMAGE' || !it.uploading) return [it];
+    const now = current?.find((c) => c.key === it.key);
+    if (now?.kind !== 'IMAGE') return [];
+    return [{ ...it, uploading: now.uploading, fileUploadId: now.fileUploadId, url: now.url, preview: now.preview }];
+  });
+}
+
 function padCells(cells: string[], width: number) {
   return Array.from({ length: width }, (_, i) => cells[i] ?? '');
 }
@@ -142,6 +159,10 @@ export default function BlockEditor({
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const undo = useUndo<Snapshot>({ title, items }, (snapshot) => {
+    setTitle(snapshot.title);
+    setItems((current) => withCurrentUploads(snapshot.items, current));
+  });
 
   const load = () => {
     setLoadError(null);
@@ -151,6 +172,7 @@ export default function BlockEditor({
         setTitle(res.title);
         setOriginalTitle(res.title);
         setItems(toItems(res.blocks));
+        undo.reset();
       })
       .catch((e: Error) => setLoadError(e));
   };
@@ -162,6 +184,7 @@ export default function BlockEditor({
 
   /** key 칸 뒤에 새 이미지 칸(+ 그 뒤에 글 칸)을 넣고 파일을 올린다. */
   const addImage = async (afterKey: string, file: File) => {
+    undo.record();
     const imageKey = nextKey();
     const preview = URL.createObjectURL(file);
     setItems((prev) => {
@@ -240,14 +263,14 @@ export default function BlockEditor({
   const uploading = items.some((it) => it.kind === 'IMAGE' && it.uploading);
 
   return (
-    <form className="form card notion-block-editor" onSubmit={submit}>
+    <form className="form card notion-block-editor" onSubmit={submit} onKeyDown={undo.onKeyDown}>
       <strong className="text-[17px]">문서 수정</strong>
       <label>
         제목
-        <input className="input" required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className="input" required maxLength={200} value={title} onChange={(e) => { undo.record('title'); setTitle(e.target.value); }} />
       </label>
       <span className="small muted">
-        글은 # 제목, - 목록, 1. 번호, [ ] 할 일, &gt; 인용 형식으로 씁니다. 저장하면 고친 부분만 Notion에 반영돼요.
+        글은 # 제목, - 목록, 1. 번호, [ ] 할 일, &gt; 인용 형식으로 씁니다. Ctrl+Z로 방금 고친 것을 되돌려요. 저장하면 고친 부분만 Notion에 반영돼요.
       </span>
 
       {items.map((item, index) => {
@@ -260,7 +283,10 @@ export default function BlockEditor({
                   maxLength={20000}
                   placeholder={index === items.length - 1 ? '여기에 이어서 쓰기' : '여기에 글 추가'}
                   value={item.text}
-                  onChange={(e) => update(item.key, (it) => ({ ...(it as TextItem), text: e.target.value }))}
+                  onChange={(e) => {
+                    undo.record(`text:${item.key}`);
+                    update(item.key, (it) => ({ ...(it as TextItem), text: e.target.value }));
+                  }}
                 />
                 {index > 0 || item.blockIds.length > 0 ? <AddImageButton onPick={(f) => addImage(item.key, f)} /> : null}
               </div>
@@ -272,13 +298,22 @@ export default function BlockEditor({
               </div>
             );
           case 'TABLE':
-            return <TableEditor key={item.key} item={item} onChange={(next) => update(item.key, () => next)} />;
+            return (
+              <TableEditor
+                key={item.key}
+                item={item}
+                onChange={(next, group) => {
+                  undo.record(group && `${item.key}:${group}`);
+                  update(item.key, () => next);
+                }}
+              />
+            );
           case 'IMAGE':
             if (item.deleted) {
               return (
                 <div key={item.key} className="notion-fixed-block">
                   🗑 이미지를 삭제합니다.{' '}
-                  <button type="button" className="btn btn-small" onClick={() => update(item.key, (it) => ({ ...(it as ImageItem), deleted: false }))}>
+                  <button type="button" className="btn btn-small" onClick={() => { undo.record(); update(item.key, (it) => ({ ...(it as ImageItem), deleted: false })); }}>
                     되돌리기
                   </button>
                 </div>
@@ -288,13 +323,19 @@ export default function BlockEditor({
               <ImageEditor
                 key={item.key}
                 item={item}
-                onCaption={(caption) => update(item.key, (it) => ({ ...(it as ImageItem), caption }))}
-                onReplace={(file) => upload(item.key, file)}
-                onDelete={() =>
-                  item.id === null
-                    ? setItems((prev) => prev && prev.filter((it) => it.key !== item.key))
-                    : update(item.key, (it) => ({ ...(it as ImageItem), deleted: true }))
-                }
+                onCaption={(caption) => {
+                  undo.record(`caption:${item.key}`);
+                  update(item.key, (it) => ({ ...(it as ImageItem), caption }));
+                }}
+                onReplace={(file) => {
+                  undo.record();
+                  upload(item.key, file);
+                }}
+                onDelete={() => {
+                  undo.record();
+                  if (item.id === null) setItems((prev) => prev && prev.filter((it) => it.key !== item.key));
+                  else update(item.key, (it) => ({ ...(it as ImageItem), deleted: true }));
+                }}
               />
             );
         }
@@ -380,12 +421,16 @@ function ImageEditor({
   );
 }
 
-function TableEditor({ item, onChange }: { item: TableItem; onChange: (next: TableItem) => void }) {
+/** onChange의 group: 같은 칸에 이어서 치는 글자를 되돌리기 한 단계로 묶을 때 쓴다. (행 추가·삭제는 없음) */
+function TableEditor({ item, onChange }: { item: TableItem; onChange: (next: TableItem, group?: string) => void }) {
   const setCell = (rowIndex: number, col: number, value: string) =>
-    onChange({
-      ...item,
-      rows: item.rows.map((r, i) => (i === rowIndex ? { ...r, cells: r.cells.map((c, j) => (j === col ? value : c)) } : r)),
-    });
+    onChange(
+      {
+        ...item,
+        rows: item.rows.map((r, i) => (i === rowIndex ? { ...r, cells: r.cells.map((c, j) => (j === col ? value : c)) } : r)),
+      },
+      `cell:${rowIndex}:${col}`,
+    );
   const removeRow = (rowIndex: number) => {
     const row = item.rows[rowIndex];
     onChange({

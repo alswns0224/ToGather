@@ -56,13 +56,37 @@ class MeetingTimeRecommenderTest {
     }
 
     @Test
-    void 추천_후보끼리는_시간이_겹치지_않는다() {
+    void 추천_후보는_30분_간격으로_겹쳐도_나온다() {
         Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
         responses.put(1L, cells(SlotPreference.AVAILABLE, at(10, 0), at(10, 30), at(11, 0), at(11, 30)));
 
         List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(18, 0)), 60, responses);
 
-        assertThat(result).extracting(Scored::startAt).containsExactly(at(10, 0), at(11, 0));
+        assertThat(result).extracting(Scored::startAt).containsExactly(at(10, 0), at(10, 30), at(11, 0));
+    }
+
+    @Test
+    void 긴_회의는_겹치는_시간도_30분_간격으로_추천한다() {
+        Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
+        responses.put(1L, cells(SlotPreference.AVAILABLE, at(10, 0), at(10, 30), at(11, 0), at(11, 30),
+                at(12, 0), at(12, 30), at(13, 0), at(13, 30)));
+
+        // 10~14시 가능, 2시간 회의 → 10~12, 10:30~12:30, 11~13, 11:30~13:30, 12~14
+        List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(18, 0)), 120, responses);
+
+        assertThat(result).extracting(Scored::startAt)
+                .containsExactly(at(10, 0), at(10, 30), at(11, 0), at(11, 30), at(12, 0));
+    }
+
+    @Test
+    void 가능_시간이_30분에_시작하면_후보도_그때부터_나온다() {
+        Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
+        responses.put(1L, cells(SlotPreference.AVAILABLE, at(10, 30), at(11, 0), at(11, 30), at(12, 0),
+                at(12, 30), at(13, 0)));
+
+        List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(18, 0)), 120, responses);
+
+        assertThat(result).extracting(Scored::startAt).containsExactly(at(10, 30), at(11, 0), at(11, 30));
     }
 
     @Test
@@ -90,8 +114,8 @@ class MeetingTimeRecommenderTest {
 
         List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(22, 0)), 60, responses);
 
-        // 9~22시에 겹치지 않는 1시간 회의 13개, 모두 공동 1위
-        assertThat(result).hasSize(13);
+        // 9~22시에 30분 간격으로 시작하는 1시간 회의 25개, 모두 공동 1위
+        assertThat(result).hasSize(25);
         assertThat(result).extracting(Scored::rank).containsOnly(1);
     }
 

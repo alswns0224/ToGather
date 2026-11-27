@@ -15,6 +15,7 @@ import {
 import { getTasksByContent } from '../task/api';
 import { useAsync } from '../../hooks/useAsync';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
+import { useUndo } from '../../hooks/useUndo';
 import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import ServiceLogo from '../../components/ServiceLogo';
@@ -398,6 +399,8 @@ function PageEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const undo = useUndo(form, setForm);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -412,7 +415,7 @@ function PageEditor({
   };
 
   return (
-    <form className="form card" onSubmit={submit}>
+    <form className="form card" onSubmit={submit} onKeyDown={undo.onKeyDown}>
       <strong className="text-[17px]">{title}</strong>
       {databases && databases.length > 1 && (
         <label>
@@ -420,7 +423,7 @@ function PageEditor({
           <select
             className="input"
             value={form.databaseId}
-            onChange={(e) => setForm({ ...form, databaseId: e.target.value })}
+            onChange={(e) => { undo.record(); setForm({ ...form, databaseId: e.target.value }); }}
           >
             {databases.map((d) => (
               <option key={d.databaseId} value={d.databaseId}>
@@ -437,7 +440,7 @@ function PageEditor({
           required
           maxLength={200}
           value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
+          onChange={(e) => { undo.record('title'); setForm({ ...form, title: e.target.value }); }}
         />
       </label>
       <label>
@@ -446,9 +449,9 @@ function PageEditor({
           className="input notion-editor"
           maxLength={20000}
           value={form.body}
-          onChange={(e) => setForm({ ...form, body: e.target.value })}
+          onChange={(e) => { undo.record('body'); setForm({ ...form, body: e.target.value }); }}
         />
-        <span className="small muted"># 제목, - 목록, 1. 번호, [ ] 할 일, &gt; 인용 형식을 Notion 블록으로 바꿉니다.</span>
+        <span className="small muted"># 제목, - 목록, 1. 번호, [ ] 할 일, &gt; 인용 형식을 Notion 블록으로 바꿉니다. Ctrl+Z로 방금 고친 것을 되돌려요.</span>
       </label>
       {error && <div className="alert alert-error">저장하지 못했습니다. {error}</div>}
       <div className="row">
