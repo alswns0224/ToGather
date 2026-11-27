@@ -227,20 +227,14 @@ public class GmailSyncAdapter implements SyncAdapter {
             );
 
         /*
-         * 삭제된 Gmail 메시지는 현재 ContentRefService에
-         * 공통 삭제 API가 없으므로 여기서는 별도로 삭제하지 않는다.
+         * Gmail에서 지우거나 휴지통으로 옮긴 메일은 행을 지우지 않고
+         * 원본 삭제로 표시한다. (근거·Task 연결 보존, 목록에서는 빠짐)
          */
-        if (!history.deletedMessageIds()
-            .isEmpty()) {
-
-            log.debug(
-                "Gmail 삭제 이력 감지: workspaceId={}, ownerUserId={}, count={}",
-                context.workspaceId(),
-                context.ownerUserId(),
-                history.deletedMessageIds()
-                    .size()
-            );
-        }
+        markDeleted(
+            context.workspaceId(),
+            context.ownerUserId(),
+            history.deletedMessageIds()
+        );
 
         String latestHistoryId =
             normalizeCursor(
@@ -299,6 +293,36 @@ public class GmailSyncAdapter implements SyncAdapter {
                 profile.historyId()
             )
         );
+    }
+
+    /**
+     * 저장된 메일만 원본 삭제로 표시한다.
+     * 저장한 적 없는 메일이거나 다른 사람의 메일이면 건너뛴다.
+     */
+    private void markDeleted(
+        Long workspaceId,
+        Long ownerUserId,
+        List<String> messageIds
+    ) {
+        for (String messageId : messageIds) {
+            contentRefService.findByOrigin(
+                    workspaceId,
+                    Provider.GMAIL,
+                    messageId
+                )
+                .filter(ref ->
+                    ownerUserId.equals(
+                        contentRefService
+                            .getOwner(ref.contentRefId())
+                            .ownerUserId()
+                    )
+                )
+                .ifPresent(ref ->
+                    contentRefService.markOriginDeleted(
+                        ref.contentRefId()
+                    )
+                );
+        }
     }
 
     private int saveMessages(

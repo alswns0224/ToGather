@@ -1,4 +1,7 @@
 package com.togather.content.calendar.client;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
+import com.togather.content.calendar.client.GoogleCalendarClient.CalendarEvent;
+import com.togather.content.calendar.client.GoogleCalendarClient.EventList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -60,5 +63,29 @@ class GoogleCalendarClientTest {
     void 팀_일정은_참석자_캘린더에도_들어가도록_초대를_보낸다() {
         assertThat(GoogleCalendarClient.insertUri("team@gmail.com", false).getRawQuery())
                 .contains("sendUpdates=all");
+    }
+
+
+    @Test
+    void 기간_일정을_가져오면서_지운_일정_ID를_따로_돌려준다() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        GoogleCalendarClient client = new GoogleCalendarClient(builder.build());
+        server.expect(requestTo(org.hamcrest.Matchers.containsString("/calendars/team-cal/events")))
+                .andExpect(queryParam("showDeleted", "true"))
+                .andRespond(withSuccess("""
+                        {"items": [
+                          {"id": "e1", "status": "confirmed", "summary": "회의",
+                           "start": {"dateTime": "2026-10-20T10:00:00+09:00"},
+                           "end": {"dateTime": "2026-10-20T11:00:00+09:00"}},
+                          {"id": "e2", "status": "cancelled"}
+                        ]}
+                        """, MediaType.APPLICATION_JSON));
+
+        EventList list = client.listEventsWithDeleted("token", "team-cal", LocalDateTime.of(2026, 10, 1, 0, 0),
+                LocalDateTime.of(2026, 11, 1, 0, 0));
+
+        assertThat(list.events()).extracting(CalendarEvent::id).containsExactly("e1");
+        assertThat(list.cancelledIds()).containsExactly("e2");
     }
 }

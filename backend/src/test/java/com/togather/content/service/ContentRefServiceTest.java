@@ -9,6 +9,7 @@ import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.support.IntegrationTestSupport;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -143,6 +144,42 @@ class ContentRefServiceTest extends IntegrationTestSupport {
 
         assertThat(contentRefService.getOwner(saved.contentRefId()).isOriginDeleted()).isTrue();
         assertThat(contentRefService.getContentRef(saved.contentRefId()).content()).isEqualTo("남길 내용");
+    }
+
+
+    @Test
+    void 삭제만_발생한_재동기화도_변경을_알리고_조회_범위_밖의_자료는_보존한다() {
+        ContentRefDTO missing = contentRefService.upsert(message("missing", null, "남길 사본", T0, null));
+        ContentRefDTO alive = contentRefService.upsert(message("alive", null, "현재 메시지", T0.plusMinutes(1), null));
+        ContentRefDTO future = contentRefService.upsert(message("new", null, "조회 후 도착", T0.plusHours(2), null));
+        ContentRefDTO personal = contentRefService.upsert(new ContentRefUpsert(workspaceId, userId, Provider.SLACK,
+                ContentType.MESSAGE, "private", "C1", null, null, "개인 자료", null, T0));
+
+        Runnable rescan = () -> contentRefService.markMissingRootsDeleted(workspaceId, Provider.SLACK, "C1",
+                T0.minusHours(1), T0.plusHours(1), Set.of(alive.externalId()));
+        assertThat(ContentRefService.countChanges(rescan)).isEqualTo(1);
+        assertThat(ContentRefService.countChanges(rescan)).isZero();
+        assertThat(contentRefService.getOwner(missing.contentRefId()).isOriginDeleted()).isTrue();
+        assertThat(contentRefService.getContentRef(missing.contentRefId()).content()).isEqualTo("남길 사본");
+        assertThat(contentRefService.getOwner(alive.contentRefId()).isOriginDeleted()).isFalse();
+        assertThat(contentRefService.getOwner(future.contentRefId()).isOriginDeleted()).isFalse();
+        assertThat(contentRefService.getOwner(personal.contentRefId()).isOriginDeleted()).isFalse();
+    }
+
+    @Test
+    void 사라진_답글과_스레드_삭제도_한_번씩만_변경으로_알린다() {
+        ContentRefDTO root = contentRefService.upsert(message("root", null, "근거 발언", T0, null));
+        ContentRefDTO reply = contentRefService.upsert(message("reply", root.contentRefId(), "근거 답글", T0, null));
+
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.markMissingRepliesDeleted(root.contentRefId(), Set.of()))).isEqualTo(1);
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.markMissingRepliesDeleted(root.contentRefId(), Set.of()))).isZero();
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.markThreadDeleted(root.contentRefId()))).isEqualTo(1);
+        assertThat(ContentRefService.countChanges(() ->
+                contentRefService.markThreadDeleted(root.contentRefId()))).isZero();
+        assertThat(contentRefService.getContentRef(reply.contentRefId()).content()).isEqualTo("근거 답글");
     }
 
     private ContentRefUpsert message(String ts, Long parentRefId, String text, LocalDateTime createdAt,

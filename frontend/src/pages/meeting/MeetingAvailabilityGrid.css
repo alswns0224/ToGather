@@ -1,0 +1,37 @@
+.avail-grid--boundaries thead th {
+  padding-bottom: 12px;
+}
+
+.avail-grid--boundaries tbody tr,
+.avail-grid--boundaries tbody td {
+  height: 20px;
+}
+
+.avail-grid--boundaries tbody th,
+.avail-grid--boundaries tfoot th {
+  left: 0;
+  z-index: 2;
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  vertical-align: top;
+  color: var(--muted);
+}
+
+.avail-grid--boundaries .availability-time {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  transform: translateY(-50%);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.avail-grid--boundaries tfoot th,
+.avail-grid--boundaries tfoot td {
+  height: 10px;
+  padding: 0;
+  border: 0;
+  cursor: default;
+}
