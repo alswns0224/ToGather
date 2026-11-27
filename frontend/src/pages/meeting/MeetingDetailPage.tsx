@@ -22,6 +22,7 @@ import {
 } from './api';
 import { MEETING_BADGE, STATUS_TEXT } from './MeetingListPage';
 import MeetingEditForm from './MeetingEditForm';
+import './MeetingAvailabilityGrid.css';
 import MeetingAgendaCard from './MeetingAgendaCard';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorBox, Loading } from '../../components/Status';
@@ -389,7 +390,7 @@ function AvailabilityGrid({
       </div>
       {error && <ErrorBox error={error} />}
       <div className="avail-scroll">
-        <table className="avail-grid" onMouseLeave={() => (brush.current = null)}>
+        <table className="avail-grid avail-grid--boundaries" aria-label="참여 가능 시간 선택" onMouseLeave={() => (brush.current = null)}>
           <thead>
             <tr>
               <th />
@@ -401,7 +402,9 @@ function AvailabilityGrid({
           <tbody>
             {grid.times.map((t) => (
               <tr key={t}>
-                <th className="small">{t.endsWith(':00') ? t : ''}</th>
+                <th scope="row" aria-label={t}>
+                  {t.endsWith(':00') && <span className="availability-time" aria-hidden="true">{t}</span>}
+                </th>
                 {grid.days.map((d) => {
                   const cell = grid.cell(d, t);
                   if (!cell) return <td key={d.toDateString()} className="cell-disabled" />;
@@ -424,6 +427,12 @@ function AvailabilityGrid({
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row"><span className="availability-time">{String(data.data.dayEndHour).padStart(2, '0')}:00</span></th>
+              <td colSpan={grid.days.length} aria-hidden="true" />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
