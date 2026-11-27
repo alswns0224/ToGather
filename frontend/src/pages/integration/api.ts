@@ -59,9 +59,6 @@ export const getAvailableTargets = (workspaceId: string, connectionId: number) =
 export const selectTargets = (workspaceId: string, connectionId: number, targets: TargetItem[]) =>
   http.post<ConnectionStatusDTO>(ws(workspaceId, `/integrations/connections/${connectionId}/targets`), { targets });
 
-export const skipTargets = (workspaceId: string, connectionId: number) =>
-  http.post<ConnectionStatusDTO>(ws(workspaceId, `/integrations/connections/${connectionId}/skip-targets`));
-
 export interface DisconnectResult {
   manualRevocationRequired: boolean;
   relatedConnectionsRequireReauth: boolean;
@@ -85,10 +82,6 @@ export interface SyncStatus {
   failed: boolean;
   lastError: string | null;
 }
-
-/** 서비스별 마지막 동기화 상태 (대상마다 한 건) */
-export const getSyncStatuses = (workspaceId: string, provider: Provider) =>
-  http.get<SyncStatus[]>(ws(workspaceId, `/sync/${provider}`));
 
 /** 수동 동기화 버튼: 1분 간격 제한 없이 바로 동기화 */
 export const syncNow = (workspaceId: string, provider: Provider) =>

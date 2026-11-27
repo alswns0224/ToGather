@@ -10,6 +10,4 @@ public interface DriveTrashEntryRepository extends JpaRepository<DriveTrashEntry
     Optional<DriveTrashEntry> findByWorkspaceIdAndItemId(Long workspaceId, String itemId);
 
     List<DriveTrashEntry> findAllByWorkspaceId(Long workspaceId);
-
-    void deleteByWorkspaceIdAndItemId(Long workspaceId, String itemId);
 }

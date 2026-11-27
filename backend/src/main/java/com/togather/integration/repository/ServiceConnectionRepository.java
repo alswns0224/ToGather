@@ -32,6 +32,9 @@ public interface ServiceConnectionRepository extends JpaRepository<ServiceConnec
     List<ServiceConnection> findAllByProviderAndExternalAccountIdAndStatusNot(
             Provider provider, String externalAccountId, ConnectionStatus status);
 
+    /** 외부 계정의 연결 전부 (해제된 것 포함). 끊긴 연결에 보관된 대상까지 정리할 때 쓴다. */
+    List<ServiceConnection> findAllByProviderAndExternalAccountId(Provider provider, String externalAccountId);
+
     List<ServiceConnection> findAllByProviderInAndExternalAccountIdAndStatusNot(
             Collection<Provider> providers, String externalAccountId, ConnectionStatus status);
 }

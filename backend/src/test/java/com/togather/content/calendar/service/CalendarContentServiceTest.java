@@ -66,9 +66,31 @@ class CalendarContentServiceTest extends IntegrationTestSupport {
         assertThat(contentRefService.getOwner(second.getFirst().contentRefId()).isOriginDeleted()).isFalse();
     }
 
-    private static CalendarEvent event(String id, String title) {
+    /** 이 워크스페이스에서 만든 팀 일정 */
+    private CalendarEvent event(String id, String title) {
         LocalDateTime start = LocalDateTime.of(2026, 10, 20, 10, 0);
         return new CalendarEvent(id, title, null, start, start.plusHours(1), false, List.of(),
-                "https://calendar/" + id, null, start.minusDays(1));
+                "https://calendar/" + id, null, start.minusDays(1), null, String.valueOf(workspaceId));
+    }
+
+    @Test
+    void 표시_없는_예전_일정은_다른_워크스페이스에도_팀_일정으로_저장돼_있으면_팀_일정으로_주지_않는다() {
+        Long other = createWorkspace(userId);
+        when(integrationService.findTargetAccess(other, Provider.GOOGLE_CALENDAR))
+                .thenReturn(Optional.of(new TargetAccess(1L, userId, TOKEN, List.of("team-cal"))));
+        LocalDateTime start = LocalDateTime.of(2026, 10, 20, 10, 0);
+        CalendarEvent legacy = new CalendarEvent("old", "예전 일정", null, start, start.plusHours(1), false, List.of(),
+                "https://calendar/old", null, start.minusDays(1));
+        // 예전에는 표시 없이도 팀 일정으로 저장됐다.
+        for (Long ws : List.of(workspaceId, other)) {
+            contentRefService.upsert(new ContentRefService.ContentRefUpsert(ws, null, Provider.GOOGLE_CALENDAR,
+                    com.togather.common.enums.ContentType.EVENT, "old", "team-cal", null, "예전 일정", null,
+                    "https://calendar/old", start));
+        }
+        when(calendarClient.listEventsWithDeleted(eq(TOKEN), eq("team-cal"), any(), any()))
+                .thenReturn(new EventList(List.of(legacy), List.of()));
+
+        assertThat(calendarContentService.getEvents(workspaceId, userId, FROM, TO))
+                .filteredOn(e -> !e.personal()).isEmpty();
     }
 }

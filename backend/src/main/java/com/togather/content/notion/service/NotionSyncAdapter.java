@@ -96,6 +96,10 @@ public class NotionSyncAdapter implements SyncAdapter {
         if (complete) {
             markRemoved(context.workspaceId(), targetId, pages);
         }
+        // 연동한 페이지 자체가 휴지통에 있으면 연동 대상에서 뺀다. (웹훅을 놓쳤을 때를 대비)
+        if (NotionOAuthClient.isPageTarget(targetId) && !pages.isEmpty() && pages.get(0).archived()) {
+            integrationService.removeDeletedTargets(context.workspaceId(), Provider.NOTION, List.of(targetId));
+        }
         return new SyncResult(saved, startedAt);
     }
 

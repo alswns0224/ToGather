@@ -110,6 +110,8 @@ public class CalendarContentService {
             }
             throw e;
         }
+        // 팀장 캘린더에는 다른 워크스페이스 일정과 팀장 개인 일정도 있다. 이 워크스페이스 일정만 팀 일정으로 본다.
+        teamEvents = onlyThisWorkspace(workspaceId, teamEvents);
         // 참여자 캘린더에 넣은 사본은 일정 ID가 달라도 iCalUID가 같으므로 둘 다로 거른다.
         Set<String> teamEventIds = teamEvents.stream()
                 .flatMap(e -> java.util.stream.Stream.of(e.id(), e.iCalUid()))
@@ -119,6 +121,21 @@ public class CalendarContentService {
         all.addAll(personalEventsOrEmpty(workspaceId, userId, from, to, teamEventIds));
         all.sort(Comparator.comparing(CalendarEventResponse::startAt, Comparator.nullsLast(Comparator.naturalOrder())));
         return all;
+    }
+
+    /**
+     * 팀장 캘린더의 일정 중 이 워크스페이스의 팀 일정만 남긴다.
+     * ToGather가 만든 일정에는 워크스페이스 표시가 있다. 표시가 없는 예전 일정은 이 워크스페이스에만 팀 일정으로
+     * 저장돼 있을 때만 남긴다. (여러 워크스페이스에 함께 저장돼 있으면 어디 것인지 알 수 없어 뺀다)
+     * 빠진 일정은 팀장 화면에서 개인 일정으로 보인다.
+     */
+    private List<CalendarEvent> onlyThisWorkspace(Long workspaceId, List<CalendarEvent> events) {
+        String tag = String.valueOf(workspaceId);
+        Set<String> legacy = contentRefService.teamOriginsOnlyIn(workspaceId, Provider.GOOGLE_CALENDAR,
+                events.stream().filter(e -> e.workspaceTag() == null).map(CalendarEvent::id).toList());
+        return events.stream()
+                .filter(e -> e.workspaceTag() == null ? legacy.contains(e.id()) : tag.equals(e.workspaceTag()))
+                .toList();
     }
 
     private List<CalendarEvent> readEvents(Long workspaceId, Access access, LocalDateTime from, LocalDateTime to) {
@@ -284,7 +301,7 @@ public class CalendarContentService {
                                                  boolean withMeet) {
         Access access = workspaceAccess(workspaceId, userId);
         CalendarEvent event = calendarClient.insertEvent(access.token(), access.calendarId(),
-                new EventWrite(title, description, startAt, endAt, emails(participantIds)), withMeet);
+                new EventWrite(title, description, startAt, endAt, emails(participantIds), workspaceId), withMeet);
         ContentRefDTO ref = save(workspaceId, access, event);
         copyService.copyToParticipants(workspaceId, ref.contentRefId(), access.calendarId(), access.ownerUserId(),
                 event, participantIds);

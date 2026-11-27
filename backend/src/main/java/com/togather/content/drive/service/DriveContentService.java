@@ -182,7 +182,12 @@ public class DriveContentService {
         });
     }
 
-    public record DriveSubfolderResponse(String id, String name) {
+    /** @param fileCount 이 폴더 바로 안의 파일 수 (하위 폴더 제외). 확인하지 못했으면 null */
+    public record DriveSubfolderResponse(String id, String name, Integer fileCount) {
+
+        public DriveSubfolderResponse(String id, String name) {
+            this(id, name, null);
+        }
     }
 
     public record DriveDirectFileResponse(
@@ -212,8 +217,18 @@ public class DriveContentService {
         String token = browseToken(workspaceId, userId, parentFolderId, selectedFolders);
 
         return driveApiClient.listSubfolders(token, parentFolderId).stream()
-            .map(f -> new DriveSubfolderResponse(f.id(), f.name()))
+            .map(f -> new DriveSubfolderResponse(f.id(), f.name(), countFiles(token, f.id())))
             .toList();
+    }
+
+    /** 폴더 바로 안의 파일 수. 폴더를 열었을 때 보이는 파일 목록과 같은 기준이다. 실패하면 null (목록은 그대로 보여 준다) */
+    private Integer countFiles(String token, String folderId) {
+        try {
+            return driveApiClient.listFolderFiles(token, folderId).size();
+        } catch (BusinessException e) {
+            log.info("Drive 폴더 파일 수 확인 실패: folderId={}, error={}", folderId, e.getErrorCode());
+            return null;
+        }
     }
 
     public List<DriveDirectFileResponse> getDirectFiles(

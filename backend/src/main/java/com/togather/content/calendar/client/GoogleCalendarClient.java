@@ -50,9 +50,21 @@ public class GoogleCalendarClient {
 
     private final RestClient externalRestClient;
 
+    /** 일정을 만든 ToGather 워크스페이스 ID를 넣어 두는 extendedProperties.private 키 */
+    public static final String WORKSPACE_KEY = "togatherWorkspaceId";
+
+    /** @param workspaceTag 일정을 만든 ToGather 워크스페이스 ID (ToGather 밖에서 만든 일정·예전 일정은 null) */
     public record CalendarEvent(String id, String title, String description, LocalDateTime startAt,
                                 LocalDateTime endAt, boolean allDay, List<String> attendeeEmails,
-                                String htmlLink, String meetLink, LocalDateTime createdAt, String iCalUid) {
+                                String htmlLink, String meetLink, LocalDateTime createdAt, String iCalUid,
+                                String workspaceTag) {
+
+        public CalendarEvent(String id, String title, String description, LocalDateTime startAt, LocalDateTime endAt,
+                             boolean allDay, List<String> attendeeEmails, String htmlLink, String meetLink,
+                             LocalDateTime createdAt, String iCalUid) {
+            this(id, title, description, startAt, endAt, allDay, attendeeEmails, htmlLink, meetLink, createdAt, iCalUid,
+                    null);
+        }
 
         public CalendarEvent(String id, String title, String description, LocalDateTime startAt, LocalDateTime endAt,
                              boolean allDay, List<String> attendeeEmails, String htmlLink, String meetLink,
@@ -69,13 +81,18 @@ public class GoogleCalendarClient {
     public record EventList(List<CalendarEvent> events, List<String> cancelledIds) {
     }
 
-    /** 생성·수정 요청. null인 값은 수정 시 바꾸지 않는다. */
+    /**
+     * 생성·수정 요청. null인 값은 수정 시 바꾸지 않는다.
+     *
+     * @param workspaceId 이 일정을 만든 ToGather 워크스페이스. 팀 일정을 워크스페이스별로 가리는 데 쓴다.
+     */
     public record EventWrite(String title, String description, LocalDateTime startAt, LocalDateTime endAt,
-                             List<String> attendeeEmails) {
-    }
+                             List<String> attendeeEmails, Long workspaceId) {
 
-    public List<CalendarEvent> listEvents(String token, String calendarId, LocalDateTime from, LocalDateTime to) {
-        return listEventsWithDeleted(token, calendarId, from, to).events();
+        public EventWrite(String title, String description, LocalDateTime startAt, LocalDateTime endAt,
+                          List<String> attendeeEmails) {
+            this(title, description, startAt, endAt, attendeeEmails, null);
+        }
     }
 
     public EventList listEventsWithDeleted(String token, String calendarId, LocalDateTime from, LocalDateTime to) {
@@ -231,7 +248,8 @@ public class GoogleCalendarClient {
         String created = str(json, "created");
         return new CalendarEvent(str(json, "id"), str(json, "summary"), str(json, "description"), startAt, endAt,
                 allDay, attendees, str(json, "htmlLink"), str(json, "hangoutLink"),
-                created == null ? null : toLocal(created), str(json, "iCalUID"));
+                created == null ? null : toLocal(created), str(json, "iCalUID"),
+                str(obj(obj(json, "extendedProperties"), "private"), WORKSPACE_KEY));
     }
 
     private static Map<String, Object> toBody(EventWrite write) {
@@ -250,6 +268,9 @@ public class GoogleCalendarClient {
         }
         if (write.attendeeEmails() != null) {
             body.put("attendees", write.attendeeEmails().stream().map(email -> Map.of("email", email)).toList());
+        }
+        if (write.workspaceId() != null) {
+            body.put("extendedProperties", Map.of("private", Map.of(WORKSPACE_KEY, String.valueOf(write.workspaceId()))));
         }
         return body;
     }

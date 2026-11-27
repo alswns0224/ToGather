@@ -6,6 +6,9 @@ import {
   deleteMessage,
   getChannelMessages,
   getChannels,
+  dmUnreadCount,
+  getDmConversations,
+  markDmSeen,
   syncSlack,
   updateMessage,
   type SlackMessageResponse,
@@ -19,6 +22,7 @@ import NavIcon from '../../layouts/NavIcon';
 import { BTN_SUB } from '../../components/ui';
 import { formatDateTime, fromLocalIso, sameDay } from '../../utils/date';
 import Composer from './components/Composer';
+import DmMessages from './components/DmMessages';
 import MessageItem from './components/MessageItem';
 import ThreadPanel from './components/ThreadPanel';
 import './slack.css';
@@ -26,6 +30,8 @@ import './slack.css';
 const PAGE_SIZE = 30;
 /** 실시간 알림이 빠졌을 때를 대비한 보조 동기화 간격 (화면을 보고 있을 때만) */
 const FALLBACK_SYNC_MS = 60_000;
+/** DM은 웹훅으로 바로 반영된다. 이벤트를 놓쳤을 때를 위해서만 가끔 다시 가져온다. */
+const DM_REFRESH_MS = 5 * 60_000;
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function SlackPage() {
@@ -37,6 +43,22 @@ export default function SlackPage() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncTick, setSyncTick] = useState(0);
   const [channelQuery, setChannelQuery] = useState('');
+
+  // 내 1:1 DM. 내가 Slack을 연결하지 않았으면 목록 없이 둔다. 새 메시지 수를 보려고 주기적으로 다시 가져온다.
+  const dms = useAsync(() => getDmConversations(workspaceId).catch(() => []), [workspaceId]);
+  const dmId = params.get('dm');
+  const dm = dms.data?.find((d) => d.channelId === dmId);
+  // 열어 둔 DM은 본 것으로 기억한다. (새 메시지로 수가 늘어도 보고 있으니 본 것)
+  useEffect(() => {
+    if (dm) markDmSeen(workspaceId, dm);
+  }, [workspaceId, dm]);
+  const reloadDms = dms.reload;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') reloadDms();
+    }, DM_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [reloadDms]);
 
   const channelId = params.get('channel') ?? channels.data?.[0]?.channelId ?? null;
   const threadTs = params.get('thread');
@@ -68,7 +90,14 @@ export default function SlackPage() {
 
   // Slack에서 메시지를 쓰거나 고치거나 지우면 서버가 바로 알려준다. 보고 있는 채널·스레드만 그 자리에서 다시 불러온다.
   const [liveTick, setLiveTick] = useState(0);
+  // DM은 Slack이 보낸 이벤트(웹훅)를 서버가 본인 화면에만 알려 준다. 그때만 목록과 열린 대화를 다시 불러온다.
+  const [dmTick, setDmTick] = useState(0);
   useWorkspaceEvents(workspaceId, (event) => {
+    if (event.provider === 'SLACK_DM') {
+      reloadDms();
+      if (event.targetId === dmId) setDmTick((t) => t + 1);
+      return;
+    }
     if (event.provider !== 'SLACK') return;
     channels.reload();
     if (event.targetId === channelId) setLiveTick((t) => t + 1);
@@ -149,8 +178,8 @@ export default function SlackPage() {
                 <button
                   key={c.channelId}
                   type="button"
-                  className={`slack-channel${c.channelId === channelId ? ' active' : ''}`}
-                  onClick={() => select({ channel: c.channelId, thread: null })}
+                  className={`slack-channel${!dmId && c.channelId === channelId ? ' active' : ''}`}
+                  onClick={() => select({ channel: c.channelId, thread: null, dm: null })}
                 >
                   <span># {c.name}</span>
                   {c.syncFailed && (
@@ -166,8 +195,40 @@ export default function SlackPage() {
             <div className={`slack-channel-state${anyFailed ? ' failed' : ''}`}>
               {anyFailed ? '● 일부 동기화 실패' : '● 최신 상태'}
             </div>
+
+            <div className="slack-col-title mt-4">내 DM</div>
+            <div className="slack-channel-list">
+              {(dms.data ?? []).map((d) => {
+                const unread = d.channelId === dmId ? 0 : dmUnreadCount(workspaceId, d);
+                return (
+                  <button
+                    key={d.channelId}
+                    type="button"
+                    className={`slack-channel${d.channelId === dmId ? ' active' : ''}`}
+                    onClick={() => select({ dm: d.channelId, thread: null })}
+                  >
+                    <span>@ {d.name}</span>
+                    {unread > 0 && (
+                      <span className="slack-unread" aria-label={`안 읽은 메시지 ${unread}개`}>
+                        {unread > 99 ? '99+' : unread}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {dms.data && dms.data.length === 0 && <div className="small muted px-1">DM이 없거나 내 Slack을 연결하지 않았어요.</div>}
+            </div>
           </nav>
 
+          {dmId ? (
+            <DmMessages
+              key={`${workspaceId}/${dmId}`}
+              workspaceId={workspaceId}
+              channelId={dmId}
+              name={dm?.name ?? 'DM'}
+              refreshKey={dmTick}
+            />
+          ) : (
           <ChannelMessages
             key={`${workspaceId}/${channelId}/${syncTick}`}
             refreshKey={liveTick}
@@ -178,8 +239,9 @@ export default function SlackPage() {
             selectedTs={threadTs}
             onOpenThread={(ts) => select({ thread: ts })}
           />
+          )}
 
-          {threadTs ? (
+          {threadTs && !dmId ? (
             <ThreadPanel
               key={`${workspaceId}/${channelId}/${threadTs}`}
               refreshKey={liveTick}
@@ -199,7 +261,9 @@ export default function SlackPage() {
                 <strong className="text-[15px]">스레드</strong>
               </div>
               <div className="slack-thread-body">
-                <div className="text-[13px] text-[var(--muted)]">메시지를 선택하면 스레드가 열립니다.</div>
+                <div className="text-[13px] text-[var(--muted)]">
+                  {dmId ? 'DM은 나만 보는 대화라 논의 정리·팀 작업에 쓰이지 않아요.' : '메시지를 선택하면 스레드가 열립니다.'}
+                </div>
               </div>
             </aside>
           )}

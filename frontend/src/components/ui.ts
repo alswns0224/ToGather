@@ -11,17 +11,11 @@ export const SUB_CARD = 'rounded-xl border border-[var(--border-soft)] bg-[var(-
 /** 보조 글자색 */
 export const MUTED = 'text-[var(--muted)]';
 
-/** 카드 머리의 작은 라벨 (예: OAUTH 2.0 INTEGRATIONS) */
-export const EYEBROW = 'rounded-full bg-[var(--primary-soft)] px-3 py-1 text-[11px] font-bold text-[var(--primary)]';
-
 const BTN =
   'inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 text-[13px] font-semibold no-underline transition disabled:cursor-not-allowed disabled:opacity-50';
 
 /** 브랜드 그라데이션 강조 버튼 (AI 기능, 주요 동작) */
 export const BTN_AI = `${BTN} border-0 bg-[image:var(--brand-grad)] text-white hover:brightness-95`;
-
-/** 기본 버튼 */
-export const BTN_PRIMARY = `${BTN} border-0 bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]`;
 
 /** 보조 버튼 */
 export const BTN_SUB = `${BTN} border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text)] hover:border-[var(--primary)]`;

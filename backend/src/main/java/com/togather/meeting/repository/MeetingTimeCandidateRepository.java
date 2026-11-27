@@ -9,8 +9,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface MeetingTimeCandidateRepository extends JpaRepository<MeetingTimeCandidate, Long> {
 
-    List<MeetingTimeCandidate> findAllByMeetingIdOrderByRankAsc(Long meetingId);
-
     @Modifying(flushAutomatically = true)
     @Query("delete from MeetingTimeCandidate c where c.meetingId = :meetingId")
     void deleteAllByMeetingId(@Param("meetingId") Long meetingId);

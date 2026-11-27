@@ -1562,7 +1562,18 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
                 >
                   <FolderGlyph />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-bold">{folder.name || '(이름 없음)'}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[15px] font-bold">{folder.name || '(이름 없음)'}</span>
+                      {folder.fileCount != null && (
+                        <span
+                          className="inline-flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--primary-soft)] px-1.5 text-[11px] font-bold text-[var(--primary)]"
+                          title={`파일 ${folder.fileCount}개`}
+                          aria-label={`파일 ${folder.fileCount}개`}
+                        >
+                          {folder.fileCount}
+                        </span>
+                      )}
+                    </span>
                     <span className="block text-xs text-[var(--muted)]">폴더 ▸</span>
                   </span>
                 </button>

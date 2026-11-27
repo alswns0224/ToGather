@@ -96,11 +96,6 @@ export interface AvailabilityResponse {
   calendarConnected: boolean;
 }
 
-export interface ResponseStatus {
-  responded: ParticipantResponse[];
-  notResponded: ParticipantResponse[];
-}
-
 export interface TimeCandidate {
   candidateId: number;
   /** 가능 인원·비선호 인원이 같으면 같은 순위 */
@@ -137,7 +132,6 @@ export const getMyAvailability = (w: string, id: number) =>
   http.get<AvailabilityResponse>(base(w, `/${id}/availability/me`));
 export const saveAvailability = (w: string, id: number, slots: { startAt: string; preference: SlotPreference }[]) =>
   http.post<AvailabilityResponse>(base(w, `/${id}/availability/me`), { slots });
-export const getResponseStatus = (w: string, id: number) => http.get<ResponseStatus>(base(w, `/${id}/responses`));
 
 export const recommendTimes = (w: string, id: number) => http.post<TimeCandidate[]>(base(w, `/${id}/recommendations`));
 /** force가 아니면 서버가 참여자들의 지금 일정을 다시 확인하고, 겹치는 사람이 있으면 확정하지 않는다. */

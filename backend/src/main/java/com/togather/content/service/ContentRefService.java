@@ -401,6 +401,25 @@ public class ContentRefService {
     }
 
     /**
+     * 주어진 원본 중, 팀 콘텐츠로 이 워크스페이스에만 저장된 것.
+     * 다른 워크스페이스에도 팀 콘텐츠로 저장돼 있으면 어느 워크스페이스 것인지 알 수 없으므로 빼고 준다.
+     */
+    @Transactional(readOnly = true)
+    public Set<String> teamOriginsOnlyIn(Long workspaceId, Provider provider, Collection<String> originIds) {
+        if (originIds.isEmpty()) {
+            return Set.of();
+        }
+        Map<String, Set<Long>> workspaces = contentRefRepository
+            .findAllByProviderAndOriginIdInAndOwnerUserIdIsNull(provider, originIds).stream()
+            .collect(Collectors.groupingBy(ContentRef::getOriginId,
+                Collectors.mapping(ContentRef::getWorkspaceId, Collectors.toSet())));
+        return workspaces.entrySet().stream()
+            .filter(e -> e.getValue().equals(Set.of(workspaceId)))
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+    }
+
+    /**
      * 원본 ID 기준 콘텐츠 조회.
      */
     public Optional<ContentRefDTO> findByOrigin(

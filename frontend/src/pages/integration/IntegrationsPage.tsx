@@ -7,7 +7,6 @@ import {
   disconnect,
   getAvailableTargets,
   getIntegrations,
-  getSyncStatuses,
   reauthUrl,
   selectTargets,
   syncNow,
@@ -22,7 +21,6 @@ import { Empty, ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import ServiceLogo, { PROVIDER_LOGO } from '../../components/ServiceLogo';
 import NavIcon from '../../layouts/NavIcon';
-import { formatDateTime } from '../../utils/date';
 
 const STATUS_BADGE: Record<ConnectionStatus, { text: string; className: string }> = {
   CONNECTED: { text: '연결됨', className: 'badge-success' },
@@ -57,10 +55,15 @@ export default function IntegrationsPage() {
   const errorCode = params.get('error');
 
   // 인증 직후 대상 선택이 필요하면 선택 창을 바로 연다.
+  // Notion은 "페이지 추가"로 인증 화면에서 페이지를 더 공유하고 돌아오므로, 내 연결이면 바로 선택 창을 연다.
   useEffect(() => {
     if (!data || !connectedId) return;
-    const conn = data.flatMap((i) => i.connections).find((c) => c.connectionId === Number(connectedId));
-    if (conn && conn.status === 'TARGET_NOT_SELECTED') setSelecting(conn);
+    const item = data.find((i) => i.connections.some((c) => c.connectionId === Number(connectedId)));
+    const conn = item?.connections.find((c) => c.connectionId === Number(connectedId));
+    if (!item || !conn) return;
+    const addingNotionPages = conn.provider === 'NOTION' && conn.mine && conn.status === 'CONNECTED';
+    if (conn.status !== 'TARGET_NOT_SELECTED' && !addingNotionPages) return;
+    setSelecting(item.personal ? conn : { ...conn, targets: teamTargetsOf(item) });
   }, [data, connectedId]);
 
   const clearParams = () => setParams({}, { replace: true });
@@ -176,64 +179,29 @@ function ServiceCard({
   // 모든 서비스는 개인 연동이다. 카드의 상태·버튼은 "내 연결" 기준으로 보여 준다.
   const mine = item.connections.find((c) => c.mine);
   const badge = STATUS_BADGE[mine?.status ?? 'DISCONNECTED'];
-  // 팀 자료 서비스(Slack·Notion·Drive): 팀원들이 고른 연동 대상을 모아 보여 준다.
-  const teamTargets = item.personal
-    ? []
-    : item.connections.flatMap((c) =>
-        c.targets.map((t) => ({ name: t.name ?? t.id, by: c.mine ? '나' : `${c.connectedByName ?? '팀원'}` })),
-      );
-
-  // 누가 연결했는지: 팀 자료 서비스는 연결한 팀원들을, 개인 서비스는 내 계정만 보여 준다.
+  // 누가 연결했는지만 보여 준다. 팀 자료 서비스는 연결한 팀원들을, 개인 서비스는 나만.
   const others = item.personal ? [] : item.connections.filter((c) => !c.mine);
-  // 연결한 계정 이름(Slack 워크스페이스·메일 주소)은 내 연결일 때만 보여 준다.
-  const account = mine?.accountLabel ?? mine?.externalAccountId;
-  // 예: "나, 백민준 님, 이찬서 님이 연결" / 나만이면 "내가 연결"
+  // 예: "나, 이찬서 님, 정철준 님이 연결했어요" / 나만이면 "내가 연결했어요"
   const names = [...new Set([...(mine ? ['나'] : []), ...others.map((c) => `${c.connectedByName ?? '팀원'} 님`)])];
   const connectedBy =
     names.length === 0
       ? '아직 연결한 사람이 없어요'
-      : `${account ? `${account} · ` : ''}${names.length === 1 && names[0] === '나' ? '내가' : `${names.join(', ')}이`} 연결`;
+      : `${names.length === 1 && names[0] === '나' ? '내가' : `${names.join(', ')}이`} 연결했어요`;
 
-  const statuses = useAsync(
-    () => (mine ? getSyncStatuses(workspaceId, item.provider) : Promise.resolve([])),
-    [workspaceId, item.provider, mine?.connectionId],
-  );
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-
-  const lastSynced = (statuses.data ?? [])
-    .map((s) => s.lastSyncedAt)
-    .filter((v): v is string => !!v)
-    .sort()
-    .pop();
-  const syncFailed = (statuses.data ?? []).some((s) => s.failed);
 
   const sync = async () => {
     setSyncing(true);
     setSyncError(null);
     try {
-      statuses.setData(await syncNow(workspaceId, item.provider));
+      await syncNow(workspaceId, item.provider);
     } catch (e) {
       setSyncError((e as Error).message);
     } finally {
       setSyncing(false);
     }
   };
-
-  // Calendar는 Gmail처럼 연결만 한다. 팀 일정은 늘 팀장의 기본 캘린더에 들어가므로 고를 것이 없다.
-  const isCalendar = item.provider === 'GOOGLE_CALENDAR';
-  const teamCalendarText = item.teamTarget
-    ? `팀장(${item.teamTarget.chosenByName ?? item.teamTarget.name}) 캘린더`
-    : '팀장이 Calendar를 연결하면 팀장 캘린더';
-  const myTargetText = mine
-    ? isCalendar
-      ? teamCalendarText
-      : mine.targets.length > 0
-        ? mine.targets.map((t) => t.name ?? t.id).join(', ')
-        : label.target
-          ? '미선택'
-          : '내 메일함'
-    : '-';
 
   return (
     <div className="card integ-card">
@@ -252,26 +220,13 @@ function ServiceCard({
         <span className={`badge ${badge.className}`}>{badge.text}</span>
       </div>
 
-      {mine && (
-        <div className="text-[13px] text-[var(--muted)]">
-          {isCalendar ? '팀 일정 등록' : item.personal ? '수집 대상' : `연동한 ${label.target}`}:{' '}
-          <strong className="text-[var(--text)]">
-            {item.personal
-              ? myTargetText
-              : teamTargets.length > 0
-                ? [...new Set(teamTargets.map((t) => t.name))].join(', ')
-                : '미선택'}
-          </strong>{' '}
-          · 마지막 동기화:{' '}
-          {lastSynced ? formatDateTime(lastSynced) : '-'}
-          {syncFailed && <span className="text-[var(--warning)]"> (최근 실패)</span>}
-        </div>
-      )}
-
       {(item.parkedTargets?.length ?? 0) > 0 && (
         <div className="alert small">
-          연결이 끊겨 지금 쓰지 못하는 {label.target || '대상'}: <strong>{item.parkedTargets!.join(', ')}</strong>
-          <br />이 {label.target || '대상'}을(를) 볼 수 있는 계정으로 연결하면 그대로 되살아나요.
+          지금 팀원 누구도 쓰지 못하는 {label.target || '대상'}: <strong>{item.parkedTargets!.join(', ')}</strong>
+          <br />
+          {item.provider === 'SLACK'
+            ? 'Slack에서 그 채널에 다시 참여하거나, 볼 수 있는 계정으로 다시 연결하면 그대로 되살아나요.'
+            : `이 ${label.target || '대상'}을(를) 볼 수 있는 계정으로 다시 연결하면 그대로 되살아나요.`}
         </div>
       )}
       {syncError && <div className="alert alert-error small">동기화하지 못했습니다. {syncError}</div>}
@@ -302,21 +257,22 @@ function ServiceCard({
                 className="btn btn-primary"
                 onClick={() =>
                   // 팀 자료 서비스는 팀 전체에 목록이 하나라, 지금 팀이 쓰는 대상을 체크한 채로 연다.
-                  onSelect(
-                    item.personal
-                      ? mine
-                      : {
-                          ...mine,
-                          targets: [
-                            ...new Map(item.connections.flatMap((c) => c.targets).map((t) => [t.id, t])).values(),
-                          ],
-                        },
-                  )
+                  onSelect(item.personal ? mine : { ...mine, targets: teamTargetsOf(item) })
                 }
               >
                 {label.target} 선택
               </button>
             ) : null}
+            {item.provider === 'NOTION' && mine.status !== 'REAUTH_REQUIRED' && (
+              // Notion은 인증 화면에서 공유한 페이지만 고를 수 있다. 같은 Notion 워크스페이스로 다시 인증해 페이지를 더 공유한다.
+              <a
+                className="btn"
+                href={reauthUrl(workspaceId, mine.connectionId)}
+                title="Notion 인증 화면에서 페이지를 더 공유한 뒤 돌아와 고를 수 있어요"
+              >
+                페이지 추가
+              </a>
+            )}
             <button
               type="button"
               className="btn btn-danger"
@@ -330,6 +286,11 @@ function ServiceCard({
       </div>
     </div>
   );
+}
+
+/** 팀 자료 서비스는 팀 전체에 대상 목록이 하나라, 팀원들이 고른 대상을 모아 선택 창에 체크해 둔다. */
+function teamTargetsOf(item: IntegrationStatusResponse) {
+  return [...new Map(item.connections.flatMap((c) => c.targets).map((t) => [t.id, t])).values()];
 }
 
 /**
@@ -442,6 +403,11 @@ function TargetSelectDialog({
             선택할 수 있는 {label.target}이(가) 없습니다.
             {connection.provider === 'NOTION' && ' Notion 연결 화면에서 페이지나 데이터베이스를 공유했는지 확인하세요.'}
           </Empty>
+        )}
+        {connection.provider === 'NOTION' && options.data && options.data.length > 0 && (
+          <p className="muted small">
+            찾는 페이지가 없으면 카드의 <strong>페이지 추가</strong>를 눌러 Notion 인증 화면에서 페이지를 더 공유하세요.
+          </p>
         )}
         {options.data && options.data.length > 0 && (
           <ul className="list scroll">

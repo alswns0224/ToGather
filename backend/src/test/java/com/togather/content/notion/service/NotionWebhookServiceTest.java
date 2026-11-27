@@ -1,7 +1,9 @@
 package com.togather.content.notion.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -53,6 +55,25 @@ class NotionWebhookServiceTest {
 
         verify(syncService, timeout(2000)).syncTargetNow(10L, Provider.NOTION, "db-1");
         verify(syncService, timeout(2000)).syncTargetNow(10L, Provider.NOTION, "page:p-1");
+    }
+
+    @Test
+    void 페이지를_지우면_그_페이지_연동_대상을_뺀다() {
+        service.handleAsync(Map.of("type", "page.deleted", "workspace_id", "nw-1",
+                "entity", Map.of("id", "p-1", "type", "page")));
+        service.handleAsync(Map.of("type", "database.deleted", "workspace_id", "nw-1",
+                "entity", Map.of("id", "db-1", "type", "database")));
+
+        verify(integrationService).removeDeletedTargetsByExternalAccount(Provider.NOTION, "nw-1", List.of("page:p-1"));
+        verify(integrationService).removeDeletedTargetsByExternalAccount(Provider.NOTION, "nw-1", List.of("db-1"));
+    }
+
+    @Test
+    void 페이지_수정_이벤트로는_연동_대상을_빼지_않는다() {
+        service.handleAsync(Map.of("type", "page.content_updated", "workspace_id", "nw-1",
+                "entity", Map.of("id", "p-1", "type", "page")));
+
+        verify(integrationService, never()).removeDeletedTargetsByExternalAccount(any(), any(), any());
     }
 
     @Test
