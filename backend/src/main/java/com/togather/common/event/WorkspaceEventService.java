@@ -25,15 +25,27 @@ public class WorkspaceEventService {
     private static final long TIMEOUT_MS = 30 * 60 * 1000L;
 
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    /** 연결한 사람 (개인 자료 알림을 그 사람 화면에만 보내려고) */
+    private final Map<SseEmitter, Long> owners = new ConcurrentHashMap<>();
 
     public record ChangeEvent(String provider, String targetId) {
     }
 
     public SseEmitter subscribe(Long workspaceId) {
+        return subscribe(workspaceId, null);
+    }
+
+    public SseEmitter subscribe(Long workspaceId, Long userId) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
         List<SseEmitter> list = emitters.computeIfAbsent(workspaceId, id -> new CopyOnWriteArrayList<>());
         list.add(emitter);
-        Runnable remove = () -> list.remove(emitter);
+        if (userId != null) {
+            owners.put(emitter, userId);
+        }
+        Runnable remove = () -> {
+            list.remove(emitter);
+            owners.remove(emitter);
+        };
         emitter.onCompletion(remove);
         emitter.onTimeout(remove);
         emitter.onError(e -> remove.run());
@@ -63,17 +75,33 @@ public class WorkspaceEventService {
         send(workspaceId, provider, targetId);
     }
 
+    /**
+     * 한 사람의 화면에만 변경을 알린다. DM처럼 본인만 보는 자료가 바뀌었을 때 쓴다.
+     * 다른 팀원에게는 그런 대화가 있다는 사실도 알리지 않는다.
+     */
+    public void publishToUser(Long workspaceId, Long userId, String provider, String targetId) {
+        send(workspaceId, userId, provider, targetId);
+    }
+
     private void send(Long workspaceId, String provider, String targetId) {
+        send(workspaceId, null, provider, targetId);
+    }
+
+    private void send(Long workspaceId, Long onlyUserId, String provider, String targetId) {
         List<SseEmitter> list = emitters.get(workspaceId);
         if (list == null || list.isEmpty()) {
             return;
         }
         ChangeEvent event = new ChangeEvent(provider, targetId);
         for (SseEmitter emitter : list) {
+            if (onlyUserId != null && !onlyUserId.equals(owners.get(emitter))) {
+                continue;
+            }
             try {
                 emitter.send(SseEmitter.event().name("change").data(event));
             } catch (IOException | IllegalStateException e) {
                 list.remove(emitter);
+                owners.remove(emitter);
             }
         }
     }
@@ -87,6 +115,7 @@ public class WorkspaceEventService {
                     emitter.send(SseEmitter.event().comment("ping"));
                 } catch (IOException | IllegalStateException e) {
                     list.remove(emitter);
+                    owners.remove(emitter);
                 }
             }
         });

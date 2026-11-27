@@ -159,14 +159,6 @@ export const getTasks = (
   return http.get<PageResponse<TaskSummary>>(ws(workspaceId, `/tasks?${params}`));
 };
 
-export const getMyTasks = (
-  workspaceId: string | number,
-  page = 0,
-  size = 20,
-  filters: TaskFilters = {},
-) =>
-  getTasks(workspaceId, page, size, { ...filters, mine: true });
-
 export const getTaskProgress = (workspaceId: string | number, filters: TaskFilters = {}) =>
   http.get<TaskProgressResponse>(ws(workspaceId, `/tasks/progress?${filterParams(filters)}`));
 

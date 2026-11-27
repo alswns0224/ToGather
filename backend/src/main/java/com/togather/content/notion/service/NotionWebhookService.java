@@ -1,8 +1,10 @@
 package com.togather.content.notion.service;
 
+import static com.togather.common.util.JsonValues.obj;
 import static com.togather.common.util.JsonValues.str;
 
 import com.togather.common.enums.Provider;
+import com.togather.integration.client.NotionOAuthClient;
 import com.togather.integration.service.IntegrationService;
 import com.togather.sync.service.SyncService;
 import jakarta.annotation.PreDestroy;
@@ -76,6 +78,9 @@ public class NotionWebhookService {
         if (type == null || !(type.startsWith("page.") || type.startsWith("database.") || type.startsWith("data_source."))) {
             return;
         }
+        if (type.endsWith(".deleted")) {
+            removeDeletedTarget(event);
+        }
         for (Long workspaceId : findWorkspaces(event)) {
             if (pending.add(workspaceId)) {
                 executor.submit(() -> {
@@ -83,6 +88,33 @@ public class NotionWebhookService {
                     syncWorkspace(workspaceId);
                 });
             }
+        }
+    }
+
+    /**
+     * 지운 페이지·데이터베이스가 연동 대상이면 대상에서 뺀다. 끊긴 연결에 보관된 대상도 함께.
+     * (보관된 대상은 동기화되지 않아, 여기서 지우지 않으면 "연결이 끊겨 쓰지 못하는 대상"으로 계속 남는다)
+     */
+    void removeDeletedTarget(Map<String, Object> event) {
+        String notionWorkspaceId = str(event, "workspace_id");
+        Map<String, Object> entity = obj(event, "entity");
+        String id = entity == null ? null : str(entity, "id");
+        String entityType = entity == null ? null : str(entity, "type");
+        if (notionWorkspaceId == null || id == null || entityType == null) {
+            return;
+        }
+        String targetId = switch (entityType) {
+            case "page" -> NotionOAuthClient.PAGE_TARGET_PREFIX + id;
+            case "database" -> id;
+            default -> null;
+        };
+        if (targetId == null) {
+            return;
+        }
+        try {
+            integrationService.removeDeletedTargetsByExternalAccount(Provider.NOTION, notionWorkspaceId, List.of(targetId));
+        } catch (RuntimeException e) {
+            log.warn("지워진 Notion 대상 정리 실패: error={}", e.getClass().getSimpleName());
         }
     }
 

@@ -99,9 +99,6 @@ export const getPendingAnalyses = (workspaceId: string) =>
 export const getAnalyses = (workspaceId: string) =>
   http.get<AnalysisSummaryDTO[]>(ws(workspaceId, '/analyses?includeConfirmed=true'));
 
-export const getLatestAnalysis = (workspaceId: string, contentRefId: number) =>
-  http.get<{ analysisId: number | null }>(ws(workspaceId, `/analyses/latest?contentRefId=${contentRefId}`));
-
 export const getAnalysis = (workspaceId: string, analysisId: number | string) =>
   http.get<AnalysisResultDTO>(ws(workspaceId, `/analyses/${analysisId}`));
 

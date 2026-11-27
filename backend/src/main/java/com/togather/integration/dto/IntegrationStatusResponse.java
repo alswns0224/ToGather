@@ -27,6 +27,10 @@ public record IntegrationStatusResponse(
         this(provider, personal, configured, connections, null, List.of());
     }
 
+    public IntegrationStatusResponse withParkedTargets(List<String> names) {
+        return new IntegrationStatusResponse(provider, personal, configured, connections, teamTarget, names);
+    }
+
     /** 팀 대상과 그것을 고른 사람 */
     public record TeamTarget(String id, String name, Long chosenByUserId, String chosenByName) {
     }

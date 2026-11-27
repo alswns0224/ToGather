@@ -14,7 +14,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -82,12 +81,6 @@ public class WorkspaceService {
     public void deleteWorkspace(Long workspaceId, Long userId) {
         workspaceAccessChecker.checkMainOwner(workspaceId, userId);
         workspaceRepository.delete(findWorkspace(workspaceId));
-    }
-
-    /** 다른 Service에서 워크스페이스 이름 등을 표시할 때 사용 */
-    public Map<Long, Workspace> getWorkspacesByIds(List<Long> workspaceIds) {
-        return workspaceRepository.findAllById(workspaceIds).stream()
-                .collect(Collectors.toMap(Workspace::getWorkspaceId, Function.identity()));
     }
 
     Workspace findWorkspace(Long workspaceId) {

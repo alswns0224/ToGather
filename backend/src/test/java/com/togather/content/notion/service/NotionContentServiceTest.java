@@ -194,6 +194,18 @@ class NotionContentServiceTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 연동한_페이지가_휴지통에_있으면_연동_대상에서_뺀다() {
+        usePageTarget();
+        when(notionApiClient.crawlPage(eq(TOKEN), eq("root"), anyInt(), anyInt())).thenReturn(
+                new NotionApiClient.PageTree(List.of(new NotionPage("root", null, "카페를 만들어보자", "u", T0, T0, true)),
+                        false));
+
+        notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));
+
+        verify(integrationService).removeDeletedTargets(workspaceId, Provider.NOTION, List.of(PAGE_TARGET));
+    }
+
+    @Test
     void 페이지를_다_가져오지_못했으면_사라진_것으로_보지_않는다() {
         usePageTarget();
         notionSyncAdapter.sync(new SyncContext(workspaceId, PAGE_TARGET, null, null, userId));

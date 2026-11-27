@@ -73,6 +73,61 @@ class CalendarEventsMergeTest {
         return new CalendarEvent(id, title, null, start, start.plusHours(1), false, List.of(), null, null, null);
     }
 
+    /** ToGather가 이 워크스페이스(WS)에서 만든 일정 */
+    private static CalendarEvent teamEvent(String id, String title, int day) {
+        return tagged(id, title, day, String.valueOf(WS));
+    }
+
+    private static CalendarEvent tagged(String id, String title, int day, String workspaceTag) {
+        LocalDateTime start = LocalDateTime.of(2026, 11, day, 10, 0);
+        return new CalendarEvent(id, title, null, start, start.plusHours(1), false, List.of(), null, null, null, null,
+                workspaceTag);
+    }
+
+    @Test
+    void 팀장_캘린더의_다른_워크스페이스_일정과_표시_없는_일정은_팀_일정으로_주지_않는다() {
+        teamCalendar();
+        when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.empty());
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(
+                teamEvent("t1", "우리 팀 회의", 5), tagged("o1", "다른 팀 리허설", 2, "99"), event("x1", "팀장 치과", 3)),
+                List.of()));
+
+        List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
+
+        assertThat(events).extracting(CalendarEventResponse::title).containsExactly("우리 팀 회의");
+    }
+
+    @Test
+    void 표시_없는_예전_일정은_이_워크스페이스에만_팀_일정으로_저장돼_있으면_팀_일정으로_준다() {
+        teamCalendar();
+        when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.empty());
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(
+                event("old-ours", "예전 우리 회의", 4), event("old-shared", "여러 팀에 저장된 일정", 6)), List.of()));
+        when(contentRefService.teamOriginsOnlyIn(eq(WS), eq(Provider.GOOGLE_CALENDAR), anyList()))
+                .thenReturn(java.util.Set.of("old-ours"));
+
+        List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
+
+        assertThat(events).extracting(CalendarEventResponse::title).containsExactly("예전 우리 회의");
+    }
+
+    @Test
+    void 팀장이_보면_팀_일정이_아닌_자기_캘린더_일정은_개인_일정으로_준다() {
+        teamCalendar();
+        when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.of("my-token"));
+        List<CalendarEvent> leaderCalendar = List.of(teamEvent("t1", "우리 팀 회의", 5), tagged("o1", "다른 팀 리허설", 2, "99"));
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO))
+                .thenReturn(new EventList(leaderCalendar, List.of()));
+        when(calendarClient.listEventsWithDeleted("my-token", "primary", FROM, TO))
+                .thenReturn(new EventList(leaderCalendar, List.of()));
+
+        List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
+
+        assertThat(events).extracting(CalendarEventResponse::title, CalendarEventResponse::personal)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("다른 팀 리허설", true),
+                        org.assertj.core.groups.Tuple.tuple("우리 팀 회의", false));
+    }
+
     private void teamCalendar() {
         when(integrationService.findTargetAccess(WS, Provider.GOOGLE_CALENDAR))
                 .thenReturn(Optional.of(new TargetAccess(1L, 10L, "team-token", List.of(TEAM_CAL))));
@@ -82,7 +137,7 @@ class CalendarEventsMergeTest {
     void 팀_캘린더가_있으면_팀_일정과_내_개인_일정을_함께_준다() {
         teamCalendar();
         when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.of("my-token"));
-        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(event("t1", "팀 회의", 5)), List.of()));
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(teamEvent("t1", "팀 회의", 5)), List.of()));
         when(calendarClient.listEventsWithDeleted("my-token", "primary", FROM, TO)).thenReturn(new EventList(List.of(event("p1", "치과", 3)), List.of()));
 
         List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
@@ -95,7 +150,7 @@ class CalendarEventsMergeTest {
     void 두_캘린더에_같은_일정이_있으면_팀_일정으로_한_번만_준다() {
         teamCalendar();
         when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.of("my-token"));
-        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(event("t1", "팀 회의", 5)), List.of()));
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(teamEvent("t1", "팀 회의", 5)), List.of()));
         when(calendarClient.listEventsWithDeleted("my-token", "primary", FROM, TO))
                 .thenReturn(new EventList(List.of(event("t1", "팀 회의", 5), event("p1", "치과", 3)), List.of()));
 
@@ -113,7 +168,7 @@ class CalendarEventsMergeTest {
         when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.of("my-token"));
         when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(
                 new CalendarEvent("t1", "팀 회의", null, start, start.plusHours(1), false, List.of(), null, null, null,
-                        "uid-1")), List.of()));
+                        "uid-1", "3")), List.of()));
         when(calendarClient.listEventsWithDeleted("my-token", "primary", FROM, TO)).thenReturn(new EventList(List.of(
                 new CalendarEvent("copy-1", "팀 회의", null, start, start.plusHours(1), false, List.of(), null, null,
                         null, "uid-1")), List.of()));
@@ -127,7 +182,7 @@ class CalendarEventsMergeTest {
     void 개인_캘린더를_연동하지_않았으면_팀_일정만_준다() {
         teamCalendar();
         when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR)).thenReturn(Optional.empty());
-        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(event("t1", "팀 회의", 5)), List.of()));
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(teamEvent("t1", "팀 회의", 5)), List.of()));
 
         List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
 
@@ -140,7 +195,7 @@ class CalendarEventsMergeTest {
         teamCalendar();
         when(integrationService.findAccessToken(WS, USER, Provider.GOOGLE_CALENDAR))
                 .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
-        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(event("t1", "팀 회의", 5)), List.of()));
+        when(calendarClient.listEventsWithDeleted("team-token", TEAM_CAL, FROM, TO)).thenReturn(new EventList(List.of(teamEvent("t1", "팀 회의", 5)), List.of()));
 
         List<CalendarEventResponse> events = service.getEvents(WS, USER, FROM, TO);
 

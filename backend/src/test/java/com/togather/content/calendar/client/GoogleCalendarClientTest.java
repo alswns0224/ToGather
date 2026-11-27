@@ -46,6 +46,29 @@ class GoogleCalendarClientTest {
     }
 
     @Test
+    void 일정을_만들_때_워크스페이스_표시를_넣고_읽을_때_꺼낸다() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.containsString("/calendars/team%40gmail.com/events")))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().json("""
+                {"extendedProperties":{"private":{"togatherWorkspaceId":"111"}}}
+                """, JsonCompareMode.LENIENT))
+            .andRespond(withSuccess("""
+                {"id":"e1","summary":"리허설",
+                 "start":{"dateTime":"2026-11-30T16:00:00+09:00"},"end":{"dateTime":"2026-11-30T17:00:00+09:00"},
+                 "extendedProperties":{"private":{"togatherWorkspaceId":"111"}}}
+                """, MediaType.APPLICATION_JSON));
+
+        var event = new GoogleCalendarClient(builder.build()).insertEvent("token", "team@gmail.com",
+            new EventWrite("리허설", null, LocalDateTime.of(2026, 11, 30, 16, 0), LocalDateTime.of(2026, 11, 30, 17, 0),
+                List.of(), 111L), false);
+
+        assertThat(event.workspaceTag()).isEqualTo("111");
+        server.verify();
+    }
+
+    @Test
     void 초가_0이어도_초까지_있는_UTC_RFC3339로_보낸다() {
         // 서울 9/27 00:00 = UTC 9/26 15:00. 쿼리에서 공백으로 바뀌는 '+'가 없어야 한다.
         assertThat(GoogleCalendarClient.rfc3339(LocalDateTime.of(2026, 9, 27, 0, 0)))

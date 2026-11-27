@@ -68,7 +68,7 @@ class TargetHandoverTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 아무도_볼_수_없으면_보관했다가_볼_수_있는_계정으로_연결하면_되살린다() {
+    void 직접_연결을_해제하면_아무도_볼_수_없는_채널은_보관하지_않고_지워서_경고가_뜨지_않는다() {
         ServiceConnection leaders = slackConnection(leader, "leader-token", "C-TEAM");
         slackConnection(member, "member-token");
         canSee("member-token");
@@ -76,14 +76,27 @@ class TargetHandoverTest extends IntegrationTestSupport {
         integrations.disconnectService(workspaceId, leader, leaders.getConnectionId());
 
         assertThat(integrations.getConnectionTargets(workspaceId, Provider.SLACK)).isEmpty();
+        assertThat(slackStatus().parkedTargets()).isEmpty();
+        assertThat(targets.findAllByConnectionId(leaders.getConnectionId())).isEmpty();
+    }
+
+    @Test
+    void 연결은_그대로인데_Slack에서_권한이_끊겨_아무도_못_보면_경고로_알리고_다시_인증하면_되살아난다() {
+        ServiceConnection leaders = slackConnection(leader, "leader-token", "C-TEAM");
+        slackConnection(member, "member-token");
+        canSee("member-token");
+
+        integrations.reportUnauthorized(leaders.getConnectionId());
+
         assertThat(slackStatus().parkedTargets()).containsExactly("C-TEAM");
 
-        // 팀장이 다시 연결하면 보관한 채널이 그대로 돌아온다.
+        // 같은 계정으로 다시 인증하면 채널이 그대로 돌아온다.
         when(slack.exchangeCode(eq(Provider.SLACK), anyString(), anyString())).thenReturn(new AuthResult(
-            new OAuthToken("leader-token-2", null, null, "scope"), "T1:U-LEADER-2", "팀 Slack"));
+            new OAuthToken("leader-token-2", null, null, "scope"),
+            connections.findById(leaders.getConnectionId()).orElseThrow().getExternalAccountId(), "팀 Slack"));
         canSee("leader-token-2", "C-TEAM");
-        Long reconnected = integrations.completeConnection(new OAuthState(Purpose.CONNECT, workspaceId, leader, null,
-            Provider.SLACK.name(), "/", Instant.now()), "code");
+        Long reconnected = integrations.completeConnection(new OAuthState(Purpose.REAUTH, workspaceId, leader,
+            leaders.getConnectionId(), Provider.SLACK.name(), "/", Instant.now()), "code");
 
         assertThat(targets.findAllByConnectionId(reconnected)).extracting(IntegrationTarget::getExternalTargetId)
             .containsExactly("C-TEAM");
@@ -116,6 +129,34 @@ class TargetHandoverTest extends IntegrationTestSupport {
         assertThat(integrations.reportUnauthorized(leaders.getConnectionId())).isFalse();
         assertThat(connections.findById(leaders.getConnectionId()).orElseThrow().getStatus())
             .isEqualTo(ConnectionStatus.CONNECTED);
+    }
+
+    @Test
+    void 원본에서_지운_대상은_권한이_끊긴_연결에_남은_것까지_함께_빼서_경고에_남지_않는다() {
+        ServiceConnection leaders = slackConnection(leader, "leader-token", "C-GONE", "C-KEEP");
+        ServiceConnection members = slackConnection(member, "member-token", "C-GONE-2");
+        canSee("member-token");
+        integrations.reportUnauthorized(leaders.getConnectionId());
+        assertThat(slackStatus().parkedTargets()).containsExactlyInAnyOrder("C-GONE", "C-KEEP");
+
+        integrations.removeDeletedTargets(workspaceId, Provider.SLACK, List.of("C-GONE", "C-GONE-2"));
+
+        assertThat(slackStatus().parkedTargets()).containsExactly("C-KEEP");
+        assertThat(names(members)).isEmpty();
+    }
+
+    @Test
+    void 외부_계정으로_찾을_때도_권한이_끊긴_연결의_대상까지_뺀다() {
+        ServiceConnection leaders = slackConnection(leader, "leader-token", "C-GONE");
+        slackConnection(member, "member-token");
+        canSee("member-token");
+        integrations.reportUnauthorized(leaders.getConnectionId());
+        assertThat(slackStatus().parkedTargets()).containsExactly("C-GONE");
+        String account = connections.findById(leaders.getConnectionId()).orElseThrow().getExternalAccountId();
+
+        integrations.removeDeletedTargetsByExternalAccount(Provider.SLACK, account, List.of("C-GONE"));
+
+        assertThat(slackStatus().parkedTargets()).isEmpty();
     }
 
     /** 이 토큰(Slack 계정)으로 선택 창에 보이는 채널 */

@@ -72,10 +72,6 @@ public class ContentAccessService {
         this.enabled = enabled;
     }
 
-    public boolean isEnabled() {
-        return enabled;
-    }
-
     // ===================== 조회 =====================
 
     /** 이 팀원이 내 계정으로 이 서비스를 연동했는지 */

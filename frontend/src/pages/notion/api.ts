@@ -55,9 +55,6 @@ export const getPage = (workspaceId: string, id: number) =>
 export const createPage = (workspaceId: string, form: NotionPageForm) =>
   http.post<ContentRefDTO>(ws(workspaceId, '/notion/pages'), form);
 
-export const updatePage = (workspaceId: string, id: number, form: Partial<NotionPageForm>) =>
-  http.patch<ContentRefDTO>(ws(workspaceId, `/notion/pages/${id}`), form);
-
 export const deletePage = (workspaceId: string, id: number) =>
   http.delete<void>(ws(workspaceId, `/notion/pages/${id}`));
 

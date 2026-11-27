@@ -329,6 +329,38 @@ public class IntegrationService {
                 .forEach(targetRepository::delete);
     }
 
+    // ===================== 원본에서 지워진 대상 =====================
+
+    /**
+     * 원본에서 지워진 연동 대상(Notion 페이지·데이터베이스)을 연동 대상에서 뺀다. 끊긴 연결에 보관해 둔 것도 함께 지운다.
+     * 보관된 대상은 동기화되지 않아 지워진 것을 따로 알 수 없으므로, 남겨 두면 "연결이 끊겨 쓰지 못하는 대상"으로 계속 보인다.
+     */
+    @Transactional
+    public void removeDeletedTargets(Long workspaceId, Provider provider, java.util.Collection<String> targetIds) {
+        removeTargets(connectionRepository.findAllByWorkspaceIdAndProvider(workspaceId, provider), targetIds);
+    }
+
+    /** 외부 계정(예: Notion 워크스페이스)으로 연결한 모든 워크스페이스에서 지워진 대상을 뺀다. (웹훅용) */
+    @Transactional
+    public void removeDeletedTargetsByExternalAccount(Provider provider, String externalAccountId,
+                                                      java.util.Collection<String> targetIds) {
+        removeTargets(connectionRepository.findAllByProviderAndExternalAccountId(provider, externalAccountId), targetIds);
+    }
+
+    private void removeTargets(List<ServiceConnection> connections, java.util.Collection<String> targetIds) {
+        if (connections.isEmpty() || targetIds.isEmpty()) {
+            return;
+        }
+        List<IntegrationTarget> removed = targetRepository
+                .findAllByConnectionIdIn(connections.stream().map(ServiceConnection::getConnectionId).toList()).stream()
+                .filter(t -> targetIds.contains(t.getExternalTargetId()))
+                .toList();
+        if (!removed.isEmpty()) {
+            targetRepository.deleteAll(removed);
+            log.info("원본에서 지워진 연동 대상 정리: provider={}, removed={}", connections.get(0).getProvider(), removed.size());
+        }
+    }
+
     private boolean isMainOwner(ServiceConnection connection) {
         return workspaceAccessChecker.findMainOwner(connection.getWorkspaceId())
                 .map(connection.getUserId()::equals).orElse(false);
@@ -503,8 +535,10 @@ public class IntegrationService {
                 manualRevocationRequired = true;
                 log.info("외부 토큰 폐기를 확인하지 못함: connectionId={}, code={}", connectionId, e.getErrorCode());
             }
-            // 팀 대상은 지우지 않는다: 볼 수 있는 다른 팀원 연결로 넘기고, 남은 것은 이 연결에 보관했다가 다시 연결하면 되살린다.
+            // 본인이 직접 끊었다: 볼 수 있는 다른 팀원 연결이 있으면 그쪽으로 넘기고, 남은 것은 지운다.
+            // (보관하지 않는다. 보관·되살리기와 "연결이 끊겨 쓰지 못하는" 안내는 권한 만료처럼 원치 않게 끊긴 경우에만 쓴다)
             handOverTargets(connection);
+            targetRepository.deleteAllByConnectionId(connection.getConnectionId());
             connection.disconnect();
             boolean relatedReauth = !shared && !manualRevocationRequired && markRelatedGoogleConnections(connection);
             return new DisconnectResult(manualRevocationRequired, relatedReauth);
@@ -690,6 +724,17 @@ public class IntegrationService {
     @Transactional(readOnly = true)
     public List<Long> findWorkspacesByTarget(Provider provider, String externalTargetId) {
         return targetRepository.findWorkspaceIdsByTarget(provider, externalTargetId, ConnectionStatus.DISCONNECTED);
+    }
+
+    /** 이 외부 계정(예: Slack "팀ID:사용자ID")으로 연결한 ToGather 사용자. 개인 자료(DM) 웹훅을 본인에게 전할 때 쓴다. */
+    @Transactional(readOnly = true)
+    public List<ConnectionOwner> findOwnersByExternalAccount(Provider provider, String externalAccountId) {
+        return connectionRepository
+                .findAllByProviderAndExternalAccountIdAndStatusNot(provider, externalAccountId, ConnectionStatus.DISCONNECTED)
+                .stream().map(c -> new ConnectionOwner(c.getWorkspaceId(), c.getUserId())).distinct().toList();
+    }
+
+    public record ConnectionOwner(Long workspaceId, Long userId) {
     }
 
     /** 외부 계정(예: Notion 워크스페이스 ID)을 연동한 워크스페이스들. Notion 웹훅을 나눠 줄 때 쓴다. */

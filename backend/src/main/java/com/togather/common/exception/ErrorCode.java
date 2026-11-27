@@ -26,7 +26,6 @@ public enum ErrorCode {
     MAIN_OWNER_REQUIRED(HttpStatus.FORBIDDEN, "팀장만 수행할 수 있습니다."),
     INVITE_LINK_INVALID(HttpStatus.BAD_REQUEST, "유효하지 않은 초대 링크입니다."),
     INVITE_LINK_EXPIRED(HttpStatus.BAD_REQUEST, "만료된 초대 링크입니다."),
-    ALREADY_WORKSPACE_MEMBER(HttpStatus.CONFLICT, "이미 참여 중인 워크스페이스입니다."),
     CONNECTION_NOT_FOUND(HttpStatus.NOT_FOUND, "연동된 서비스가 없습니다."),
     CONNECTION_IN_USE(HttpStatus.CONFLICT,
             "이 계정으로 업로드·동기화 등 작업이 진행 중이거나 연결을 해제하고 있습니다. 작업이 끝난 뒤 다시 시도해 주세요."),

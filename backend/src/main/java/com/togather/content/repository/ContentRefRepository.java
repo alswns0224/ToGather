@@ -26,6 +26,9 @@ public interface ContentRefRepository
         String originId
     );
 
+    /** 여러 워크스페이스에 걸친 팀 콘텐츠(개인 소유 아님) 조회. 일정이 어느 워크스페이스 것인지 가릴 때 쓴다. */
+    List<ContentRef> findAllByProviderAndOriginIdInAndOwnerUserIdIsNull(Provider provider, Collection<String> originIds);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<ContentRef> findLockedByWorkspaceIdAndProviderAndOriginId(
         Long workspaceId,

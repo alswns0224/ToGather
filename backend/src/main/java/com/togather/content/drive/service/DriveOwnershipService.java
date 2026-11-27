@@ -5,7 +5,6 @@ import com.togather.auth.service.UserService;
 import com.togather.common.auth.WorkspaceAccessChecker;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
-import com.togather.common.exception.ErrorCode;
 import com.togather.content.drive.client.DriveApiClient;
 import com.togather.content.drive.client.DriveApiClient.DriveItem;
 import com.togather.content.drive.domain.DriveOwnershipJob;
@@ -272,11 +271,5 @@ public class DriveOwnershipService {
     /** 팀장을 넘길 때 Drive를 쓰는 워크스페이스인지 */
     boolean usesDrive(Long workspaceId) {
         return !integrationService.getConnectionTargets(workspaceId, PROVIDER).isEmpty();
-    }
-
-    void requireNoRunningJob(Long workspaceId) {
-        if (jobRepository.findFirstByWorkspaceIdAndStatus(workspaceId, Status.RUNNING).isPresent()) {
-            throw new BusinessException(ErrorCode.DRIVE_OWNERSHIP_TRANSFER_IN_PROGRESS);
-        }
     }
 }

@@ -59,6 +59,68 @@ export const getChannelMessages = (workspaceId: string, channelId: string, page 
 export const getThread = (workspaceId: string, channelId: string, ts: string) =>
   http.get<ThreadDetailResponse>(channels(workspaceId, `/${enc(channelId)}/messages/${enc(ts)}/thread`));
 
+/** 내 Slack 1:1 DM. 내 Slack 연결로만 읽고 보낸다. (저장하지 않고 바로 읽음) */
+export interface SlackDmConversation {
+  channelId: string;
+  userId: string | null;
+  name: string;
+  /** Slack에서 아직 안 읽은 메시지 수 (새 DM 웹훅이 오면 늘어난다) */
+  unreadCount: number;
+  /** Slack에서 마지막으로 읽은 메시지 ts */
+  lastRead: string | null;
+}
+
+/**
+ * ToGather에서 DM을 열어 봤을 때의 안 읽은 수. Slack 읽음 표시를 바꿀 권한이 없어 이 브라우저에 기억해 두고,
+ * 그 뒤에 늘어난 수만 보여 준다. Slack에서 읽어서 읽은 위치(lastRead)가 바뀌면 기억한 값은 버린다.
+ */
+interface DmSeen {
+  lastRead: string | null;
+  count: number;
+}
+
+const seenKey = (workspaceId: string, channelId: string) => `togather.dm.seen.${workspaceId}.${channelId}`;
+
+const getDmSeen = (workspaceId: string, channelId: string): DmSeen | null => {
+  try {
+    return JSON.parse(window.localStorage.getItem(seenKey(workspaceId, channelId)) ?? 'null') as DmSeen | null;
+  } catch {
+    return null;
+  }
+};
+
+export const markDmSeen = (workspaceId: string, dm: SlackDmConversation) =>
+  window.localStorage.setItem(
+    seenKey(workspaceId, dm.channelId),
+    JSON.stringify({ lastRead: dm.lastRead, count: dm.unreadCount } satisfies DmSeen),
+  );
+
+/** 아직 안 본 메시지 수: Slack에서 안 읽었고, ToGather에서 열어 본 뒤에 새로 온 것 */
+export const dmUnreadCount = (workspaceId: string, dm: SlackDmConversation) => {
+  const seen = getDmSeen(workspaceId, dm.channelId);
+  if (!seen || seen.lastRead !== dm.lastRead) return dm.unreadCount;
+  return Math.max(0, dm.unreadCount - seen.count);
+};
+
+export interface SlackDmMessage {
+  ts: string;
+  userId: string | null;
+  userName: string;
+  text: string;
+  createdAt: string | null;
+  mine: boolean;
+}
+
+const dms = (workspaceId: string, path = '') => ws(workspaceId, `/slack/dms${path}`);
+
+export const getDmConversations = (workspaceId: string) => http.get<SlackDmConversation[]>(dms(workspaceId));
+
+export const getDmMessages = (workspaceId: string, channelId: string) =>
+  http.get<SlackDmMessage[]>(dms(workspaceId, `/${enc(channelId)}/messages`));
+
+export const sendDm = (workspaceId: string, channelId: string, text: string) =>
+  http.post<SlackDmMessage>(dms(workspaceId, `/${enc(channelId)}/messages`), { text });
+
 export const createMessage = (workspaceId: string, channelId: string, text: string) =>
   http.post<SlackMessageResponse>(channels(workspaceId, `/${enc(channelId)}/messages`), { text });
 

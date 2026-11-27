@@ -8,6 +8,7 @@ import com.togather.common.config.TogatherProperties;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.response.ApiResponse;
+import com.togather.content.access.UnreachableTargetService;
 import com.togather.integration.client.OAuthProviderClient.TargetOption;
 import com.togather.integration.domain.ServiceConnection;
 import com.togather.integration.dto.ConnectionStatusDTO;
@@ -44,13 +45,16 @@ public class IntegrationController {
     private static final String BASE = "/api/workspaces/{workspaceId}/integrations";
 
     private final IntegrationService integrationService;
+    private final UnreachableTargetService unreachableTargets;
     private final OAuthStateStore oAuthStateStore;
     private final TogatherProperties properties;
 
     @GetMapping(BASE)
     public ApiResponse<List<IntegrationStatusResponse>> getConnectionStatuses(@LoginUser Long userId,
                                                                              @PathVariable Long workspaceId) {
-        return ApiResponse.ok(integrationService.getConnectionStatuses(workspaceId, userId));
+        // Slack에서 채널을 나가거나 추방돼 지금 아무 팀원도 못 보는 채널도 경고에 함께 띄운다.
+        return ApiResponse.ok(unreachableTargets.addUnreachable(workspaceId,
+                integrationService.getConnectionStatuses(workspaceId, userId)));
     }
 
     @GetMapping(BASE + "/{provider}/connect")

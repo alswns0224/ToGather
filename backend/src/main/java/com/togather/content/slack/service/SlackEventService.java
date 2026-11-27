@@ -48,6 +48,7 @@ public class SlackEventService {
     private final SlackContentService slackContentService;
     private final WorkspaceEventService workspaceEventService;
     private final ContentAccessService contentAccess;
+    private final SlackDmService slackDmService;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "slack-events");
         t.setDaemon(true);
@@ -57,8 +58,9 @@ public class SlackEventService {
     public SlackEventService(@Value("${togather.slack.signing-secret:}") String signingSecret,
                              IntegrationService integrationService, SyncService syncService,
                              SlackContentService slackContentService, WorkspaceEventService workspaceEventService,
-                             ContentAccessService contentAccess) {
+                             ContentAccessService contentAccess, SlackDmService slackDmService) {
         this.signingSecret = signingSecret;
+        this.slackDmService = slackDmService;
         this.integrationService = integrationService;
         this.syncService = syncService;
         this.slackContentService = slackContentService;
@@ -110,6 +112,17 @@ public class SlackEventService {
             return;
         }
         if (!"message".equals(type)) {
+            return;
+        }
+        if ("im".equals(str(event, "channel_type"))) {
+            // 1:1 DM (message.im): 본인만 보는 자료라 팀 채널 경로로 보내지 않고, 당사자 화면에만 알린다.
+            executor.submit(() -> {
+                try {
+                    slackDmService.onDirectMessageEvent(payload);
+                } catch (RuntimeException e) {
+                    log.warn("Slack DM 이벤트 처리 실패: {}", e.getClass().getSimpleName());
+                }
+            });
             return;
         }
         executor.submit(() -> {

@@ -20,6 +20,6 @@ public class WorkspaceEventController {
     @GetMapping(path = "/api/workspaces/{workspaceId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe(@LoginUser Long userId, @PathVariable Long workspaceId) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return workspaceEventService.subscribe(workspaceId);
+        return workspaceEventService.subscribe(workspaceId, userId);
     }
 }

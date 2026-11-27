@@ -218,6 +218,25 @@ public class SlackApiClient {
         return new HistoryPage(messages, page.truncated());
     }
 
+    /**
+     * DM에서 내가 Slack에서 마지막으로 읽은 위치와 안 읽은 메시지 수 (사용자 토큰).
+     * 대화 기록 조회(conversations.history)는 한도가 매우 낮아서, 한도가 넉넉한 대화 정보 조회로만 알아낸다.
+     *
+     * @param lastRead 마지막으로 읽은 메시지 ts. 모르면 null
+     * @param unreadCount Slack이 표시하는 안 읽은 수. 알려 주지 않으면 0
+     */
+    public record ReadState(String lastRead, int unreadCount) {
+    }
+
+    public ReadState getReadState(String token, String channelId) {
+        Map<String, Object> channel = obj(get(token, "conversations.info", Map.of("channel", channelId)), "channel");
+        String lastRead = str(channel, "last_read");
+        Long display = longValue(channel, "unread_count_display");
+        Long count = display != null ? display : longValue(channel, "unread_count");
+        return new ReadState(lastRead == null || lastRead.isBlank() || "0000000000.000000".equals(lastRead) ? null : lastRead,
+                count == null ? 0 : count.intValue());
+    }
+
     public String getChannelName(String token, String channelId) {
         Map<String, Object> json = get(token, "conversations.info", Map.of("channel", channelId));
         return str(obj(json, "channel"), "name");
