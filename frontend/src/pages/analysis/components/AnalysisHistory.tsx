@@ -42,7 +42,13 @@ export default function AnalysisHistory({
         <strong className="text-[15px]">분석 내역</strong>
         <span className="badge">{list.data?.length ?? 0}</span>
       </div>
-      <input className="input" placeholder="🔍 논의 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <input
+        className="input"
+        aria-label="논의 검색"
+        placeholder="논의 검색"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
       <div className="segmented">
         <button type="button" className={filter === 'ALL' ? 'active' : ''} onClick={() => setFilter('ALL')}>
           전체
@@ -55,17 +61,20 @@ export default function AnalysisHistory({
       {list.loading && !list.data && <Loading />}
       {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
       {list.data && items.length === 0 && (
-        <div className="small muted">{filter === 'PENDING' ? '검토할 논의 정리가 없습니다.' : '논의 정리가 없습니다.'}</div>
+        <div className="small muted">
+          {filter === 'PENDING' ? '검토할 논의 정리가 없습니다.' : '논의 정리가 없습니다.'}
+        </div>
       )}
 
-      <div className="flex flex-col gap-1.5">
+      <div className="analysis-history-list">
         {items.map((a) => (
           <Link
             key={a.analysisId}
             to={`/workspaces/${workspaceId}/slack/analysis/${a.analysisId}`}
+            aria-current={a.analysisId === selectedId ? 'page' : undefined}
             className={`analysis-history-item${a.analysisId === selectedId ? ' active' : ''}`}
           >
-            <div className="text-[13px] font-bold">📄 {a.threadTitle ?? '제목 없는 스레드'}</div>
+            <div className="text-[13px] font-bold">{a.threadTitle ?? '제목 없는 스레드'}</div>
             <div className="mt-[3px] text-[11px] text-[var(--muted)]">
               {formatDateTime(a.createdAt)} · 항목 {a.itemCount}개{a.auto ? ' · 자동' : ''}
             </div>
