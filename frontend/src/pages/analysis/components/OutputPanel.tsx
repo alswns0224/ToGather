@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
   createFollowUpTask,
@@ -15,6 +15,7 @@ import { getMembers, type MemberResponse } from '../../workspace/api';
 import { useAsync } from '../../../hooks/useAsync';
 import { useUndo } from '../../../hooks/useUndo';
 import { formatDateTime } from '../../../utils/date';
+import AnalysisIcon, { type AnalysisIconName } from './AnalysisIcon';
 
 /**
  * 확정된 분석의 실행 연계와 처리 결과 (UI-08). 단계마다 성공·실패를 보여주고, 실패한 단계만 다시 시도한다.
@@ -33,47 +34,80 @@ export default function OutputPanel({
   const meetings = analysis.items.filter((i) => i.itemType === 'MEETING_PROPOSAL');
 
   return (
-    <div className="stack">
-      <strong className="text-sm">확정 후 가능한 작업</strong>
-
-      <div className="analysis-output-step stack">
-        <div className="row">
-          <h3 className="m-0 text-sm">📄 Notion 결정사항 문서</h3>
-          <StatusBadge status={analysis.notionOutputStatus} />
-        </div>
-        {analysis.notionOutputStatus === 'SUCCESS' && analysis.notionPageRefId ? (
-          <Link to={`/workspaces/${workspaceId}/notion?page=${analysis.notionPageRefId}`}>생성된 문서 보기</Link>
-        ) : (
-          <NotionStep workspaceId={workspaceId} analysisId={analysis.analysisId} onDone={onChanged} />
-        )}
+    <section className="analysis-execution">
+      <div className="analysis-execution-head">
+        <span className="analysis-eyebrow">검토를 마쳤어요</span>
+        <h3>다음 작업으로 이어가기</h3>
+        <p>필요한 작업을 선택하고, 내용을 확인한 뒤 생성하세요.</p>
       </div>
+      <div className="analysis-output-actions">
+        <OutputDisclosure
+          icon="document"
+          title="결정사항을 Notion 문서로"
+          description="문서 초안을 확인하고 팀에 남겨요"
+          status={analysis.notionOutputStatus}
+        >
+          {analysis.notionOutputStatus === 'SUCCESS' && analysis.notionPageRefId ? (
+            <Link to={`/workspaces/${workspaceId}/notion?page=${analysis.notionPageRefId}`}>생성된 문서 보기</Link>
+          ) : (
+            <NotionStep workspaceId={workspaceId} analysisId={analysis.analysisId} onDone={onChanged} />
+          )}
+        </OutputDisclosure>
+        {followUps.map((item) => (
+          <OutputDisclosure
+            key={item.itemId}
+            icon="task"
+            title={item.content}
+            description="후속 작업을 팀 작업으로"
+            status={item.outputStatus}
+          >
+            <TaskStep workspaceId={workspaceId} item={item} members={members.data ?? []} onDone={onChanged} />
+          </OutputDisclosure>
+        ))}
+        {meetings.map((item) => (
+          <OutputDisclosure
+            key={item.itemId}
+            icon="calendar"
+            title={item.content}
+            description="회의 제안을 팀 캘린더로"
+            status={item.outputStatus}
+          >
+            <MeetingStep workspaceId={workspaceId} item={item} members={members.data ?? []} onDone={onChanged} />
+          </OutputDisclosure>
+        ))}
+      </div>
+    </section>
+  );
+}
 
-      {followUps.length > 0 && (
-        <div className="analysis-output-step stack">
-          <h3 className="m-0 text-sm">✅ 후속 작업 → Task</h3>
-          <ul className="list analysis-output">
-            {followUps.map((item) => (
-              <li key={item.itemId}>
-                <TaskStep workspaceId={workspaceId} item={item} members={members.data ?? []} onDone={onChanged} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {meetings.length > 0 && (
-        <div className="analysis-output-step stack">
-          <h3 className="m-0 text-sm">📅 회의 제안 → Calendar 일정</h3>
-          <ul className="list analysis-output">
-            {meetings.map((item) => (
-              <li key={item.itemId}>
-                <MeetingStep workspaceId={workspaceId} item={item} members={members.data ?? []} onDone={onChanged} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
+function OutputDisclosure({
+  icon,
+  title,
+  description,
+  status,
+  children,
+}: {
+  icon: AnalysisIconName;
+  title: string;
+  description: string;
+  status: OutputStatus | null;
+  children: ReactNode;
+}) {
+  return (
+    <details className="analysis-output-action" open={status === 'FAILED'}>
+      <summary>
+        <span className="analysis-output-icon">
+          <AnalysisIcon name={icon} />
+        </span>
+        <span className="analysis-output-label">
+          <strong>{title}</strong>
+          <span>{description}</span>
+        </span>
+        <StatusBadge status={status} />
+        <AnalysisIcon name="chevron" className="analysis-output-chevron h-3.5 w-3.5" />
+      </summary>
+      <div className="analysis-output-body">{children}</div>
+    </details>
   );
 }
 
@@ -83,7 +117,15 @@ function StatusBadge({ status }: { status: OutputStatus | null }) {
   return <span className="badge">대기</span>;
 }
 
-function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; analysisId: number; onDone: () => void }) {
+function NotionStep({
+  workspaceId,
+  analysisId,
+  onDone,
+}: {
+  workspaceId: string;
+  analysisId: number;
+  onDone: () => void;
+}) {
   const [draft, setDraft] = useState<{ title: string; body: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +179,10 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
           required
           maxLength={200}
           value={draft.title}
-          onChange={(e) => { undo.record('title'); setDraft({ ...draft, title: e.target.value }); }}
+          onChange={(e) => {
+            undo.record('title');
+            setDraft({ ...draft, title: e.target.value });
+          }}
         />
       </label>
       <label>
@@ -147,7 +192,10 @@ function NotionStep({ workspaceId, analysisId, onDone }: { workspaceId: string; 
           style={{ minHeight: 220 }}
           required
           value={draft.body}
-          onChange={(e) => { undo.record('body'); setDraft({ ...draft, body: e.target.value }); }}
+          onChange={(e) => {
+            undo.record('body');
+            setDraft({ ...draft, body: e.target.value });
+          }}
         />
       </label>
       {error && <div className="alert alert-error small">문서를 만들지 못했습니다. {error}</div>}
@@ -187,8 +235,6 @@ function TaskStep({
   if (item.outputStatus === 'SUCCESS') {
     return (
       <>
-        <StatusBadge status="SUCCESS" />
-        <span className="grow">{item.content}</span>
         <Link to={`/workspaces/${workspaceId}/tasks/${item.outputTargetId}`}>팀 작업 보기</Link>
       </>
     );
@@ -210,11 +256,11 @@ function TaskStep({
   };
 
   return (
-    <form className="form grow" onSubmit={submit}>
+    <form className="form grow" aria-label="팀 작업 생성" onSubmit={submit}>
       <div className="row">
-        <StatusBadge status={item.outputStatus} />
         <input
           className="input grow"
+          aria-label="팀 작업 제목"
           required
           maxLength={200}
           value={form.title}
@@ -224,6 +270,7 @@ function TaskStep({
       <div className="row">
         <select
           className="input grow"
+          aria-label="팀 작업 담당자"
           required
           value={form.assigneeId ?? ''}
           onChange={(e) => setForm({ ...form, assigneeId: e.target.value ? Number(e.target.value) : null })}
@@ -237,6 +284,7 @@ function TaskStep({
         </select>
         <input
           type="date"
+          aria-label="팀 작업 마감일"
           className="input grow"
           required
           value={form.dueDate ?? ''}
@@ -269,8 +317,6 @@ function MeetingStep({
   if (item.outputStatus === 'SUCCESS') {
     return (
       <>
-        <StatusBadge status="SUCCESS" />
-        <span className="grow">{item.content}</span>
         <Link to={`/workspaces/${workspaceId}/calendar`}>일정 보기</Link>
       </>
     );
@@ -307,11 +353,9 @@ function MeetingStep({
   if (!draft) {
     return (
       <>
-        <StatusBadge status={item.outputStatus} />
-        <span className="grow">
-          {item.content}
-          {item.suggestedDatetime && <span className="small muted"> · {formatDateTime(item.suggestedDatetime)}</span>}
-        </span>
+        {item.suggestedDatetime && (
+          <span className="small muted">예정 일시 · {formatDateTime(item.suggestedDatetime)}</span>
+        )}
         <button className="btn btn-small" onClick={load} disabled={busy}>
           일정 등록 준비
         </button>

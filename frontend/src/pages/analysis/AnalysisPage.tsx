@@ -9,7 +9,6 @@ import {
   getAnalysis,
   ITEM_TYPE_TEXT,
   STATUS_TEXT,
-  type AnalysisResultDTO,
   type AnalysisStatus,
   type ItemType,
 } from './api';
@@ -25,8 +24,15 @@ import './analysis.css';
 import PageHeader from '../../components/PageHeader';
 import { BTN_AI, BTN_SUB } from '../../components/ui';
 import AnalysisHistory from './components/AnalysisHistory';
+import AnalysisIcon, { type AnalysisIconName } from './components/AnalysisIcon';
+import EvidenceDrawer from './components/EvidenceDrawer';
 
-const TYPE_ICON: Record<ItemType, string> = { DECISION: '⚑', FOLLOW_UP: '☑', OPEN_ISSUE: '❓', MEETING_PROPOSAL: '📅' };
+const TYPE_ICON: Record<ItemType, AnalysisIconName> = {
+  DECISION: 'check',
+  FOLLOW_UP: 'task',
+  OPEN_ISSUE: 'question',
+  MEETING_PROPOSAL: 'calendar',
+};
 
 const ITEM_TYPES: ItemType[] = ['DECISION', 'FOLLOW_UP', 'OPEN_ISSUE', 'MEETING_PROPOSAL'];
 const STEPS = ['스레드 메시지 모으는 중', 'AI가 논의를 분석하는 중', '결과 정리하는 중'];
@@ -100,41 +106,20 @@ function NewAnalysis({
   );
 }
 
-
-/** 진행 단계 표시: 대화 수집 → AI 분석 → 검토 → 확정 (시안 머리 오른쪽의 알약) */
-function StepPill({ status }: { status?: AnalysisStatus }) {
-  const analyzed = !!status && status !== 'ANALYZING';
-  const confirmed = status === 'CONFIRMED';
-  const reviewing = status === 'REVIEWING' || status === 'FAILED' || status === 'NO_CONTENT';
-  return (
-    <div className="card analysis-step-pill">
-      <span className="text-[var(--success)]">✓ 대화 수집</span>
-      <span className="text-[var(--muted)]">→</span>
-      <span className={analyzed ? 'text-[var(--success)]' : 'text-[var(--primary)]'}>
-        {analyzed ? '✓ AI 분석' : '● AI 분석'}
-      </span>
-      <span className="text-[var(--muted)]">→</span>
-      <span className={`badge ${confirmed ? 'badge-success' : reviewing ? 'badge-primary' : ''}`}>
-        {confirmed ? '✓ 검토 완료' : reviewing ? '● 검토 중' : '○ 검토'}
-      </span>
-      <span className="text-[var(--muted)]">→</span>
-      <span className={`badge ${confirmed ? 'badge-success' : ''}`}>{confirmed ? '✓ 확정됨' : '○ 확정'}</span>
-    </div>
-  );
-}
-
 export function AnalysisHeader({ status }: { status?: AnalysisStatus }) {
   return (
     <PageHeader
       icon={<NavIcon name="analyses" className="h-[22px] w-[22px] text-[var(--primary)]" />}
       title="논의 정리"
-      description={
-        <>
-          AI가 정리한 결정과 후속 작업을 검토하고 확정하세요.
-          <span className="mt-0.5 block text-xs">ⓘ 확정 전에는 외부 서비스에 반영되지 않아요.</span>
-        </>
+      description="대화 속 결정과 다음 할 일을 한곳에서 검토하세요."
+      actions={
+        status && (
+          <span className={`analysis-status status-${status.toLowerCase()}`}>
+            <i />
+            {STATUS_TEXT[status]}
+          </span>
+        )
       }
-      actions={<StepPill status={status} />}
     />
   );
 }
@@ -147,6 +132,8 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(() => window.matchMedia('(min-width: 1100px)').matches);
+  const [evidenceTarget, setEvidenceTarget] = useState<{ itemId: number | null } | null>(null);
 
   const data = analysis.data;
   const editable = !!data && data.status !== 'CONFIRMED' && data.status !== 'ANALYZING';
@@ -181,7 +168,7 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
   };
 
   return (
-    <section className="stack">
+    <section className="stack analysis-page">
       <AnalysisHeader status={data?.status} />
 
       {data?.status === 'FAILED' && (
@@ -190,8 +177,34 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
         </div>
       )}
 
-      <div className="analysis-board">
-        <AnalysisHistory workspaceId={workspaceId} selectedId={analysisId} refreshKey={historyTick} />
+      <div className="analysis-toolbar">
+        <button
+          type="button"
+          className={`analysis-toolbar-button${historyOpen ? ' is-active' : ''}`}
+          aria-expanded={historyOpen}
+          aria-controls="analysis-history-panel"
+          onClick={() => setHistoryOpen((open) => !open)}
+        >
+          <AnalysisIcon name="list" />
+          분석 내역
+        </button>
+        <span className="analysis-toolbar-hint">정리 결과를 읽고, 필요한 근거를 확인해 보세요.</span>
+        {data && (
+          <button
+            type="button"
+            className="analysis-toolbar-button"
+            aria-haspopup="dialog"
+            onClick={() => setEvidenceTarget({ itemId: null })}
+          >
+            <AnalysisIcon name="quote" />
+            원문 보기 <span>{data.messages.length}</span>
+          </button>
+        )}
+      </div>
+      <div className={`analysis-board${historyOpen ? '' : ' is-history-closed'}`}>
+        <div id="analysis-history-panel" className="analysis-history-region" hidden={!historyOpen}>
+          <AnalysisHistory workspaceId={workspaceId} selectedId={analysisId} refreshKey={historyTick} />
+        </div>
 
         <div className="card analysis-main">
           {analysis.loading && !data && <Loading />}
@@ -199,67 +212,128 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
           {data && (
             <>
               <div className="analysis-main-head">
-                <h2 className="!m-0 !text-lg !font-extrabold">📄 {data.threadTitle ?? '제목 없는 스레드'}</h2>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
-                  <span className="inline-flex h-5 w-5">
-                    <ServiceLogo service="slack" />
-                  </span>
-                  <span>분석 {formatDateTime(data.createdAt)}</span>
-                  {data.analyzedUntil && <span>· {formatDateTime(data.analyzedUntil)} 메시지까지</span>}
-                  <span className={`badge status-${data.status.toLowerCase()}`}>{STATUS_TEXT[data.status]}</span>
-                  {data.auto && <span className="badge">자동 수집</span>}
+                <div className="analysis-document-source">
+                  <ServiceLogo service="slack" />
+                  <span>Slack 대화에서 정리한 논의</span>
+                  {data.auto && <span className="analysis-meta-pill">자동 정리</span>}
                 </div>
+                <h2 className="!m-0 !text-lg !font-extrabold">{data.threadTitle ?? '제목 없는 스레드'}</h2>
+                <div className="analysis-document-meta">
+                  <span>{formatDateTime(data.createdAt)} 정리</span>
+                  <span>·</span>
+                  <span>항목 {data.items.length}개</span>
+                  {data.analyzedUntil && (
+                    <span title={`${formatDateTime(data.analyzedUntil)} 메시지까지 분석`}>· 분석 시점 기준</span>
+                  )}
+                </div>
+                <nav className="analysis-outline" aria-label="정리 항목">
+                  {ITEM_TYPES.map((type) => {
+                    const count = data.items.filter((item) => item.itemType === type).length;
+                    return count > 0 ? (
+                      <a key={type} href={`#analysis-section-${type}`}>
+                        <AnalysisIcon name={TYPE_ICON[type]} className="h-3.5 w-3.5" />
+                        {ITEM_TYPE_TEXT[type]}
+                        <span>{count}</span>
+                      </a>
+                    ) : null;
+                  })}
+                </nav>
               </div>
 
-              {editable && data.items.length === 0 && (
-                <Empty>추출된 결정사항이 없습니다. 아래에서 직접 작성할 수 있습니다.</Empty>
-              )}
-
-              {ITEM_TYPES.map((type) => {
-                const items = data.items.filter((i) => i.itemType === type);
-                if (!editable && items.length === 0) return null;
-                return (
-                  <div key={type} className={`analysis-section type-${type.toLowerCase()}`}>
-                    <div className="flex items-center justify-between">
-                      <strong className="text-sm">
-                        {TYPE_ICON[type]} {ITEM_TYPE_TEXT[type]} <span className="badge">{items.length}</span>
-                      </strong>
-                      {editable && adding !== type && (
-                        <button type="button" className="analysis-ghost" onClick={() => setAdding(type)}>
-                          + 추가
-                        </button>
-                      )}
-                    </div>
-                    {items.length > 0 && (
-                      <ul className="list">
-                        {items.map((item) => (
-                          <ItemCard
-                            key={item.itemId}
-                            workspaceId={workspaceId}
-                            item={item}
-                            editable={editable}
-                            members={members.data ?? []}
-                            messages={data.messages}
-                            onChanged={analysis.reload}
-                          />
+              <div className="analysis-document-body">
+                {editable && (
+                  <div className="analysis-document-tools">
+                    <span>내용을 검토하고 필요한 항목을 보완하세요.</span>
+                    <details
+                      className="analysis-add-menu"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.currentTarget.open = false;
+                          event.currentTarget.querySelector('summary')?.focus();
+                          event.stopPropagation();
+                        }
+                      }}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+                      }}
+                    >
+                      <summary>
+                        <AnalysisIcon name="plus" className="h-3.5 w-3.5" />
+                        항목 추가
+                      </summary>
+                      <div>
+                        {ITEM_TYPES.map((type) => (
+                          <button
+                            type="button"
+                            key={type}
+                            onClick={(event) => {
+                              setAdding(type);
+                              event.currentTarget.closest('details')?.removeAttribute('open');
+                            }}
+                          >
+                            <AnalysisIcon name={TYPE_ICON[type]} />
+                            {ITEM_TYPE_TEXT[type]}
+                          </button>
                         ))}
-                      </ul>
-                    )}
-                    {adding === type && (
-                      <ItemEditor
-                        itemType={type}
-                        members={members.data ?? []}
-                        onCancel={() => setAdding(null)}
-                        onSubmit={async (form) => {
-                          await addItem(workspaceId, data.analysisId, { ...form, itemType: type });
-                          setAdding(null);
-                          analysis.reload();
-                        }}
-                      />
-                    )}
+                      </div>
+                    </details>
                   </div>
-                );
-              })}
+                )}
+                {editable && data.items.length === 0 && (
+                  <Empty>추출된 결정사항이 없습니다. 아래에서 직접 작성할 수 있습니다.</Empty>
+                )}
+
+                {ITEM_TYPES.map((type) => {
+                  const items = data.items.filter((i) => i.itemType === type);
+                  if (items.length === 0 && adding !== type) return null;
+                  return (
+                    <section
+                      key={type}
+                      id={`analysis-section-${type}`}
+                      className={`analysis-section type-${type.toLowerCase()}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <strong className="text-sm">
+                          <AnalysisIcon name={TYPE_ICON[type]} />
+                          {ITEM_TYPE_TEXT[type]} <span className="analysis-section-count">{items.length}</span>
+                        </strong>
+                        {editable && adding !== type && (
+                          <button type="button" className="analysis-ghost" onClick={() => setAdding(type)}>
+                            + 추가
+                          </button>
+                        )}
+                      </div>
+                      {items.length > 0 && (
+                        <ul className="list">
+                          {items.map((item) => (
+                            <ItemCard
+                              key={item.itemId}
+                              workspaceId={workspaceId}
+                              item={item}
+                              editable={editable}
+                              members={members.data ?? []}
+                              onViewEvidence={() => setEvidenceTarget({ itemId: item.itemId })}
+                              onChanged={analysis.reload}
+                            />
+                          ))}
+                        </ul>
+                      )}
+                      {adding === type && (
+                        <ItemEditor
+                          itemType={type}
+                          members={members.data ?? []}
+                          onCancel={() => setAdding(null)}
+                          onSubmit={async (form) => {
+                            await addItem(workspaceId, data.analysisId, { ...form, itemType: type });
+                            setAdding(null);
+                            analysis.reload();
+                          }}
+                        />
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
 
               {actionError && <div className="alert alert-error">{actionError}</div>}
 
@@ -270,7 +344,7 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
                     <div className="text-[11px] text-[var(--muted)]">확정 후 문서·팀 작업·일정을 만들 수 있어요.</div>
                   </div>
                   <button type="button" className={BTN_SUB} onClick={discard} disabled={busy}>
-                    취소 (반영 안 함)
+                    정리 취소
                   </button>
                   <button
                     type="button"
@@ -283,64 +357,23 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
                 </div>
               )}
               {data.status === 'CONFIRMED' && (
-                <div className="analysis-main-foot">
-                  <div className="grow text-[13px] font-bold text-[var(--success)]">✓ 확정 완료됨</div>
-                  <span className="text-[11px] text-[var(--muted)]">오른쪽에서 문서·팀 작업·일정을 만들 수 있어요.</span>
-                </div>
+                <OutputPanel workspaceId={workspaceId} analysis={data} onChanged={analysis.reload} />
               )}
             </>
           )}
         </div>
-
-        <div className="analysis-side">
-          {data && <EvidencePanel workspaceId={workspaceId} data={data} />}
-          {data?.status === 'CONFIRMED' && (
-            <div className="card analysis-side-card">
-              <OutputPanel workspaceId={workspaceId} analysis={data} onChanged={analysis.reload} />
-            </div>
-          )}
-        </div>
       </div>
+      {data && evidenceTarget && (
+        <EvidenceDrawer
+          workspaceId={workspaceId}
+          data={data}
+          itemId={evidenceTarget.itemId}
+          editable={editable}
+          loading={analysis.loading}
+          onChanged={analysis.reload}
+          onClose={() => setEvidenceTarget(null)}
+        />
+      )}
     </section>
-  );
-}
-
-/** 오른쪽 위: 분석한 스레드의 대화 (분석 뒤에 달린 메시지는 강조) */
-function EvidencePanel({ workspaceId, data }: { workspaceId: string; data: AnalysisResultDTO }) {
-  return (
-    <div className="card analysis-side-card">
-      <div>
-        <div className="flex items-center gap-1.5">
-          <strong className="text-sm">근거 대화</strong>
-          <span className="badge">{data.messages.length}</span>
-        </div>
-        <div className="mt-0.5 text-xs text-[var(--muted)]">AI가 읽은 스레드의 발언이에요.</div>
-      </div>
-      <div className="analysis-quotes">
-        {data.messages.map((m) => (
-          <div key={m.contentRefId} className={`analysis-quote${m.analyzed ? '' : ' new'}`}>
-            <div className="flex items-center gap-1.5 text-xs font-bold">
-              <span className="inline-flex h-[18px] w-[18px] flex-shrink-0">
-                <ServiceLogo service="slack" />
-              </span>
-              <span>
-                {m.authorName ?? '?'}
-                {m.createdAt && ` · ${formatDateTime(m.createdAt)}`}
-              </span>
-              {!m.analyzed && <span className="badge badge-primary !text-[10px]">분석 후 추가</span>}
-            </div>
-            <div className="pre mt-[5px] text-xs">{m.text}</div>
-          </div>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-3 text-xs font-semibold">
-        <Link to={`/workspaces/${workspaceId}/slack?channel=${data.channelId}`}>스레드 보기</Link>
-        {data.threadLink && (
-          <a href={data.threadLink} target="_blank" rel="noreferrer">
-            ↗ Slack 원본 보기
-          </a>
-        )}
-      </div>
-    </div>
   );
 }

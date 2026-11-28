@@ -1,16 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { MemberResponse } from '../../workspace/api';
-import {
-  deleteItem,
-  linkEvidence,
-  unlinkEvidence,
-  updateItem,
-  type AnalysisItemResponse,
-  type ItemForm,
-  type ItemType,
-  type ThreadMessageResponse,
-} from '../api';
+import { deleteItem, updateItem, type AnalysisItemResponse, type ItemForm, type ItemType } from '../api';
 import { formatDate, formatDateTime } from '../../../utils/date';
+import AnalysisIcon from './AnalysisIcon';
 
 /** 분석 항목 한 개: 내용, 근거 발언, 담당자·마감일(후속 작업), 일시·참여자(회의 제안) */
 export default function ItemCard({
@@ -18,20 +10,18 @@ export default function ItemCard({
   item,
   editable,
   members,
-  messages,
+  onViewEvidence,
   onChanged,
 }: {
   workspaceId: string;
   item: AnalysisItemResponse;
   editable: boolean;
   members: MemberResponse[];
-  messages: ThreadMessageResponse[];
+  onViewEvidence: () => void;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const linked = new Set(item.evidences.map((e) => e.contentRefId));
-  const candidates = messages.filter((m) => !linked.has(m.contentRefId));
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -81,7 +71,7 @@ export default function ItemCard({
   return (
     <li className={`analysis-item type-${item.itemType.toLowerCase()} stack`}>
       <div className="row">
-        <span className="pre grow">{item.content}</span>
+        <span className="pre analysis-item-content">{item.content}</span>
         {outputDone ? (
           <span className="badge badge-success">
             확정 · {item.itemType === 'FOLLOW_UP' ? '팀 작업 생성됨' : '일정 등록됨'}
@@ -90,27 +80,55 @@ export default function ItemCard({
           item.undetermined && <span className="badge badge-warning">미정</span>
         )}
         {editable && (
-          <>
-            <button className="link-button small" onClick={() => setEditing(true)}>
-              수정
-            </button>
-            <button className="link-button small" onClick={remove}>
-              삭제
-            </button>
-          </>
+          <details
+            className="analysis-item-menu"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector('summary')?.focus();
+                event.stopPropagation();
+              }
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+            }}
+          >
+            <summary aria-label="항목 관리">
+              <AnalysisIcon name="more" />
+            </summary>
+            <div>
+              <button type="button" onClick={() => setEditing(true)}>
+                수정
+              </button>
+              <button
+                type="button"
+                className="is-danger"
+                onClick={(event) => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  remove();
+                }}
+              >
+                삭제
+              </button>
+            </div>
+          </details>
         )}
       </div>
 
       {item.itemType === 'FOLLOW_UP' && (
-        <div className="row small muted">
-          <span>담당자: {item.suggestedAssigneeName ?? decidedElsewhere}</span>
-          <span>마감일: {item.suggestedDueDate ? formatDate(item.suggestedDueDate) : decidedElsewhere}</span>
+        <div className="analysis-item-meta">
+          <span className="analysis-meta-pill">담당자: {item.suggestedAssigneeName ?? decidedElsewhere}</span>
+          <span className="analysis-meta-pill">
+            마감일: {item.suggestedDueDate ? formatDate(item.suggestedDueDate) : decidedElsewhere}
+          </span>
         </div>
       )}
       {item.itemType === 'MEETING_PROPOSAL' && (
-        <div className="row small muted">
-          <span>일시: {item.suggestedDatetime ? formatDateTime(item.suggestedDatetime) : decidedElsewhere}</span>
-          <span>
+        <div className="analysis-item-meta">
+          <span className="analysis-meta-pill">
+            일시: {item.suggestedDatetime ? formatDateTime(item.suggestedDatetime) : decidedElsewhere}
+          </span>
+          <span className="analysis-meta-pill">
             참여자:{' '}
             {item.suggestedParticipantIds?.length
               ? item.suggestedParticipantIds.map(memberName).join(', ')
@@ -119,42 +137,10 @@ export default function ItemCard({
         </div>
       )}
 
-      <div className="analysis-evidences">
-        <span className="small muted">근거 발언</span>
-        {item.evidences.length === 0 && <span className="small muted"> 없음</span>}
-        <ul className="list">
-          {item.evidences.map((e) => (
-            <li key={e.evidenceId} className="row small">
-              <strong>{e.authorName ?? '알 수 없음'}</strong>
-              <span className={`grow clamp${e.isOriginDeleted ? ' muted' : ''}`}>{e.text}</span>
-              {e.deepLink && (
-                <a href={e.deepLink} target="_blank" rel="noreferrer">
-                  원본
-                </a>
-              )}
-              {editable && (
-                <button className="link-button" onClick={() => run(() => unlinkEvidence(workspaceId, e.evidenceId))}>
-                  해제
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-        {editable && candidates.length > 0 && (
-          <select
-            className="input small"
-            value=""
-            onChange={(e) => e.target.value && run(() => linkEvidence(workspaceId, item.itemId, Number(e.target.value)))}
-          >
-            <option value="">+ 근거 발언 연결</option>
-            {candidates.map((m) => (
-              <option key={m.contentRefId} value={m.contentRefId}>
-                {m.authorName ?? '?'}: {m.text.slice(0, 60)}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      <button type="button" className="analysis-evidence-button" aria-haspopup="dialog" onClick={onViewEvidence}>
+        <AnalysisIcon name="quote" className="h-3.5 w-3.5" />
+        근거 {item.evidences.length}개<AnalysisIcon name="chevron" className="h-3 w-3" />
+      </button>
 
       {error && <div className="alert alert-error small">{error}</div>}
     </li>
@@ -213,7 +199,8 @@ export function ItemEditor({
         className="input"
         required
         maxLength={2000}
-        placeholder="내용"
+        placeholder="정리할 내용을 입력하세요"
+        autoFocus
         value={form.content}
         onChange={(e) => setForm({ ...form, content: e.target.value })}
       />
@@ -224,7 +211,9 @@ export function ItemEditor({
             <select
               className="input"
               value={form.suggestedAssigneeId ?? ''}
-              onChange={(e) => setForm({ ...form, suggestedAssigneeId: e.target.value ? Number(e.target.value) : null })}
+              onChange={(e) =>
+                setForm({ ...form, suggestedAssigneeId: e.target.value ? Number(e.target.value) : null })
+              }
             >
               <option value="">미정</option>
               {members.map((m) => (
