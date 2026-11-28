@@ -1,7 +1,8 @@
 // UI-07 일정 (Google Calendar) (담당: A) — 팀원 UI 시안(togather_ui.html): 달력 카드 | 선택한 날·일정 패널
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { createEvent, deleteEvent, getEvents, updateEvent, type CalendarEvent, type CalendarEventForm } from './api';
+import { deleteEvent, getEvents, type CalendarEvent } from './api';
+import EventForm from './EventForm';
 import { getMembers, type MemberResponse } from '../workspace/api';
 import { getIntegrations, reauthUrl } from '../integration/api';
 import { useAsync } from '../../hooks/useAsync';
@@ -18,7 +19,6 @@ import {
   fromLocalIso,
   sameDay,
   startOfDay,
-  toInputValue,
   toLocalIso,
 } from '../../utils/date';
 
@@ -281,7 +281,7 @@ export default function CalendarPage() {
         <EventForm
           workspaceId={workspaceId}
           event={editing === 'new' ? null : editing}
-          members={members.data ?? []}
+          members={members}
           defaultDate={selectedDay}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -363,7 +363,7 @@ function EventPanel({
           </span>
         )}
       </div>
-      {event.description && <p className="pre m-0 text-[13px] text-[var(--muted)]">{event.description}</p>}
+      {event.description && <p className="pre m-0 text-[13px] text-[var(--muted)] [overflow-wrap:anywhere]">{event.description}</p>}
       <div className="flex flex-wrap gap-3 text-[13px] font-semibold">
         {event.deepLink && (
           <a href={event.deepLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1">
@@ -379,134 +379,3 @@ function EventPanel({
     </div>
   );
 }
-
-function EventForm({
-  workspaceId,
-  event,
-  members,
-  defaultDate,
-  onClose,
-  onSaved,
-}: {
-  workspaceId: string;
-  event: CalendarEvent | null;
-  members: MemberResponse[];
-  defaultDate: Date;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const initialStart = new Date(defaultDate);
-  initialStart.setHours(10, 0, 0, 0);
-  const [form, setForm] = useState({
-    title: event?.title ?? '',
-    startAt: event ? event.startAt.slice(0, 16) : toInputValue(initialStart),
-    endAt: event ? event.endAt.slice(0, 16) : toInputValue(new Date(initialStart.getTime() + 3600_000)),
-    participantIds: event
-      ? members.filter((m) => event.attendees.includes(m.email)).map((m) => m.userId)
-      : ([] as number[]),
-    description: event?.description ?? '',
-  });
-  const [error, setError] = useState<Error>();
-  const [saving, setSaving] = useState(false);
-
-  const toggleMember = (id: number) =>
-    setForm({
-      ...form,
-      participantIds: form.participantIds.includes(id)
-        ? form.participantIds.filter((x) => x !== id)
-        : [...form.participantIds, id],
-    });
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (form.startAt >= form.endAt) {
-      setError(new Error('종료 시각은 시작 시각보다 뒤여야 합니다.'));
-      return;
-    }
-    setSaving(true);
-    setError(undefined);
-    const body: CalendarEventForm = { ...form, startAt: `${form.startAt}:00`, endAt: `${form.endAt}:00` };
-    try {
-      if (event) await updateEvent(workspaceId, event.contentRefId, body);
-      else await createEvent(workspaceId, body);
-      onSaved();
-    } catch (err) {
-      setError(err as Error);
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <form className="modal form" onSubmit={submit} onClick={(e) => e.stopPropagation()}>
-        <h2>{event ? '일정 수정' : '일정 등록'}</h2>
-        <label>
-          제목 *
-          <input
-            className="input"
-            required
-            maxLength={200}
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-          />
-        </label>
-        <div className="row">
-          <label className="grow">
-            시작 *
-            <input
-              className="input"
-              type="datetime-local"
-              required
-              value={form.startAt}
-              onChange={(e) => setForm({ ...form, startAt: e.target.value })}
-            />
-          </label>
-          <label className="grow">
-            종료 *
-            <input
-              className="input"
-              type="datetime-local"
-              required
-              value={form.endAt}
-              onChange={(e) => setForm({ ...form, endAt: e.target.value })}
-            />
-          </label>
-        </div>
-        <fieldset>
-          <legend>참여자</legend>
-          <div className="tags">
-            {members.map((m) => (
-              <label key={m.userId} className="tag selectable">
-                <input
-                  type="checkbox"
-                  checked={form.participantIds.includes(m.userId)}
-                  onChange={() => toggleMember(m.userId)}
-                />
-                {m.name}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <label>
-          설명
-          <textarea
-            className="input"
-            maxLength={5000}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-        </label>
-        {error && <ErrorBox error={error} />}
-        <div className="row">
-          <button className="btn btn-primary" disabled={saving}>
-            {saving ? '저장 중...' : '저장'}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            취소
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-

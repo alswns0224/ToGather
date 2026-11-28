@@ -2,13 +2,18 @@ package com.togather.content.calendar.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.togather.common.enums.Provider;
 import com.togather.content.calendar.client.GoogleCalendarClient;
 import com.togather.content.calendar.client.GoogleCalendarClient.CalendarEvent;
 import com.togather.content.calendar.client.GoogleCalendarClient.EventList;
+import com.togather.content.calendar.dto.CalendarEventCreateRequest;
 import com.togather.content.calendar.dto.CalendarEventResponse;
 import com.togather.content.service.ContentRefService;
 import com.togather.integration.service.IntegrationService;
@@ -64,6 +69,24 @@ class CalendarContentServiceTest extends IntegrationTestSupport {
         assertThat(second).extracting(CalendarEventResponse::title).containsExactly("발표");
         assertThat(contentRefService.getOwner(deletedId).isOriginDeleted()).isTrue();
         assertThat(contentRefService.getOwner(second.getFirst().contentRefId()).isOriginDeleted()).isFalse();
+    }
+
+    @Test
+    void 개인_일정은_내_기본_캘린더에_참석자_없이_등록한다() {
+        when(integrationService.getAccessToken(workspaceId, userId, Provider.GOOGLE_CALENDAR)).thenReturn("my-token");
+        LocalDateTime start = LocalDateTime.of(2026, 10, 20, 10, 0);
+        CalendarEvent created = new CalendarEvent("p1", "치과", "검진", start, start.plusHours(1), false, List.of(),
+                "https://calendar/p1", null, start.minusDays(1), null, null);
+        when(calendarClient.insertEvent(eq("my-token"), eq("primary"), any(), eq(false))).thenReturn(created);
+
+        CalendarEventResponse response = calendarContentService.createEvent(workspaceId, userId,
+                new CalendarEventCreateRequest("치과", start, start.plusHours(1), List.of(userId), "검진", true));
+
+        assertThat(response.personal()).isTrue();
+        assertThat(contentRefService.getOwner(response.contentRefId()).ownerUserId()).isEqualTo(userId);
+        verify(calendarClient).insertEvent(eq("my-token"), eq("primary"),
+                argThat(write -> write.attendeeEmails() == null && write.workspaceId() == null), eq(false));
+        verify(calendarClient, never()).insertEvent(eq(TOKEN), eq("team-cal"), any(), anyBoolean());
     }
 
     /** 이 워크스페이스에서 만든 팀 일정 */

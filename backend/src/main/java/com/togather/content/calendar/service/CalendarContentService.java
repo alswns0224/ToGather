@@ -190,8 +190,26 @@ public class CalendarContentService {
     @Transactional(noRollbackFor = BusinessException.class)
     public CalendarEventResponse createEvent(Long workspaceId, Long userId, CalendarEventCreateRequest request) {
         validateRange(request.startAt(), request.endAt());
+        if (request.isPersonal()) {
+            return createPersonalInternal(workspaceId, userId, request.title(), request.description(),
+                    request.startAt(), request.endAt());
+        }
         return createInternal(workspaceId, userId, request.title(), request.startAt(), request.endAt(),
                 request.participantIds(), request.description(), false);
+    }
+
+    /**
+     * 내 기본 캘린더에만 넣는 개인 일정. 참석자를 넣지 않고 워크스페이스 표시도 하지 않아 팀 일정으로 보이지 않는다.
+     * 개인 일정이므로 다른 팀원에게 알리지 않는다.
+     */
+    private CalendarEventResponse createPersonalInternal(Long workspaceId, Long userId, String title,
+                                                         String description, LocalDateTime startAt,
+                                                         LocalDateTime endAt) {
+        Access access = personalAccess(workspaceId, userId);
+        CalendarEvent event = calendarClient.insertEvent(access.token(), access.calendarId(),
+                new EventWrite(title, description, startAt, endAt, null), false);
+        ContentRefDTO ref = save(workspaceId, access, event);
+        return toResponse(ref.contentRefId(), event, null, true);
     }
 
     @Transactional(noRollbackFor = BusinessException.class) // 원본 삭제 표시는 예외가 나도 남긴다

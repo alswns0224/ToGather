@@ -20,6 +20,8 @@ export interface CalendarEventForm {
   endAt: string;
   participantIds: number[];
   description: string;
+  /** true면 내 Google Calendar에만 등록 (새 일정만) */
+  personal?: boolean;
 }
 
 export const getEvents = (workspaceId: string, from: string, to: string) =>
