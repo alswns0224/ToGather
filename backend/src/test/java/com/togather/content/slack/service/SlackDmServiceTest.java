@@ -48,7 +48,8 @@ class SlackDmServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(integrations.findAccessToken(WS, ME, Provider.SLACK)).thenReturn(Optional.of("my-token"));
+        when(integrations.findOwnAccess(WS, ME, Provider.SLACK)).thenReturn(Optional.of(
+                new IntegrationService.OwnAccess(100L, "T1:U-ME", "im:read,im:history,chat:write", "my-token")));
         when(client.authTest("my-token")).thenReturn(new AuthInfo("T1", "U-ME", "https://x.slack.com"));
         when(directory.getUsers(eq(WS), eq("my-token"), anyCollection())).thenReturn(Map.of(
                 "U-ME", new SlackUser("U-ME", "백민준", null), "U-LEE", new SlackUser("U-LEE", "이찬서", null)));
@@ -196,7 +197,7 @@ class SlackDmServiceTest {
 
     @Test
     void 내가_Slack을_연결하지_않았거나_DM이_아닌_대화면_막는다() {
-        when(integrations.findAccessToken(WS, 20L, Provider.SLACK)).thenReturn(Optional.empty());
+        when(integrations.findOwnAccess(WS, 20L, Provider.SLACK)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getConversations(WS, 20L))
                 .isInstanceOf(BusinessException.class).extracting("errorCode").isEqualTo(ErrorCode.CONNECTION_NOT_FOUND);

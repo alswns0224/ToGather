@@ -62,7 +62,7 @@ export default function Composer({
                 {error.message} <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리로 이동</Link>
               </>
             ) : (
-              `전송하지 못했습니다. ${error.message}`
+              `${submitLabel}하지 못했습니다. ${error.message}`
             )}
           </span>
           {!needsOwnConnection && (
@@ -83,7 +83,7 @@ export default function Composer({
           disabled={sending}
         />
         <div className="slack-composer-bar">
-          {!compact && <span className="small muted">Enter 전송 · Shift+Enter 줄바꿈</span>}
+          {!compact && <span className="small muted">Enter {submitLabel} · Shift+Enter 줄바꿈</span>}
           <span className="spacer" />
           {onCancel && (
             <button type="button" className={`${BTN_SUB} !h-[30px] !px-3 !text-xs`} onClick={onCancel} disabled={sending}>
@@ -94,7 +94,7 @@ export default function Composer({
             className={`${compact ? BTN_SUB : BTN_AI} !h-[30px] !px-3 !text-xs`}
             disabled={sending || !text.trim()}
           >
-            {sending ? '보내는 중...' : submitLabel}
+            {sending ? (submitLabel === '저장' ? '저장 중...' : '보내는 중...') : submitLabel}
           </button>
         </div>
       </div>
