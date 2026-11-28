@@ -15,7 +15,8 @@ import {
 import { getMembers, type MemberResponse } from '../../workspace/api';
 import { useAsync } from '../../../hooks/useAsync';
 import { useUndo } from '../../../hooks/useUndo';
-import { formatDateTime } from '../../../utils/date';
+import { formatDateTime, timeInput } from '../../../utils/date';
+import DueTimeInput from '../../../components/DueTimeInput';
 import AnalysisIcon, { type AnalysisIconName } from './AnalysisIcon';
 
 /**
@@ -229,6 +230,7 @@ function TaskStep({
     description: item.content,
     assigneeId: item.suggestedAssigneeId,
     dueDate: item.suggestedDueDate,
+    dueTime: timeInput(item.suggestedDueTime) || null,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -284,6 +286,7 @@ function TaskStep({
           ))}
         </select>
         <DatePicker label="팀 작업 마감일" className="grow min-w-[150px]" required disabled={busy} value={form.dueDate??''} onChange={value=>setForm({...form,dueDate:value||null})}/>
+        <DueTimeInput label="팀 작업 마감 시각" disabled={busy || !form.dueDate} value={form.dueTime??''} onChange={value=>setForm({...form,dueTime:value||null})}/>
         <button className="btn btn-primary btn-small" disabled={busy || !form.assigneeId || !form.dueDate}>
           {busy ? '만드는 중...' : item.outputStatus === 'FAILED' ? '다시 시도' : '팀 작업 만들기'}
         </button>

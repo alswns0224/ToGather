@@ -13,6 +13,7 @@ import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -33,7 +34,13 @@ public class AnalysisStore {
 
     public record NewItem(ItemType itemType, String content, boolean undetermined, Long assigneeId,
                           LocalDate dueDate, LocalDateTime datetime, List<Long> participantIds,
-                          List<Long> evidenceContentRefIds) {
+                          List<Long> evidenceContentRefIds, LocalTime dueTime) {
+
+        public NewItem(ItemType itemType, String content, boolean undetermined, Long assigneeId, LocalDate dueDate,
+                       LocalDateTime datetime, List<Long> participantIds, List<Long> evidenceContentRefIds) {
+            this(itemType, content, undetermined, assigneeId, dueDate, datetime, participantIds,
+                    evidenceContentRefIds, null);
+        }
     }
 
     /**
@@ -67,6 +74,7 @@ public class AnalysisStore {
         for (NewItem n : items) {
             AnalysisItem item = new AnalysisItem(analysisId, n.itemType(), n.content(), n.undetermined());
             item.update(n.content(), n.assigneeId(), n.dueDate(), n.datetime(), n.participantIds());
+            item.changeSuggestedDueTime(n.dueTime());
             Long itemId = itemRepository.save(item).getItemId();
             evidenceRepository.saveAll(n.evidenceContentRefIds().stream()
                     .map(refId -> new AnalysisEvidence(itemId, refId))

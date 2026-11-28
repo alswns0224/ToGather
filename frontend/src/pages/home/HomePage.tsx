@@ -13,7 +13,7 @@ import { getPendingAnalyses } from '../analysis/api';
 import { getMeetings } from '../meeting/api';
 import { candidateWhen, getMyTodoList, getSuggestions } from '../assistant/api';
 import { getIntegrations, PROVIDER_LABELS, type ConnectionStatus } from '../integration/api';
-import { formatDate, formatDateTime } from '../../utils/date';
+import { formatDate, formatDateTime, formatDue } from '../../utils/date';
 
 /** 실패해도 화면은 그린다 (해당 칸만 비움) */
 const safe = <T,>(p: Promise<T>) => p.catch(() => null);
@@ -111,6 +111,7 @@ export default function HomePage() {
         key: `t-${t.taskId}`,
         title: t.title,
         due: t.dueDate!,
+        time: t.dueTime ?? null,
         kind: '팀 작업',
         who: memberName(t.assigneeId),
         to: `${base}/tasks/${t.taskId}`,
@@ -121,11 +122,12 @@ export default function HomePage() {
         key: `p-${t.personalTaskId}`,
         title: t.title,
         due: t.dueDate!,
+        time: t.dueTime ?? null,
         kind: '개인 할 일',
         who: '나만 보기',
         to: `${base}/assistant`,
       })),
-  ].sort((a, b) => a.due.localeCompare(b.due));
+  ].sort((a, b) => a.due.localeCompare(b.due) || (a.time ?? '24').localeCompare(b.time ?? '24'));
 
   const recent = [
     ...pendingSuggestions
@@ -246,7 +248,7 @@ export default function HomePage() {
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-base font-bold text-[var(--text)]">{t.title}</div>
                           <div className="text-[13px] text-[var(--muted)]">
-                            {name} · 마감 {t.dueDate ?? '미정'}
+                            {name} · 마감 {t.dueDate ? formatDue(t.dueDate, t.dueTime) : '미정'}
                           </div>
                         </div>
                         <span className={`badge ${done ? 'badge-success' : 'badge-primary'}`}>{done ? '완료' : '진행 중'}</span>
@@ -310,7 +312,7 @@ export default function HomePage() {
                       </span>
                       <span className={`flex-shrink-0 text-xs font-bold ${overdue ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}>
                         {overdue ? '지남 · ' : ''}
-                        {formatDate(item.due)}
+                        {formatDue(item.due, item.time)}
                       </span>
                     </Link>
                   );

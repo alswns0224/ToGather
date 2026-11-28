@@ -1,6 +1,7 @@
 package com.togather.assistant.dto;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -11,6 +12,10 @@ import java.util.List;
 public record MyTodoListDTO(List<AssignedTask> assignedTasks, List<PersonalTaskResponse> personalTasks,
                             List<SuggestionDTO> taskSuggestions) {
 
-    public record AssignedTask(Long taskId, Long workspaceId, String title, LocalDate dueDate) {
+    public record AssignedTask(Long taskId, Long workspaceId, String title, LocalDate dueDate, LocalTime dueTime) {
+
+        public AssignedTask(Long taskId, Long workspaceId, String title, LocalDate dueDate) {
+            this(taskId, workspaceId, title, dueDate, null);
+        }
     }
 }

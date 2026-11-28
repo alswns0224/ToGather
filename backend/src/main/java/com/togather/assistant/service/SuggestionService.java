@@ -33,6 +33,7 @@ import com.togather.content.slack.service.SlackDirectMessageService;
 import com.togather.content.slack.service.SlackMessageFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -102,7 +103,12 @@ public class SuggestionService {
     public record AiResult(List<AiCandidate> candidates) {
     }
 
-    public record AiCandidate(String type, String title, String source, String datetime, String dueDate) {
+    public record AiCandidate(String type, String title, String source, String datetime, String dueDate,
+                              String dueTime) {
+
+        public AiCandidate(String type, String title, String source, String datetime, String dueDate) {
+            this(type, title, source, datetime, dueDate, null);
+        }
     }
 
     // ===================== 탐지 (SD-13-01) =====================
@@ -158,10 +164,14 @@ public class SuggestionService {
             if (type != null && candidateType != type) {
                 continue;
             }
-            candidates.add(new Suggestion(userId, candidateType, f.source().getContentRefId(),
+            Suggestion suggestion = new Suggestion(userId, candidateType, f.source().getContentRefId(),
                     truncate(c.title().strip(), 200),
                     candidateType == SuggestionType.SCHEDULE ? parseDateTime(c.datetime()) : null,
-                    candidateType == SuggestionType.TASK ? parseDate(c.dueDate()) : null));
+                    candidateType == SuggestionType.TASK ? parseDate(c.dueDate()) : null);
+            if (candidateType == SuggestionType.TASK) {
+                suggestion.changeDueTime(parseTime(c.dueTime()));
+            }
+            candidates.add(suggestion);
         }
         List<Suggestion> saved = saveNew(userId,
                 excludeDuplicateCandidates(userId, excludeConfirmedMeetings(workspaceId, candidates)));
@@ -247,7 +257,7 @@ public class SuggestionService {
     public MyTodoListDTO getMyTodoList(Long workspaceId, Long userId) {
         List<MyTodoListDTO.AssignedTask> assigned = taskGateway.getMyTasks(userId).stream()
                 .filter(t -> workspaceId.equals(t.workspaceId()))
-                .map(t -> new MyTodoListDTO.AssignedTask(t.taskId(), t.workspaceId(), t.title(), t.dueDate()))
+                .map(t -> new MyTodoListDTO.AssignedTask(t.taskId(), t.workspaceId(), t.title(), t.dueDate(), t.dueTime()))
                 .toList();
         List<PersonalTaskResponse> personal = new ArrayList<>(personalTaskRepository
                 .findAllByOwnerUserIdAndStatusOrderByDueDateAscPersonalTaskIdAsc(userId, PersonalTaskStatus.TODO)
@@ -265,6 +275,7 @@ public class SuggestionService {
                                           SuggestionUpdateRequest request) {
         Suggestion suggestion = getPending(workspaceId, userId, suggestionId);
         suggestion.update(request.title().strip(), request.detectedDatetime(), request.dueDate());
+        suggestion.changeDueTime(request.dueTime());
         return toDtos(List.of(suggestion)).getFirst();
     }
 
@@ -321,8 +332,10 @@ public class SuggestionService {
         if (suggestion.getType() != SuggestionType.TASK) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
-        PersonalTask task = personalTaskRepository.save(new PersonalTask(userId, suggestion.getTitle(),
-                suggestion.getDueDate(), suggestion.getSourceContentRefId()));
+        PersonalTask created = new PersonalTask(userId, suggestion.getTitle(), suggestion.getDueDate(),
+                suggestion.getSourceContentRefId());
+        created.changeDueTime(suggestion.getDueTime());
+        PersonalTask task = personalTaskRepository.save(created);
         suggestion.approveAsPersonalTask(task.getPersonalTaskId());
         return task.getPersonalTaskId();
     }
@@ -339,7 +352,7 @@ public class SuggestionService {
         }
         Long taskId = taskGateway.createTask(workspaceId, new TaskGateway.FollowUpTask(suggestion.getTitle(),
                 "AI 업무 보조에서 찾은 할 일입니다.", assigneeId != null ? assigneeId : userId,
-                suggestion.getDueDate(), null));
+                suggestion.getDueDate(), null, suggestion.getDueTime()));
         suggestion.approveAsTeamTask(taskId);
         return taskId;
     }
@@ -359,13 +372,27 @@ public class SuggestionService {
 
     @Transactional
     public PersonalTaskResponse createPersonalTask(Long userId, String title, LocalDate dueDate) {
-        return toResponse(personalTaskRepository.save(new PersonalTask(userId, title.strip(), dueDate, null)));
+        return createPersonalTask(userId, title, dueDate, null);
+    }
+
+    @Transactional
+    public PersonalTaskResponse createPersonalTask(Long userId, String title, LocalDate dueDate, LocalTime dueTime) {
+        PersonalTask task = new PersonalTask(userId, title.strip(), dueDate, null);
+        task.changeDueTime(dueTime);
+        return toResponse(personalTaskRepository.save(task));
     }
 
     @Transactional
     public PersonalTaskResponse updatePersonalTask(Long userId, Long personalTaskId, String title, LocalDate dueDate) {
+        return updatePersonalTask(userId, personalTaskId, title, dueDate, null);
+    }
+
+    @Transactional
+    public PersonalTaskResponse updatePersonalTask(Long userId, Long personalTaskId, String title, LocalDate dueDate,
+                                                   LocalTime dueTime) {
         PersonalTask task = getPersonalTask(userId, personalTaskId);
         task.update(title.strip(), dueDate);
+        task.changeDueTime(dueTime);
         return toResponse(task);
     }
 
@@ -613,13 +640,13 @@ public class SuggestionService {
                     source == null ? null : source.getTitle(), source == null ? null : source.getAuthorName(),
                     source == null ? null : source.getCreatedAt(),
                     source == null ? null : truncate(messageText(source), EXCERPT_LENGTH),
-                    source == null ? null : source.getDeepLink());
+                    source == null ? null : source.getDeepLink(), s.getDueTime());
         }).toList();
     }
 
     private static PersonalTaskResponse toResponse(PersonalTask t) {
         return new PersonalTaskResponse(t.getPersonalTaskId(), t.getTitle(), t.getDueDate(), t.getStatus(),
-                t.getSourceContentRefId());
+                t.getSourceContentRefId(), t.getDueTime());
     }
 
     private static String messageText(ContentRef ref) {
@@ -653,6 +680,19 @@ public class SuggestionService {
             return LocalDateTime.parse(v.length() == 16 ? v + ":00" : v.substring(0, Math.min(19, v.length())));
         } catch (DateTimeParseException e) {
             return null; // 시간 미정
+        }
+    }
+
+    /** "HH:mm" 마감 시각. 알 수 없으면 null (그날 하루 종일) */
+    static LocalTime parseTime(String value) {
+        if (value == null || value.isBlank() || "null".equalsIgnoreCase(value)) {
+            return null;
+        }
+        String v = value.strip();
+        try {
+            return LocalTime.parse(v.length() > 5 ? v.substring(0, 5) : v);
+        } catch (DateTimeParseException e) {
+            return null;
         }
     }
 

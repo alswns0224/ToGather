@@ -6,7 +6,7 @@ import { ApiError } from '../../api/client';
 import { MUTED } from '../../components/ui';
 import NavIcon from '../../layouts/NavIcon';
 import { useAsync } from '../../hooks/useAsync';
-import { formatDateTime } from '../../utils/date';
+import { formatDateTime, formatDue } from '../../utils/date';
 import { getMembers } from '../workspace/api';
 import { STATUS_TEXT as MEETING_STATUS } from '../meeting/MeetingListPage';
 import { SOURCES } from './TaskContextPanels';
@@ -158,7 +158,7 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
               {task.title}
             </h1>
             <div className="text-[15px] text-[var(--muted)]">
-              담당 {assignee ?? '미지정'} · 마감 {task.dueDate ?? '미정'}
+              담당 {assignee ?? '미지정'} · 마감 {task.dueDate ? formatDue(task.dueDate, task.dueTime) : '미정'}
               {task.riskLevel !== 'NORMAL' && !done && (
                 <span className={`badge ${task.riskLevel === 'DANGER' ? 'badge-danger' : 'badge-warning'} ml-2`}>
                   {task.riskLevel === 'DANGER' ? '마감 위험' : '마감 주의'}

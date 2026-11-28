@@ -26,6 +26,7 @@ import com.togather.integration.service.IntegrationService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -322,6 +323,7 @@ public class DriveTrashService {
             List<DriveItem> items = listTrashFolder(owner.get().accessToken(), trashFolder.get());
             Map<Long, String> names = userNames(entries.values().stream()
                 .map(DriveTrashEntry::getTrashedBy).filter(Objects::nonNull).distinct().toList());
+            Map<String, Optional<DriveItem>> folderCache = new HashMap<>();
             for (DriveItem item : items) {
                 DriveTrashEntry entry = entries.get(item.id());
                 // 다른 팀원 계정으로만 볼 수 있는 연동 폴더에서 온 항목은 보여 주지 않는다.
@@ -335,22 +337,61 @@ public class DriveTrashService {
                     item.fileSize(), entry == null ? item.modifiedAt() : entry.getTrashedAt(),
                     entry == null ? null : entry.getTrashedBy(),
                     entry == null ? null : names.get(entry.getTrashedBy()),
-                    contentRefId, DriveTrashItem.TOGATHER));
+                    contentRefId, DriveTrashItem.TOGATHER,
+                    entry == null ? null : folderPath(owner.get().accessToken(), entry.getOriginParentId(),
+                        entry.getRootFolderId(), folderCache)));
             }
         }
         List<ContentRefDTO> driveTrash = driveContentService.getTrashFiles(workspaceId, userId);
         // Drive는 휴지통에 넣은 시각을 주지 않는다. ToGather가 처음 본 시각이 있으면 그것을, 없으면 수정 시각을 쓴다.
-        Map<Long, LocalDateTime> seenAt = contentRefRepository.findAllById(
+        Map<Long, ContentRef> trashRefs = contentRefRepository.findAllById(
                 driveTrash.stream().map(ContentRefDTO::contentRefId).toList()).stream()
+            .collect(Collectors.toMap(ContentRef::getContentRefId, Function.identity()));
+        Map<Long, LocalDateTime> seenAt = trashRefs.values().stream()
             .filter(ref -> ref.getDriveTrashedAt() != null)
             .collect(Collectors.toMap(ContentRef::getContentRefId, ContentRef::getDriveTrashedAt));
+        Map<String, Optional<DriveItem>> rootCache = new HashMap<>();
         for (ContentRefDTO file : driveTrash) {
+            ContentRef ref = trashRefs.get(file.contentRefId());
+            String rootId = ref == null ? null : ref.getChannelId();
+            String rootPath = owner.isEmpty() || rootId == null ? null
+                : folderPath(owner.get().accessToken(), rootId, rootId, rootCache);
             result.add(new DriveTrashItem(file.externalId(), file.title(), false, null, file.fileSize(),
                 seenAt.getOrDefault(file.contentRefId(), file.lastModifiedAt()), null, null, file.contentRefId(),
-                DriveTrashItem.DRIVE));
+                DriveTrashItem.DRIVE, rootPath));
         }
         result.sort(Comparator.comparing(DriveTrashItem::trashedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         return result;
+    }
+
+    /**
+     * 연동 폴더부터 folderId까지의 경로 (예: "11/27 Scenario1 / 발표 자료"). 폴더가 없어졌거나 읽지 못하면 null.
+     * 같은 목록 안에서는 한 번 읽은 폴더를 다시 부르지 않는다.
+     */
+    private String folderPath(String token, String folderId, String rootId, Map<String, Optional<DriveItem>> cache) {
+        if (folderId == null) {
+            return null;
+        }
+        java.util.LinkedList<String> names = new java.util.LinkedList<>();
+        String current = folderId;
+        for (int depth = 0; depth < 16 && current != null; depth++) {
+            Optional<DriveItem> folder = cache.computeIfAbsent(current, id -> {
+                try {
+                    return Optional.ofNullable(driveApiClient.getItem(token, id));
+                } catch (BusinessException e) {
+                    return Optional.empty();
+                }
+            });
+            if (folder.isEmpty() || folder.get().trashed()) {
+                return null;
+            }
+            names.addFirst(folder.get().name() == null ? "(이름 없음)" : folder.get().name());
+            if (current.equals(rootId) || folder.get().parents().isEmpty()) {
+                return String.join(" / ", names);
+            }
+            current = folder.get().parents().getFirst();
+        }
+        return String.join(" / ", names);
     }
 
     private List<DriveItem> listTrashFolder(String token, String trashFolder) {

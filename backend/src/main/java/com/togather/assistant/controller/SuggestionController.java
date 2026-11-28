@@ -134,7 +134,7 @@ public class SuggestionController {
     public ApiResponse<PersonalTaskResponse> createPersonalTask(@LoginUser Long userId, @PathVariable Long workspaceId,
                                                                 @Valid @RequestBody PersonalTaskRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
-        return ApiResponse.ok(suggestionService.createPersonalTask(userId, request.title(), request.dueDate()));
+        return ApiResponse.ok(suggestionService.createPersonalTask(userId, request.title(), request.dueDate(), request.dueTime()));
     }
 
     @PatchMapping("/personal-tasks/{personalTaskId}")
@@ -143,7 +143,7 @@ public class SuggestionController {
                                                                 @Valid @RequestBody PersonalTaskRequest request) {
         workspaceAccessChecker.checkMember(workspaceId, userId);
         return ApiResponse.ok(suggestionService.updatePersonalTask(userId, personalTaskId, request.title(),
-                request.dueDate()));
+                request.dueDate(), request.dueTime()));
     }
 
     @DeleteMapping("/personal-tasks/{personalTaskId}")

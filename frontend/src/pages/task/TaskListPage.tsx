@@ -1,4 +1,6 @@
 import {DatePicker} from '../../components/DateTimePicker';
+import DueTimeInput from '../../components/DueTimeInput';
+import { formatDue, timeInput } from '../../utils/date';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -65,6 +67,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
   const [description, setDescription] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [deliverables, setDeliverables] = useState<DeliverableInput[]>([]);
 
   // Task 수정 폼
@@ -73,6 +76,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
   const [editDescription, setEditDescription] = useState('');
   const [editAssigneeId, setEditAssigneeId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
+  const [editDueTime, setEditDueTime] = useState('');
   const [editStatus, setEditStatus] = useState<TaskStatus>('IN_PROGRESS');
   const [editStatusManaged, setEditStatusManaged] = useState(false);
   const [blockingMeetings, setBlockingMeetings] = useState<TaskContext['meetings']>([]);
@@ -169,6 +173,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
           ? Number(assigneeId)
           : null,
         dueDate: dueDate || null,
+        dueTime: dueDate && dueTime ? dueTime : null,
         status: 'IN_PROGRESS',
         deliverables: deliverables.map(({ name, ext }) => ({ name: name.trim(), ext: ext.trim() })),
       });
@@ -177,6 +182,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
       setDescription('');
       setAssigneeId('');
       setDueDate('');
+      setDueTime('');
       setDeliverables([]);
       setShowCreate(false);
 
@@ -214,6 +220,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
           : String(task.assigneeId),
       );
       setEditDueDate(task.dueDate ?? '');
+      setEditDueTime(timeInput(task.dueTime));
       setEditStatus(task.status);
       setEditStatusManaged(task.statusManagedByDeliverables);
     } catch (e) {
@@ -267,6 +274,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
             ? Number(editAssigneeId)
             : null,
           dueDate: editDueDate || null,
+          dueTime: editDueDate && editDueTime ? editDueTime : null,
           ...(editStatusManaged ? {} : { status: editStatus }),
         },
       );
@@ -305,6 +313,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
         description: task.description?.trim() || undefined,
         assigneeId: task.assigneeId,
         dueDate: task.dueDate,
+        dueTime: task.dueTime ?? null,
         status: 'DONE',
       });
       setRevision((value) => value + 1);
@@ -442,6 +451,8 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
             setAssigneeId={setAssigneeId}
             dueDate={dueDate}
             setDueDate={setDueDate}
+            dueTime={dueTime}
+            setDueTime={setDueTime}
             members={members}
           />
           <fieldset className="space-y-2">
@@ -617,6 +628,8 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
                   setAssigneeId={setEditAssigneeId}
                   dueDate={editDueDate}
                   setDueDate={setEditDueDate}
+                  dueTime={editDueTime}
+                  setDueTime={setEditDueTime}
                   members={members}
                 />
                 {editStatusManaged ? (
@@ -664,7 +677,7 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
                   </div>
                   <span className="w-10 text-right text-sm font-bold">{task.progress}%</span>
                 </div>
-                <span className="text-sm">{task.dueDate ?? '미정'}</span>
+                <span className="text-sm">{task.dueDate ? formatDue(task.dueDate, task.dueTime) : '미정'}</span>
                 <span className="flex flex-wrap gap-1">
                   <span className={`badge ${task.status === 'DONE' ? 'badge-success' : 'badge-primary'}`}>
                     {task.status === 'DONE' ? '완료' : '진행 중'}
@@ -749,6 +762,8 @@ function TaskFields({
   setAssigneeId,
   dueDate,
   setDueDate,
+  dueTime,
+  setDueTime,
   members,
 }: {
   title: string;
@@ -759,6 +774,8 @@ function TaskFields({
   setAssigneeId: (v: string) => void;
   dueDate: string;
   setDueDate: (v: string) => void;
+  dueTime: string;
+  setDueTime: (v: string) => void;
   members: MemberResponse[];
 }) {
   return (
@@ -789,7 +806,10 @@ function TaskFields({
         </label>
         <label className="block">
           <span className={`mb-1 block text-xs font-bold ${MUTED}`}>마감일</span>
-          <DatePicker label="팀 작업 마감일" value={dueDate} onChange={setDueDate}/>
+          <div className="flex items-center gap-2">
+            <DatePicker label="팀 작업 마감일" className="min-w-0 flex-1" value={dueDate} onChange={setDueDate}/>
+            <DueTimeInput label="팀 작업 마감 시각" value={dueTime} onChange={setDueTime} disabled={!dueDate}/>
+          </div>
         </label>
       </div>
     </>

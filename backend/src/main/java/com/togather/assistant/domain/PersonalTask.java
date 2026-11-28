@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,6 +31,9 @@ public class PersonalTask extends BaseTimeEntity {
     private String title;
 
     private LocalDate dueDate;
+
+    /** 마감 시각. 없으면 그날 하루 종일 */
+    private LocalTime dueTime;
 
     private Long sourceContentRefId;
 
@@ -56,5 +60,10 @@ public class PersonalTask extends BaseTimeEntity {
     public void update(String title, LocalDate dueDate) {
         this.title = title;
         this.dueDate = dueDate;
+    }
+
+    /** 마감 시각. 마감일이 없으면 시각도 두지 않는다. */
+    public void changeDueTime(LocalTime dueTime) {
+        this.dueTime = dueDate == null ? null : dueTime;
     }
 }

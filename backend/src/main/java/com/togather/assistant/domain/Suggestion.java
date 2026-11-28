@@ -11,6 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -44,6 +45,9 @@ public class Suggestion extends BaseTimeEntity {
 
     private LocalDate dueDate;
 
+    /** 할 일 후보의 마감 시각. 없으면 그날 하루 종일 */
+    private LocalTime dueTime;
+
     private Long createdEventId;
 
     private Long createdPersonalTaskId;
@@ -66,6 +70,11 @@ public class Suggestion extends BaseTimeEntity {
         this.title = title;
         this.detectedDatetime = detectedDatetime;
         this.dueDate = dueDate;
+    }
+
+    /** 마감 시각. 마감일이 없으면 시각도 두지 않는다. */
+    public void changeDueTime(LocalTime dueTime) {
+        this.dueTime = dueDate == null ? null : dueTime;
     }
 
     public void approveAsEvent(Long createdEventId) {

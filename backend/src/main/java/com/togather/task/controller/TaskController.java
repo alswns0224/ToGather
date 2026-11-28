@@ -138,6 +138,7 @@ public class TaskController {
                 request.description(),
                 request.assigneeId(),
                 request.dueDate(),
+                request.dueTime(),
                 request.status()
             )
         );

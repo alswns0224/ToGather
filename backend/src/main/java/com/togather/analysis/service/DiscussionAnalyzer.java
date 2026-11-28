@@ -6,6 +6,7 @@ import com.togather.common.enums.ItemType;
 import com.togather.content.slack.service.SlackContentService.ThreadMessage;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -38,13 +39,24 @@ public class DiscussionAnalyzer {
     }
 
     public record AiItem(String type, String content, List<String> evidence, String assignee, String dueDate,
-                         String datetime, List<String> participants) {
+                         String datetime, List<String> participants, String dueTime) {
+
+        public AiItem(String type, String content, List<String> evidence, String assignee, String dueDate,
+                      String datetime, List<String> participants) {
+            this(type, content, evidence, assignee, dueDate, datetime, participants, null);
+        }
     }
 
     /** 변환한 항목 후보. 담당자·참여자는 아직 Slack 사용자 ID */
     public record Candidate(ItemType itemType, String content, List<Long> evidenceContentRefIds,
                             String assigneeSlackId, LocalDate dueDate, LocalDateTime datetime,
-                            List<String> participantSlackIds) {
+                            List<String> participantSlackIds, LocalTime dueTime) {
+
+        public Candidate(ItemType itemType, String content, List<Long> evidenceContentRefIds, String assigneeSlackId,
+                         LocalDate dueDate, LocalDateTime datetime, List<String> participantSlackIds) {
+            this(itemType, content, evidenceContentRefIds, assigneeSlackId, dueDate, datetime, participantSlackIds,
+                    null);
+        }
     }
 
     public record Result(List<Candidate> candidates, boolean settled) {
@@ -93,7 +105,7 @@ public class DiscussionAnalyzer {
             candidates.add(new Candidate(type, item.content().strip(), evidence, blankToNull(item.assignee()),
                     parseDate(item.dueDate()), parseDateTime(item.datetime()),
                     item.participants() == null ? List.of() : item.participants().stream()
-                            .filter(Objects::nonNull).distinct().toList()));
+                            .filter(Objects::nonNull).distinct().toList(), parseTime(item.dueTime())));
         }
         return new Result(candidates, Boolean.TRUE.equals(result.settled()));
     }
@@ -128,6 +140,19 @@ public class DiscussionAnalyzer {
         }
         try {
             return LocalDate.parse(value.strip().substring(0, Math.min(10, value.strip().length())));
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /** "HH:mm" 마감 시각. 알 수 없으면 null (그날 하루 종일) */
+    static LocalTime parseTime(String value) {
+        if (value == null || value.isBlank() || "null".equalsIgnoreCase(value)) {
+            return null;
+        }
+        String v = value.strip();
+        try {
+            return LocalTime.parse(v.length() > 5 ? v.substring(0, 5) : v);
         } catch (DateTimeParseException e) {
             return null;
         }

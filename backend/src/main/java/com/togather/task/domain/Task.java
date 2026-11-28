@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +45,9 @@ public class Task extends BaseTimeEntity {
     private String description;
 
     private LocalDate dueDate;
+
+    /** 마감 시각. 없으면 그날 하루 종일 */
+    private LocalTime dueTime;
 
     @Enumerated(EnumType.STRING)
     private TaskStatus status;
@@ -131,6 +135,11 @@ public class Task extends BaseTimeEntity {
         this.title = title;
         this.description = description;
         this.dueDate = dueDate;
+    }
+
+    /** 마감 시각. 마감일이 없으면 시각도 두지 않는다. */
+    public void changeDueTime(LocalTime dueTime) {
+        this.dueTime = dueDate == null ? null : dueTime;
     }
 
     public void changeStatus(TaskStatus status) {

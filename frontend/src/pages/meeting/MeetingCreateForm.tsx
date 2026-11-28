@@ -6,7 +6,7 @@ import { getMembers } from '../workspace/api';
 import { useAsync } from '../../hooks/useAsync';
 import { useLoginUser } from '../../components/RequireAuth';
 import { ErrorBox, Loading } from '../../components/Status';
-import { addDays, formatDate, startOfDay, toInputValue } from '../../utils/date';
+import { addDays, formatDue, startOfDay, toInputValue } from '../../utils/date';
 import NavIcon from '../../layouts/NavIcon';
 import MeetingFormIcon from './MeetingFormIcon';
 import {
@@ -128,7 +128,7 @@ export default function MeetingCreateForm({ workspaceId, onClose }: { workspaceI
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs leading-5 font-semibold text-[var(--text)]" title={task.title}>{task.title}</span>
-                      <span className="mt-1 block truncate text-[11px] text-[var(--muted)]">진행률 {Math.round(task.progress)}%{task.dueDate ? ` · ${formatDate(task.dueDate)} 마감` : ' · 마감 미정'}</span>
+                      <span className="mt-1 block truncate text-[11px] text-[var(--muted)]">진행률 {Math.round(task.progress)}%{task.dueDate ? ` · ${formatDue(task.dueDate, task.dueTime)} 마감` : ' · 마감 미정'}</span>
                     </span>
                   </label>;
                 })}

@@ -64,7 +64,7 @@ export default function SearchPage() {
       <PageHeader
         icon={<NavIcon name="search" className="h-[22px] w-[22px] text-[var(--primary)]" />}
         title="통합 검색"
-        description="대화·문서·파일을 키워드가 아니라 문맥으로 찾아요. (BGE-M3 임베딩 · Chroma)"
+        description="대화·문서·파일을 키워드와 문맥으로 함께 찾아요. (BGE-M3 임베딩 · Chroma)"
       />
 
       <form onSubmit={submit} className="card flex flex-col gap-3">

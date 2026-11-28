@@ -392,6 +392,8 @@ export interface DriveTrashItem {
   trashedByName: string | null;
   contentRefId: number | null;
   source: 'TOGATHER' | 'DRIVE';
+  /** 지우기 전 위치 (예: "11/27 Scenario1 / 발표 자료"). 알 수 없으면 null */
+  originPath?: string | null;
 }
 
 /** GET /api/workspaces/{workspaceId}/drive/trash */

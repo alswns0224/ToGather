@@ -5,6 +5,7 @@ import com.togather.common.enums.SuggestionStatus;
 import com.togather.common.enums.SuggestionType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 /**
  * UI-13 후보 한 건: 감지된 내용과 원본 메시지의 출처·작성자·작성 시각
@@ -15,5 +16,14 @@ public record SuggestionDTO(Long suggestionId, SuggestionType type, SuggestionSt
                             LocalDateTime detectedDatetime, boolean timeUndetermined, LocalDate dueDate,
                             Long sourceContentRefId, Provider sourceProvider, String sourceTitle,
                             String sourceAuthor, LocalDateTime sourceCreatedAt, String sourceExcerpt,
-                            String sourceLink) {
+                            String sourceLink, LocalTime dueTime) {
+
+    public SuggestionDTO(Long suggestionId, SuggestionType type, SuggestionStatus status, String title,
+                         LocalDateTime detectedDatetime, boolean timeUndetermined, LocalDate dueDate,
+                         Long sourceContentRefId, Provider sourceProvider, String sourceTitle,
+                         String sourceAuthor, LocalDateTime sourceCreatedAt, String sourceExcerpt,
+                         String sourceLink) {
+        this(suggestionId, type, status, title, detectedDatetime, timeUndetermined, dueDate, sourceContentRefId,
+                sourceProvider, sourceTitle, sourceAuthor, sourceCreatedAt, sourceExcerpt, sourceLink, null);
+    }
 }

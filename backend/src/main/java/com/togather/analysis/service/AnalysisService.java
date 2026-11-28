@@ -266,6 +266,7 @@ public class AnalysisService {
                 request.suggestedDatetime(), request.suggestedParticipantIds());
         validateMembers(analysisWorkspace(analysis), v.assigneeId(), v.participantIds());
         item.update(request.content().strip(), v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds());
+        item.changeSuggestedDueTime(request.suggestedDueTime());
         item.markUndetermined(isUndetermined(item.getItemType(), v.assigneeId(), v.dueDate(), v.datetime()));
         return toResponses(workspaceId, List.of(item)).getFirst();
     }
@@ -280,6 +281,7 @@ public class AnalysisService {
         AnalysisItem item = new AnalysisItem(analysisId, request.itemType(), request.content().strip(),
                 isUndetermined(request.itemType(), v.assigneeId(), v.dueDate(), v.datetime()));
         item.update(request.content().strip(), v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds());
+        item.changeSuggestedDueTime(request.suggestedDueTime());
         itemRepository.save(item);
         if (analysis.getStatus() != AnalysisStatus.REVIEWING) {
             analysis.changeStatus(AnalysisStatus.REVIEWING); // NO_CONTENT·FAILED에서 직접 작성
@@ -391,7 +393,7 @@ public class AnalysisService {
                         .sorted(Comparator.comparing(e -> messages.get(e.getContentRefId()).getCreatedAt(),
                                 Comparator.nullsLast(Comparator.naturalOrder())))
                         .map(e -> toEvidence(e, messages.get(e.getContentRefId())))
-                        .toList()))
+                        .toList(), item.getSuggestedDueTime()))
                 .toList();
     }
 
@@ -475,7 +477,8 @@ public class AnalysisService {
             ItemValues v = ItemValues.of(c.itemType(), assignee, c.dueDate(), c.datetime(), participants);
             items.add(new NewItem(c.itemType(), c.content(),
                     isUndetermined(c.itemType(), v.assigneeId(), v.dueDate(), v.datetime()),
-                    v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds(), c.evidenceContentRefIds()));
+                    v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds(), c.evidenceContentRefIds(),
+                    v.dueDate() == null ? null : c.dueTime()));
         }
         return items;
     }

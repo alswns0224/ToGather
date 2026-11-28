@@ -51,6 +51,7 @@ public class TaskService {
             command.dueDate(),
             command.status()
         );
+        task.changeDueTime(command.dueTime());
 
         if (command.assigneeId() != null) {
             task.assignTo(command.assigneeId());
@@ -137,6 +138,21 @@ public class TaskService {
         LocalDate dueDate,
         TaskStatus status
     ) {
+        return updateTask(workspaceId, taskId, title, description, assigneeId, dueDate, null, status);
+    }
+
+    /** Task 수정. 마감 시각은 마감일과 함께 보낼 때만 바꾼다. */
+    @Transactional
+    public TaskSummary updateTask(
+        Long workspaceId,
+        Long taskId,
+        String title,
+        String description,
+        Long assigneeId,
+        LocalDate dueDate,
+        java.time.LocalTime dueTime,
+        TaskStatus status
+    ) {
         Task task = taskRepository.findLockedByTaskIdAndWorkspaceId(taskId, workspaceId)
             .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
 
@@ -158,6 +174,9 @@ public class TaskService {
             description != null ? description : task.getDescription(),
             dueDate != null ? dueDate : task.getDueDate()
         );
+        if (dueDate != null) {
+            task.changeDueTime(dueTime);
+        }
 
         if (assigneeId != null) {
             task.assignTo(assigneeId);
