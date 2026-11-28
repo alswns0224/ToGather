@@ -12,6 +12,7 @@ import com.togather.content.service.ContentRefService;
 import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.search.client.EmbeddingClient;
 import com.togather.search.client.VectorStore;
+import com.togather.search.client.VectorStore.VectorDoc;
 import com.togather.search.dto.SearchResponse;
 import com.togather.search.dto.SearchResponse.Item;
 import com.togather.support.IntegrationTestSupport;
@@ -67,23 +68,24 @@ class SearchServiceTest extends IntegrationTestSupport {
 
     static class InMemoryVectorStore implements VectorStore {
 
-        final Map<Long, VectorDoc> docs = new ConcurrentHashMap<>();
+        /** "콘텐츠ID-조각" → 조각 */
+        final Map<String, VectorDoc> docs = new ConcurrentHashMap<>();
 
         @Override
         public void upsert(List<VectorDoc> list) {
-            list.forEach(doc -> docs.put(doc.contentRefId(), doc));
+            list.forEach(doc -> docs.put(doc.contentRefId() + "-" + doc.chunk(), doc));
         }
 
         @Override
         public void delete(Collection<Long> ids) {
-            ids.forEach(docs::remove);
+            docs.values().removeIf(doc -> ids.contains(doc.contentRefId()));
         }
 
         @Override
         public List<VectorHit> searchVectors(float[] vector, Long workspaceId, Collection<String> providers, int limit) {
             return docs.values().stream()
                     .filter(d -> d.workspaceId().equals(workspaceId) && providers.contains(d.provider()))
-                    .map(d -> new VectorHit(d.contentRefId(), 1 - cosine(vector, d.vector())))
+                    .map(d -> new VectorHit(d.contentRefId(), d.chunk(), 1 - cosine(vector, d.vector())))
                     .sorted(Comparator.comparingDouble(VectorHit::distance))
                     .limit(limit)
                     .toList();
@@ -147,12 +149,12 @@ class SearchServiceTest extends IntegrationTestSupport {
         var dm = contentRefService.upsert(new ContentRefUpsert(workspaceId, userId, Provider.SLACK, ContentType.MESSAGE,
                 "dm:private-message", "D1", null, "Slack DM", "발표 슬라이드 비공개 요청", null, T0, T0, "U2", "상대"));
         contentIndexService.indexPending();
-        assertThat(vectorStore.docs).doesNotContainKey(dm.contentRefId());
+        assertThat(vectorStore.docs.values()).extracting(VectorDoc::contentRefId).doesNotContain(dm.contentRefId());
         vectorStore.upsert(List.of(new VectorStore.VectorDoc(dm.contentRefId(), workspaceId, "SLACK",
                 FakeSearchConfig.embed("발표 슬라이드 비공개 요청"))));
         assertThat(searchService.search(workspaceId, userId, "발표 슬라이드", List.of(Provider.SLACK), 20).items())
                 .noneMatch(item -> dm.contentRefId().equals(item.contentRefId()));
-        assertThat(vectorStore.docs).containsKey(dm.contentRefId());
+        assertThat(vectorStore.docs.values()).extracting(VectorDoc::contentRefId).contains(dm.contentRefId());
     }
 
     @Test
@@ -195,7 +197,7 @@ class SearchServiceTest extends IntegrationTestSupport {
         contentRefService.markOriginDeleted(driveFile.contentRefId());
         contentIndexService.indexPending();
 
-        assertThat(vectorStore.docs).doesNotContainKey(driveFile.contentRefId());
+        assertThat(vectorStore.docs.values()).extracting(VectorDoc::contentRefId).doesNotContain(driveFile.contentRefId());
         assertThat(searchService.search(workspaceId, userId, "예산", null, 10).items())
                 .extracting(Item::contentRefId).doesNotContain(driveFile.contentRefId());
     }
@@ -211,6 +213,22 @@ class SearchServiceTest extends IntegrationTestSupport {
 
         assertThat(item.score()).isGreaterThanOrEqualTo(SearchService.KEYWORD_SCORE);
         assertThat(item.snippet()).contains("유사도 0.7").startsWith("…").doesNotContain("파일 유형");
+    }
+
+    @Test
+    void 긴_문서_뒷부분의_내용도_문맥_검색으로_찾고_그_조각을_미리보기로_보여준다() {
+        // 앞 4,000자 뒤에만 있는 내용. 검색어가 글자 그대로 들어 있지 않아 낱말 찾기로는 나오지 않는다.
+        String longBody = "개요 ".repeat(2500) + "디자인 예산은 다음 분기로 미룬다. " + "부록 ".repeat(800);
+        ContentRefDTO doc = save(Provider.NOTION, ContentType.PAGE, "page-long", "db-1", null, "운영 문서",
+                longBody, T0);
+        contentIndexService.indexPending();
+
+        assertThat(vectorStore.docs.values().stream().filter(d -> d.contentRefId().equals(doc.contentRefId())).count())
+                .isGreaterThan(1); // 조각으로 나눠 저장
+        Item item = find(searchService.search(workspaceId, userId, "예산 디자인 회의", null, 10).items(),
+                doc.contentRefId());
+
+        assertThat(item.snippet()).contains("디자인 예산").startsWith("…");
     }
 
     @Test

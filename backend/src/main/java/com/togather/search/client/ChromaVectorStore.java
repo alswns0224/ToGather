@@ -46,10 +46,10 @@ public class ChromaVectorStore implements VectorStore {
         List<float[]> embeddings = new ArrayList<>();
         List<Map<String, Object>> metadatas = new ArrayList<>();
         for (VectorDoc doc : docs) {
-            ids.add(ID_PREFIX + doc.contentRefId());
+            ids.add(ID_PREFIX + doc.contentRefId() + "-" + doc.chunk());
             embeddings.add(doc.vector());
             metadatas.add(Map.of("workspaceId", doc.workspaceId(), "provider", doc.provider(),
-                    "contentRefId", doc.contentRefId()));
+                    "contentRefId", doc.contentRefId(), "chunk", doc.chunk()));
         }
         post("upsert", Map.of("ids", ids, "embeddings", embeddings, "metadatas", metadatas));
     }
@@ -59,7 +59,8 @@ public class ChromaVectorStore implements VectorStore {
         if (contentRefIds.isEmpty()) {
             return;
         }
-        post("delete", Map.of("ids", contentRefIds.stream().map(id -> ID_PREFIX + id).toList()));
+        // 조각 수를 몰라도 지우도록 메타데이터로 지운다. (예전 방식의 "cr-ID" 벡터도 함께 지워진다)
+        post("delete", Map.of("where", Map.of("contentRefId", Map.of("$in", List.copyOf(contentRefIds)))));
     }
 
     @Override
@@ -77,13 +78,28 @@ public class ChromaVectorStore implements VectorStore {
         List<Number> distances = firstRow(json, "distances");
         List<VectorHit> hits = new ArrayList<>();
         for (int i = 0; i < ids.size(); i++) {
-            String id = ids.get(i);
-            if (id.startsWith(ID_PREFIX) && i < distances.size()) {
-                hits.add(new VectorHit(Long.parseLong(id.substring(ID_PREFIX.length())),
-                        distances.get(i).doubleValue()));
+            VectorHit hit = parse(ids.get(i), i < distances.size() ? distances.get(i).doubleValue() : Double.NaN);
+            if (hit != null && !Double.isNaN(hit.distance())) {
+                hits.add(hit);
             }
         }
         return hits;
+    }
+
+    /** "cr-12-3" → 콘텐츠 12의 3번 조각, 예전 방식 "cr-12" → 0번 조각 */
+    static VectorHit parse(String id, double distance) {
+        if (id == null || !id.startsWith(ID_PREFIX)) {
+            return null;
+        }
+        String rest = id.substring(ID_PREFIX.length());
+        int dash = rest.indexOf('-');
+        try {
+            return dash < 0 ? new VectorHit(Long.parseLong(rest), 0, distance)
+                    : new VectorHit(Long.parseLong(rest.substring(0, dash)), Integer.parseInt(rest.substring(dash + 1)),
+                            distance);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     // ===================== 내부 =====================

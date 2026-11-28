@@ -42,6 +42,9 @@ public class SearchService {
     static final int MAX_QUERY = 200;
     static final int MAX_LIMIT = 50;
     static final int SNIPPET = 160;
+    /** 문서 하나가 여러 조각으로 나와도 문서 수가 모자라지 않게, 보여 줄 수의 이 배수만큼 조각을 받는다 */
+    static final int CHUNK_FETCH_FACTOR = 6;
+    static final int MAX_CHUNK_FETCH = 300;
     /** 낱말이 그대로 들어 있는 결과의 관련도 (문맥 검색 점수가 더 높으면 그 점수를 쓴다) */
     static final double KEYWORD_SCORE = 0.7;
     /** 이 글자 수 이하인 Slack 메시지는 문맥 검색에서 뺀다. ("ㅎㅇ", "ㅇㅋ" 등) */
@@ -74,9 +77,10 @@ public class SearchService {
         }
         int size = Math.clamp(limit, 1, MAX_LIMIT);
 
-        // 원본이 지워졌지만 아직 색인에서 빠지지 않은 것을 고려해 넉넉히 받아 거른다.
-        List<VectorHit> hits = vectorStore.searchVectors(embeddingClient.embed(q), workspaceId,
-                targets.stream().map(Enum::name).toList(), size * 2);
+        // 긴 문서는 조각 여러 개가 나오므로 넉넉히 받아, 문서마다 가장 가까운 조각 하나만 남긴다.
+        // (원본이 지워졌지만 아직 색인에서 빠지지 않은 것도 아래에서 거른다)
+        List<VectorHit> hits = bestChunkPerContent(vectorStore.searchVectors(embeddingClient.embed(q), workspaceId,
+                targets.stream().map(Enum::name).toList(), Math.min(MAX_CHUNK_FETCH, size * CHUNK_FETCH_FACTOR)));
         Map<Long, ContentRef> refs = contentRefRepository.findAllById(hits.stream().map(VectorHit::contentRefId).toList())
                 .stream().collect(Collectors.toMap(ContentRef::getContentRefId, Function.identity()));
 
@@ -93,8 +97,10 @@ public class SearchService {
                 break;
             }
         }
+        Map<Long, Integer> bestChunks = new LinkedHashMap<>();
+        kept.forEach(hit -> bestChunks.put(hit.contentRefId(), hit.chunk()));
 
-        // 낱말 찾기: 문맥 검색은 글 앞부분만 보므로, 긴 문서·파일 속에 검색어가 그대로 있는 것도 함께 찾는다.
+        // 낱말 찾기: 문맥 점수가 낮아도 검색어가 글자 그대로 들어 있는 문서·파일은 함께 보여 준다.
         Map<Long, Double> scores = new LinkedHashMap<>();
         kept.forEach(hit -> scores.put(hit.contentRefId(), score(hit)));
         for (ContentRef ref : contentAccess.filter(workspaceId, userId, keywordMatches(workspaceId, targets, q, size),
@@ -111,12 +117,21 @@ public class SearchService {
         Map<Long, List<TaskSummary>> tasks = taskContextService.getTasksByContents(ids);
         Map<Long, ContentRef> roots = slackRoots(ids.stream().map(refs::get).toList());
         List<Item> items = ids.stream()
-                .map(id -> toItem(refs.get(id), scores.get(id), roots, tasks.getOrDefault(id, List.of()), q))
+                .map(id -> toItem(refs.get(id), scores.get(id), roots, tasks.getOrDefault(id, List.of()), q,
+                        bestChunks.get(id)))
                 .toList();
         return new SearchResponse(q, items, contentIndexService.countPending(workspaceId));
     }
 
     // ===================== 내부 =====================
+
+    /** 거리순으로 온 조각 목록에서 콘텐츠마다 처음(가장 가까운) 조각만 남긴다. */
+    static List<VectorHit> bestChunkPerContent(List<VectorHit> hits) {
+        Map<Long, VectorHit> best = new LinkedHashMap<>();
+        hits.stream().sorted(java.util.Comparator.comparingDouble(VectorHit::distance))
+                .forEach(hit -> best.putIfAbsent(hit.contentRefId(), hit));
+        return List.copyOf(best.values());
+    }
 
     private static double score(VectorHit hit) {
         return Math.round((1 - hit.distance()) * 100) / 100.0;
@@ -155,14 +170,45 @@ public class SearchService {
         return contentRefRepository.searchByKeyword(workspaceId, targets, "%" + escaped + "%", PageRequest.of(0, size));
     }
 
+    /**
+     * @param chunk 문맥 검색으로 찾았으면 가장 잘 맞은 조각 번호. 검색어가 글자 그대로 없으면 그 조각을 미리보기로 보여 준다.
+     */
     private static Item toItem(ContentRef ref, double score, Map<Long, ContentRef> roots, List<TaskSummary> tasks,
-                               String query) {
+                               String query, Integer chunk) {
         String body = ref.getProvider() == Provider.SLACK
                 ? SlackMessageFormat.parse(ref.getContent()).text()
                 : bodyForSnippet(ref);
-        String snippet = snippet(body == null ? "" : body.strip().replaceAll("\\s+", " "), query);
+        String flat = body == null ? "" : body.strip().replaceAll("\\s+", " ");
+        String snippet = chunk != null && !containsIgnoreCase(flat, query)
+                ? chunkSnippet(ref, chunk, flat, query)
+                : snippet(flat, query);
         return new Item(ref.getContentRefId(), ref.getProvider(), ref.getTitle(), snippet, ref.getDeepLink(),
                 ref.getCreatedAt(), ref.getAuthorName(), score, appPath(ref, roots), tasks);
+    }
+
+    private static boolean containsIgnoreCase(String text, String query) {
+        return query != null && !query.isBlank() && text.toLowerCase().contains(query.toLowerCase());
+    }
+
+    /** 가장 잘 맞은 조각의 앞부분. 조각을 다시 만들 수 없으면 원래 미리보기 */
+    private static String chunkSnippet(ContentRef ref, int chunk, String flat, String query) {
+        List<String> chunks = ContentIndexService.chunksOf(ref);
+        if (chunk <= 0 || chunk >= chunks.size()) {
+            return snippet(flat, query);
+        }
+        String text = chunks.get(chunk).replaceAll("\\s+", " ");
+        // 검색어 낱말(두 글자 이상) 중 조각 안에 처음 나오는 곳을 가운데로 보여 준다. 없으면 조각 앞부분.
+        int at = -1;
+        String lower = text.toLowerCase();
+        for (String word : query == null ? new String[0] : query.toLowerCase().split("\\s+")) {
+            int found = word.length() < 2 ? -1 : lower.indexOf(word);
+            if (found >= 0 && (at < 0 || found < at)) {
+                at = found;
+            }
+        }
+        int start = at < 0 ? 0 : Math.max(0, Math.min(at - SNIPPET / 3, text.length() - SNIPPET));
+        int end = Math.min(text.length(), start + SNIPPET);
+        return "…" + text.substring(start, end) + (end < text.length() ? "…" : "");
     }
 
     /** Drive 파일은 "파일 유형" 줄 대신 추출한 본문을 미리보기로 보여준다. */

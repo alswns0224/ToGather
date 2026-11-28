@@ -20,14 +20,15 @@ import org.springframework.stereotype.Service;
 /**
  * 콘텐츠 임베딩 (C-07). 동기화로 새로 저장되거나 바뀐 Slack·Notion·Drive 콘텐츠를 모아서 BGE-M3로 임베딩해 Chroma에 넣고,
  * 원본에서 지워진 콘텐츠는 Chroma에서 뺀다. 화면 갱신(실시간)과 달리 몇 분 늦어도 되므로 스케줄러가 모아서 처리한다.
+ * 긴 본문은 {@link ContentChunker}로 조각을 나눠 조각마다 벡터를 만든다. (조각마다 제목을 앞에 붙여 문맥을 준다)
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ContentIndexService {
 
-    /** 임베딩에 넣는 최대 글자 수 (BGE-M3는 긴 글도 받지만 검색에는 앞부분이면 충분하다) */
-    static final int MAX_TEXT = 4000;
+    /** Ollama에 한 번에 보내는 조각 수 */
+    static final int EMBED_BATCH = 64;
 
     private final ContentEmbeddingRepository embeddingRepository;
     private final ContentRefRepository contentRefRepository;
@@ -48,32 +49,43 @@ public class ContentIndexService {
         }
         List<ContentRef> removed = new ArrayList<>();
         List<ContentRef> changed = new ArrayList<>();
-        List<String> texts = new ArrayList<>();
+        List<List<String>> chunkTexts = new ArrayList<>();
         for (ContentRef ref : contentRefRepository.findAllById(ids)) {
             if (ref.isOriginDeleted() || ref.isDriveTrashed()) {
                 removed.add(ref);
                 continue;
             }
-            String text = textOf(ref);
-            if (text.isBlank()) {
+            List<String> texts = embedTexts(ref);
+            if (texts.isEmpty()) {
                 removed.add(ref); // 검색할 내용이 없으면 벡터를 두지 않는다
             } else {
                 changed.add(ref);
-                texts.add(text);
+                chunkTexts.add(texts);
             }
         }
 
-        vectorStore.delete(removed.stream().map(ContentRef::getContentRefId).toList());
+        // 바뀐 콘텐츠도 조각 수가 줄 수 있으므로 예전 조각을 먼저 모두 지운다.
+        List<Long> stale = new ArrayList<>(removed.stream().map(ContentRef::getContentRefId).toList());
+        stale.addAll(changed.stream().map(ContentRef::getContentRefId).toList());
+        vectorStore.delete(stale);
         embeddingRepository.deleteAllById(removed.stream().map(ContentRef::getContentRefId)
                 .filter(embeddingRepository::existsById).toList());
 
-        List<float[]> vectors = embeddingClient.embedAll(texts);
+        List<String> allTexts = chunkTexts.stream().flatMap(List::stream).toList();
+        List<float[]> vectors = new ArrayList<>();
+        for (int from = 0; from < allTexts.size(); from += EMBED_BATCH) {
+            vectors.addAll(embeddingClient.embedAll(allTexts.subList(from, Math.min(allTexts.size(), from + EMBED_BATCH))));
+        }
         List<VectorDoc> docs = new ArrayList<>();
         List<ContentEmbedding> records = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
+        int next = 0;
         for (int i = 0; i < changed.size(); i++) {
             ContentRef ref = changed.get(i);
-            docs.add(new VectorDoc(ref.getContentRefId(), ref.getWorkspaceId(), ref.getProvider().name(), vectors.get(i)));
+            for (int chunk = 0; chunk < chunkTexts.get(i).size(); chunk++) {
+                docs.add(new VectorDoc(ref.getContentRefId(), chunk, ref.getWorkspaceId(), ref.getProvider().name(),
+                        vectors.get(next++)));
+            }
             records.add(new ContentEmbedding(ref.getContentRefId(), ref.getWorkspaceId(), sourceModifiedAt(ref), now));
         }
         vectorStore.upsert(docs);
@@ -92,20 +104,30 @@ public class ContentIndexService {
         return embeddingRepository.countPending(workspaceId);
     }
 
-    /** 임베딩할 글: 제목(채널명 · 문서 제목 · 파일 이름) + 본문 */
-    static String textOf(ContentRef ref) {
+    /** 검색 대상 본문 (Slack은 첨부 표시를 뺀 글) */
+    static String bodyOf(ContentRef ref) {
         String body = ref.getProvider() == Provider.SLACK
                 ? SlackMessageFormat.parse(ref.getContent()).text()
                 : ref.getContent();
-        StringBuilder sb = new StringBuilder();
-        if (ref.getTitle() != null && !ref.getTitle().isBlank()) {
-            sb.append(ref.getTitle().strip()).append('\n');
+        return body == null ? "" : body.strip();
+    }
+
+    /** 본문 조각. 검색 결과 미리보기도 같은 조각을 쓴다. */
+    static List<String> chunksOf(ContentRef ref) {
+        return ContentChunker.split(bodyOf(ref));
+    }
+
+    /**
+     * 조각마다 임베딩할 글: 제목(채널명 · 문서 제목 · 파일 이름) + 그 조각.
+     * 본문이 없으면 제목만 한 조각으로 넣는다. 둘 다 없으면 빈 목록.
+     */
+    static List<String> embedTexts(ContentRef ref) {
+        String title = ref.getTitle() == null ? "" : ref.getTitle().strip();
+        List<String> chunks = chunksOf(ref);
+        if (chunks.isEmpty()) {
+            return title.isEmpty() ? List.of() : List.of(title);
         }
-        if (body != null) {
-            sb.append(body.strip());
-        }
-        String text = sb.toString().strip();
-        return text.length() > MAX_TEXT ? text.substring(0, MAX_TEXT) : text;
+        return chunks.stream().map(chunk -> title.isEmpty() ? chunk : title + "\n" + chunk).toList();
     }
 
     private static LocalDateTime sourceModifiedAt(ContentRef ref) {
