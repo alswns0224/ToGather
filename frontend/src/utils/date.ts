@@ -48,3 +48,13 @@ export function startOfDay(date: Date): Date {
   d.setHours(0, 0, 0, 0);
   return d;
 }
+
+/** 백엔드 LocalTime("18:00" 또는 "18:00:00") → "18:00". 없으면 '' */
+export function timeInput(value: string | null | undefined): string {
+  return value ? value.slice(0, 5) : '';
+}
+
+/** 마감 표시: "11/30(일) 18:00". 시각이 없으면 날짜만 */
+export function formatDue(date: string, time?: string | null): string {
+  return time ? `${formatDate(date)} ${timeInput(time)}` : formatDate(date);
+}

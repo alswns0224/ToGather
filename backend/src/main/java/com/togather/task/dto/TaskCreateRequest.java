@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 public record TaskCreateRequest(
@@ -13,8 +14,14 @@ public record TaskCreateRequest(
     Long assigneeId,
     LocalDate dueDate,
     TaskStatus status,
-    List<@Valid @NotNull DeliverableInput> deliverables
+    List<@Valid @NotNull DeliverableInput> deliverables,
+    LocalTime dueTime
 ) {
+
+    public TaskCreateRequest(String title, String description, Long assigneeId, LocalDate dueDate,
+                             TaskStatus status, List<DeliverableInput> deliverables) {
+        this(title, description, assigneeId, dueDate, status, deliverables, null);
+    }
 
     public TaskCommand toCommand() {
         return new TaskCommand(
@@ -24,7 +31,8 @@ public record TaskCreateRequest(
             dueDate,
             status,
             deliverables,
-            null
+            null,
+            dueTime
         );
     }
 }

@@ -4,6 +4,7 @@ import com.togather.common.enums.TaskStatus;
 import com.togather.task.dto.TaskCommand;
 import com.togather.task.service.TaskService;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -19,23 +20,33 @@ public class TaskGateway {
     private final TaskService taskService;
 
     public record FollowUpTask(String title, String description, Long assigneeId, LocalDate dueDate,
-                               Long originAnalysisItemId) {
+                               Long originAnalysisItemId, LocalTime dueTime) {
+
+        public FollowUpTask(String title, String description, Long assigneeId, LocalDate dueDate,
+                            Long originAnalysisItemId) {
+            this(title, description, assigneeId, dueDate, originAnalysisItemId, null);
+        }
     }
 
-    public record MyTask(Long taskId, Long workspaceId, String title, LocalDate dueDate) {
+    public record MyTask(Long taskId, Long workspaceId, String title, LocalDate dueDate, LocalTime dueTime) {
+
+        public MyTask(Long taskId, Long workspaceId, String title, LocalDate dueDate) {
+            this(taskId, workspaceId, title, dueDate, null);
+        }
     }
 
     /** 끝나지 않은 내 담당 Task */
     public List<MyTask> getMyTasks(Long userId) {
         return taskService.getMyTasks(userId).stream()
                 .filter(t -> t.status() != TaskStatus.DONE)
-                .map(t -> new MyTask(t.taskId(), t.workspaceId(), t.title(), t.dueDate()))
+                .map(t -> new MyTask(t.taskId(), t.workspaceId(), t.title(), t.dueDate(), t.dueTime()))
                 .toList();
     }
 
     /** @return 생성된 Task ID. 근거 결정사항(originAnalysisItemId)을 함께 저장한다. */
     public Long createTask(Long workspaceId, FollowUpTask task) {
         return taskService.createTask(workspaceId, new TaskCommand(task.title(), task.description(),
-                task.assigneeId(), task.dueDate(), TaskStatus.IN_PROGRESS, List.of(), task.originAnalysisItemId()));
+                task.assigneeId(), task.dueDate(), TaskStatus.IN_PROGRESS, List.of(), task.originAnalysisItemId(),
+                task.dueTime()));
     }
 }

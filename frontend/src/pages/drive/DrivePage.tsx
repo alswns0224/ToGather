@@ -5,7 +5,7 @@ import {
   useState,
   type ChangeEvent,
 } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 
 import { ApiError, http, ws } from '../../api/client';
@@ -180,6 +180,8 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     useState<number | null>(null);
 
   const [showTrash, setShowTrash] = useState(false);
+  // 휴지통에서 고른 항목 (오른쪽에 상세를 보여 준다)
+  const [selectedTrashKey, setSelectedTrashKey] = useState<string | null>(null);
 
   // ---------------------------------------------------
   // 1-b. 폴더 탐색기 상태
@@ -239,8 +241,9 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   const dragDepthRef = useRef(0);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
 
-  const [uploadFile, setUploadFile] =
-    useState<File | null>(null);
+  // 올릴 파일 목록. 맨 앞 파일부터 차례로 올린다.
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const uploadFile = uploadFiles[0] ?? null;
 
   const [uploadRootFolderId, setUploadRootFolderId] =
     useState<string | null>(null);
@@ -281,7 +284,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     setSelectedId(null);
     setShowTrash(false);
     setQuery('');
-    setUploadFile(null);
+    setUploadFiles([]);
     dragDepthRef.current = 0;
     setIsDraggingFile(false);
     setUploadRootFolderId(null);
@@ -542,7 +545,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     : (folderIds[0] ?? '');
 
   const canSelectUpload = !loading && !isBusy && Boolean(chosenFolderId);
-  useEffect(() => { setUploadCandidates(null); }, [uploadFile, chosenFolderId]);
+  useEffect(() => { setUploadCandidates(null); }, [chosenFolderId]);
 
   // ===================================================
   // 9. 파일 검색 및 선택
@@ -629,6 +632,11 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     if (!keyword) return trashFiles;
     return trashFiles.filter(item => (item.name || '').toLowerCase().includes(keyword));
   }, [trashFiles, query, showTrash]);
+
+  const trashKey = (item: DriveTrashItem) => `${item.source}-${item.itemId}`;
+  const selectedTrash = showTrash
+    ? visibleTrash.find(item => trashKey(item) === selectedTrashKey) ?? visibleTrash[0] ?? null
+    : null;
 
   const visibleFiles = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -784,46 +792,32 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
   function handleFileSelect(
     event: ChangeEvent<HTMLInputElement>,
   ) {
-    selectUploadFile(event.target.files?.[0] ?? null);
+    selectUploadFiles(Array.from(event.target.files ?? []));
     event.target.value = '';
   }
 
-  function selectUploadFile(file: File | null) {
+  /** 고른 파일을 검사해 올릴 목록으로 둔다. 올릴 수 없는 파일은 빼고 이유를 알려 준다. */
+  function selectUploadFiles(files: File[]) {
     if (!canSelectUpload || workingRef.current) return;
 
     setError(null);
     setNotice(null);
+    setUploadCandidates(null);
 
-    if (!file) {
-      setUploadFile(null);
-      return;
+    const problems: string[] = [];
+    const valid = files.filter(file => {
+      const reason = file.size === 0 ? '빈 파일'
+        : file.size > MAX_DRIVE_UPLOAD_SIZE ? '100MB 초과'
+        : !file.name.trim() || file.name.length > 255 || file.name.includes('\0') ? '이름이 올바르지 않음'
+        : null;
+      if (reason) problems.push(`${file.name || '(이름 없음)'}: ${reason}`);
+      return reason === null;
+    });
+
+    setUploadFiles(valid);
+    if (problems.length > 0) {
+      setError(`올릴 수 없는 파일은 뺐어요. ${problems.join(', ')}`);
     }
-
-    if (file.size === 0) {
-      setUploadFile(null);
-      setError('빈 파일은 업로드할 수 없습니다.');
-      return;
-    }
-
-    if (file.size > MAX_DRIVE_UPLOAD_SIZE) {
-      setUploadFile(null);
-      setError(
-        '100MB 이하 파일만 업로드할 수 있습니다.',
-      );
-      return;
-    }
-
-    if (
-      !file.name.trim() ||
-      file.name.length > 255 ||
-      file.name.includes('\0')
-    ) {
-      setUploadFile(null);
-      setError('파일 이름이 올바르지 않습니다.');
-      return;
-    }
-
-    setUploadFile(file);
   }
 
   function handleDragEnter(event: globalThis.DragEvent) {
@@ -851,16 +845,16 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     setIsDraggingFile(false);
     if (!canSelectUpload || workingRef.current) return;
 
-    const files = event.dataTransfer.files;
+    const files = Array.from(event.dataTransfer.files);
     const hasDirectory = Array.from(event.dataTransfer.items)
       .some(item => item.webkitGetAsEntry?.()?.isDirectory);
-    if (hasDirectory || files.length !== 1) {
-      setUploadFile(null);
+    if (hasDirectory || files.length === 0) {
+      setUploadFiles([]);
       setNotice(null);
-      setError('파일을 한 개씩 업로드해 주세요. 폴더는 업로드할 수 없습니다.');
+      setError('폴더는 업로드할 수 없습니다. 파일만 끌어다 놓아 주세요.');
       return;
     }
-    selectUploadFile(files[0]);
+    selectUploadFiles(files);
   }
 
   // 화면 어디에 끌어다 놓아도 업로드할 파일로 고른다. (업로드 칸뿐 아니라 사이드바·목록 위에서도)
@@ -898,10 +892,14 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     finally { workingRef.current = false; setWorking(null); }
   }
 
-  async function handleUpload(options: DriveUploadOptions = { mode: 'ASK' }) {
+  /**
+   * 목록의 파일을 맨 앞부터 차례로 올린다. 같은 이름의 파일이 있으면 그 파일에서 멈추고 덮어쓸지 묻는다.
+   * options는 맨 앞 파일에만 쓰고(덮어쓰기·새로 만들기 선택), 나머지는 다시 확인하며 올린다.
+   */
+  async function handleUpload(options: DriveUploadOptions = { mode: 'ASK' }, queue: File[] = uploadFiles) {
     if (
       !workspaceId ||
-      !uploadFile ||
+      queue.length === 0 ||
       !chosenFolderId ||
       loading ||
       workingRef.current
@@ -912,72 +910,81 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     workingRef.current = true;
     dataVersionRef.current += 1;
 
-    setWorking(options.mode === 'ASK' ? 'check-upload' : 'upload');
     setError(null);
     setNotice(null);
+    setUploadCandidates(null);
 
-    const fileName = uploadFile.name;
+    const done: string[] = [];
+    let index = 0;
+    let lastUploaded: DriveFile | null = null;
 
     try {
-      if (options.mode === 'ASK') {
-        const matches = await getDriveUploadCandidates(workspaceId, chosenFolderId, fileName);
-        if (matches.length > 0) { setUploadCandidates(matches); return; }
+      for (; index < queue.length; index++) {
+        const file = queue[index];
+        const fileOptions = index === 0 ? options : { mode: 'ASK' as const };
+        setUploadFiles(queue.slice(index));
+        if (fileOptions.mode === 'ASK') {
+          setWorking('check-upload');
+          const matches = await getDriveUploadCandidates(workspaceId, chosenFolderId, file.name);
+          if (matches.length > 0) {
+            setUploadCandidates(matches);
+            break;
+          }
+        }
+        setWorking('upload');
+        const uploaded = await uploadDriveFile(workspaceId, chosenFolderId, file, fileOptions);
+        done.push(file.name);
+
+        // 연동 폴더 바로 아래에 올린 파일은 바로 목록에 표시한다.
+        // 하위 폴더에 올린 파일은 수집 목록에 없으므로(ID 없음) 목록을 다시 불러와 하위 폴더에서 보인다.
+        if (uploaded.contentRefId != null) {
+          lastUploaded = uploaded;
+          setFiles(current => [
+            uploaded,
+            ...current.filter(item => item.contentRefId !== uploaded.contentRefId),
+          ]);
+        }
       }
-      setWorking('upload');
-      const uploaded = await uploadDriveFile(
-        workspaceId,
-        chosenFolderId,
-        uploadFile,
-        options,
-      );
-
-      // 연동 폴더 바로 아래에 올린 파일은 바로 목록에 표시한다.
-      // 하위 폴더에 올린 파일은 수집 목록에 없으므로(ID 없음) 목록을 다시 불러와 하위 폴더에서 보인다.
-      if (uploaded.contentRefId != null) {
-        setFiles(current => [
-          uploaded,
-          ...current.filter(
-            file =>
-              file.contentRefId !==
-              uploaded.contentRefId,
-          ),
-        ]);
-        setSelectedId(uploaded.contentRefId);
-      }
-
-      setShowTrash(false);
-      setQuery('');
-
-      setUploadFile(null);
-      setUploadCandidates(null);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-
-      setNotice(
-        `'${fileName}' 파일 ${options.mode === 'OVERWRITE' ? '덮어쓰기' : '업로드'}가 완료됐습니다.`,
-      );
-
-      // 실제 DB 목록 재조회
-      try {
-        await reloadAll();
-      } catch {
-        setNotice(
-          '업로드는 완료됐지만 목록 갱신에 실패했습니다. 새로고침해 주세요.',
-        );
-      }
+      setUploadFiles(queue.slice(index));
     } catch (err) {
+      // 실패한 파일부터 남겨 두어 다시 올릴 수 있게 한다.
+      setUploadFiles(queue.slice(index));
       setError(errorMessage(err));
-      if (err instanceof ApiError && (err.code === 'DRIVE_FILE_NAME_CONFLICT' || err.code === 'DRIVE_FILE_CHANGED')) {
+      const failed = queue[index];
+      if (failed && err instanceof ApiError
+        && (err.code === 'DRIVE_FILE_NAME_CONFLICT' || err.code === 'DRIVE_FILE_CHANGED')) {
         try {
-          setUploadCandidates(await getDriveUploadCandidates(workspaceId, chosenFolderId, fileName));
+          setUploadCandidates(await getDriveUploadCandidates(workspaceId, chosenFolderId, failed.name));
         } catch { /* 원래 오류와 선택 파일을 유지하고 사용자가 다시 확인할 수 있게 한다. */ }
       }
     } finally {
       workingRef.current = false;
       setWorking(null);
     }
+
+    if (done.length === 0) return;
+    if (lastUploaded) setSelectedId(lastUploaded.contentRefId);
+    setShowTrash(false);
+    setQuery('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    const left = queue.length - index;
+    setNotice(
+      (done.length === 1 ? `'${done[0]}' 파일 업로드가 완료됐습니다.` : `파일 ${done.length}개 업로드가 완료됐습니다.`)
+      + (left > 0 ? ` 남은 ${left}개는 아래에서 확인해 주세요.` : ''),
+    );
+    try {
+      await reloadAll();
+    } catch {
+      setNotice('업로드는 완료됐지만 목록 갱신에 실패했습니다. 새로고침해 주세요.');
+    }
+  }
+
+  /** 같은 이름 확인 창에서 취소하면 그 파일만 빼고 나머지를 이어서 올린다. */
+  function skipConflictedFile() {
+    setUploadCandidates(null);
+    const rest = uploadFiles.slice(1);
+    setUploadFiles(rest);
+    if (rest.length > 0) void handleUpload({ mode: 'ASK' }, rest);
   }
 
   // ===================================================
@@ -1167,6 +1174,25 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
     setPreviewFile(file);
   }
 
+  // Slack 첨부 링크 등에서 ?file={Drive 파일 ID}로 들어오면 그 파일을 골라 미리보기로 연다.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedFileId = searchParams.get('file');
+  useEffect(() => {
+    if (!linkedFileId || loading) return;
+    const file = files.find(item => item.externalId === linkedFileId);
+    setSearchParams(params => { params.delete('file'); return params; }, { replace: true });
+    if (!file) {
+      setError('이 파일을 ToGather Drive에서 찾을 수 없어요. 연동한 폴더 밖에 있거나 아직 동기화되지 않았을 수 있어요.');
+      return;
+    }
+    setShowTrash(false);
+    setActiveFolderId(null);
+    setFolderPath([]);
+    setQuery('');
+    setSelectedId(file.contentRefId);
+    if (canPreviewDriveFile(file)) setPreviewFile(file);
+  }, [linkedFileId, loading, files, setSearchParams]);
+
   useEffect(() => {
     if (!previewFile) return;
 
@@ -1281,8 +1307,13 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
           <div className="min-w-0">
             {uploadFile ? (
               <>
-                <div className="truncate text-[15px] font-bold">📄 {uploadFile.name}</div>
-                <div className="text-[13px] text-[var(--muted)]">{formatDriveFileSize(uploadFile.size)}</div>
+                <div className="truncate text-[15px] font-bold" title={uploadFiles.map(file => file.name).join('\n')}>
+                  📄 {uploadFile.name}{uploadFiles.length > 1 && ` 외 ${uploadFiles.length - 1}개`}
+                </div>
+                <div className="text-[13px] text-[var(--muted)]">
+                  {uploadFiles.length > 1 && `${uploadFiles.length}개 · `}
+                  {formatDriveFileSize(uploadFiles.reduce((sum, file) => sum + file.size, 0))}
+                </div>
               </>
             ) : (
               <>
@@ -1306,6 +1337,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
           type="file"
           className="hidden"
           aria-label="업로드할 파일"
+          multiple
           disabled={!canSelectUpload}
           onChange={handleFileSelect}
         />
@@ -1340,7 +1372,8 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               disabled={loading || isBusy || !uploadFile || !chosenFolderId}
               onClick={() => void handleUpload()}
             >
-              {working === 'upload' ? '업로드 중...' : working === 'check-upload' ? '파일 확인 중...' : '업로드'}
+              {working === 'upload' ? '업로드 중...' : working === 'check-upload' ? '파일 확인 중...'
+                : uploadFiles.length > 1 ? `${uploadFiles.length}개 업로드` : '업로드'}
             </button>
           </div>
         ) : (
@@ -1358,7 +1391,7 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
         onCreateNew={() => void handleUpload({ mode: 'CREATE_NEW' })}
         onOverwrite={(candidate) => void handleUpload({ mode: 'OVERWRITE', targetFileId: candidate.fileId,
           expectedVersion: candidate.version! })}
-        onCancel={() => setUploadCandidates(null)} onRefresh={() => void refreshUploadCandidates()} />}
+        onCancel={skipConflictedFile} onRefresh={() => void refreshUploadCandidates()} />}
 
       <div className="drive-board">
         {/* 파일 목록 */}
@@ -1513,8 +1546,13 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               const isWorkingItem = workingItemId === item.itemId;
               return (
                 <div
-                  key={`${item.source}-${item.itemId}`}
-                  className="drive-row drive-item drive-trash max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
+                  key={trashKey(item)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedTrash === item}
+                  onClick={() => setSelectedTrashKey(trashKey(item))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setSelectedTrashKey(trashKey(item)); }}
+                  className={`drive-row drive-item drive-trash cursor-pointer max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1${selectedTrash === item ? ' selected' : ''}`}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     {item.folder
@@ -1766,14 +1804,19 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
               </div>
             </>
           ) : showTrash ? (
-            <div className="flex flex-col gap-2 py-6 text-[13px] leading-relaxed text-[var(--muted)]">
-              <p className="m-0">
-                휴지통으로 옮긴 파일·폴더는 팀장 Drive의 <strong className="text-[var(--text)]">ToGather 휴지통</strong> 폴더에
-                모여 팀원에게서 사라집니다.
-              </p>
-              <p className="m-0">복원하면 원래 폴더로 돌아가고, 원래 폴더가 없어졌으면 연동 폴더 바로 아래로 돌아갑니다.</p>
-              <p className="m-0">영구 삭제와 휴지통 비우기는 팀장·관리자만 할 수 있어요.</p>
-            </div>
+            selectedTrash ? (
+              <TrashDetail
+                item={selectedTrash}
+                busy={isBusy}
+                isAdmin={isAdmin}
+                onRestore={() => handleRestore(selectedTrash)}
+                onDeleteForever={() => handleDeleteForever(selectedTrash)}
+              />
+            ) : (
+              <div className="py-12 text-center text-[13px] text-[var(--muted)]">
+                왼쪽에서 파일을 선택하면 삭제 정보가 표시됩니다.
+              </div>
+            )
           ) : (
             <div className="py-12 text-center text-[13px] text-[var(--muted)]">
               왼쪽에서 파일을 선택하면 상세 정보가 표시됩니다.
@@ -1851,5 +1894,52 @@ function DriveContent({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** 휴지통 항목 상세: 삭제한 때·사람, 원래 위치, 크기 */
+function TrashDetail({ item, busy, isAdmin, onRestore, onDeleteForever }: {
+  item: DriveTrashItem;
+  busy: boolean;
+  isAdmin: boolean;
+  onRestore: () => void;
+  onDeleteForever: () => void;
+}) {
+  const format = itemFormat(item.name, item.mimeType);
+  const rows: [string, string][] = [
+    ['삭제한 때', formatDate(item.trashedAt)],
+    ['삭제한 사람', item.trashedByName ?? (item.source === 'DRIVE' ? 'Google Drive에서 삭제' : '정보 없음')],
+    ['원래 위치', item.originPath ?? '알 수 없음'],
+    ['크기', item.folder ? '폴더' : formatDriveFileSize(item.fileSize)],
+    ['있는 곳', item.source === 'DRIVE' ? 'Google Drive 휴지통' : '팀장 Drive의 ToGather 휴지통'],
+  ];
+  return (
+    <>
+      <div className="flex items-start gap-3">
+        {item.folder
+          ? <FolderGlyph />
+          : <span className={`drive-ext ext-${format.toLowerCase()}`}>{format.slice(0, 4)}</span>}
+        <div className="min-w-0">
+          <div className="break-all text-base font-bold">{item.name || '(이름 없음)'}</div>
+          <div className="text-[13px] text-[var(--muted)]">{item.folder ? '폴더' : format}</div>
+        </div>
+      </div>
+      <dl className="drive-meta m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-[13px]">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="font-bold text-[var(--muted)]">{label}</dt>
+            <dd className="m-0 break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className="btn !h-11" disabled={busy} onClick={onRestore}>↩ 복원</button>
+        {isAdmin && (
+          <button type="button" className="btn btn-danger !h-11" disabled={busy} onClick={onDeleteForever}>
+            영구 삭제
+          </button>
+        )}
+      </div>
+    </>
   );
 }

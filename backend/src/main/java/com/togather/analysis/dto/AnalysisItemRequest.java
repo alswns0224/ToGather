@@ -6,10 +6,19 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 /** 항목 추가 (빈 양식에서 직접 작성 포함) */
 public record AnalysisItemRequest(@NotNull ItemType itemType, @NotBlank @Size(max = 2000) String content,
                                   Long suggestedAssigneeId, LocalDate suggestedDueDate,
-                                  LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds) {
+                                  LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
+                                  LocalTime suggestedDueTime) {
+
+    public AnalysisItemRequest(ItemType itemType, String content, Long suggestedAssigneeId,
+                               LocalDate suggestedDueDate, LocalDateTime suggestedDatetime,
+                               List<Long> suggestedParticipantIds) {
+        this(itemType, content, suggestedAssigneeId, suggestedDueDate, suggestedDatetime, suggestedParticipantIds,
+                null);
+    }
 }

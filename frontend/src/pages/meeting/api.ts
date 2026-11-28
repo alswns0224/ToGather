@@ -9,6 +9,7 @@ export interface TaskSummary {
   title: string;
   assigneeId: number | null;
   dueDate: string | null;
+  dueTime?: string | null;
   status: 'IN_PROGRESS' | 'DONE';
   progress: number;
   riskLevel: 'NORMAL' | 'WARNING' | 'DANGER';

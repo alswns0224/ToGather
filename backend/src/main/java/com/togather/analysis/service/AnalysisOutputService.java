@@ -55,6 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AnalysisOutputService {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final List<ItemType> SECTION_ORDER = List.of(
             ItemType.DECISION, ItemType.FOLLOW_UP, ItemType.OPEN_ISSUE, ItemType.MEETING_PROPOSAL);
@@ -112,7 +113,7 @@ public class AnalysisOutputService {
     public OutputResultResponse createFollowUpTask(Long workspaceId, Long itemId, FollowUpTaskRequest request) {
         AnalysisItem item = getOutputItem(workspaceId, itemId, ItemType.FOLLOW_UP);
         Long taskId = record(() -> taskGateway.createTask(workspaceId, new FollowUpTask(request.title(),
-                        request.description(), request.assigneeId(), request.dueDate(), itemId)),
+                        request.description(), request.assigneeId(), request.dueDate(), itemId, request.dueTime())),
                 failed -> analysisStore.recordItemOutput(itemId, null, OutputStatus.FAILED));
         analysisStore.recordItemOutput(item.getItemId(), taskId, OutputStatus.SUCCESS);
         return new OutputResultResponse(OutputStatus.SUCCESS, taskId, null);
@@ -196,7 +197,8 @@ public class AnalysisOutputService {
                     case FOLLOW_UP -> sb.append("[ ] ").append(content).append(" (담당: ")
                             .append(Objects.requireNonNullElse(item.suggestedAssigneeName(), "미정"))
                             .append(", 마감: ")
-                            .append(item.suggestedDueDate() == null ? "미정" : DATE.format(item.suggestedDueDate()))
+                            .append(item.suggestedDueDate() == null ? "미정" : DATE.format(item.suggestedDueDate())
+                                    + (item.suggestedDueTime() == null ? "" : " " + TIME.format(item.suggestedDueTime())))
                             .append(")\n");
                     case MEETING_PROPOSAL -> sb.append("- ").append(content).append(" (일시: ")
                             .append(item.suggestedDatetime() == null ? "미정"

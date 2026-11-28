@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.AccessLevel;
@@ -50,6 +51,9 @@ public class AnalysisItem extends BaseTimeEntity {
 
     private LocalDate suggestedDueDate;
 
+    /** 후속 작업 마감 시각. 없으면 그날 하루 종일 */
+    private LocalTime suggestedDueTime;
+
     private LocalDateTime suggestedDatetime;
 
     /** 비어 있으면 스레드 참여자로 대체 */
@@ -70,6 +74,11 @@ public class AnalysisItem extends BaseTimeEntity {
         this.suggestedDueDate = suggestedDueDate;
         this.suggestedDatetime = suggestedDatetime;
         this.suggestedParticipantIds = suggestedParticipantIds == null ? new ArrayList<>() : new ArrayList<>(suggestedParticipantIds);
+    }
+
+    /** 마감 시각. 마감일이 없으면 시각도 두지 않는다. */
+    public void changeSuggestedDueTime(LocalTime dueTime) {
+        this.suggestedDueTime = suggestedDueDate == null ? null : dueTime;
     }
 
     /** 담당자·마감일·일시처럼 실행에 필요한 값이 비어 있으면 미정으로 표시한다. (명세서 markUndetermined) */

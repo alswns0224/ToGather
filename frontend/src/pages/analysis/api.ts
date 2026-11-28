@@ -38,6 +38,8 @@ export interface AnalysisItemResponse {
   suggestedAssigneeId: number | null;
   suggestedAssigneeName: string | null;
   suggestedDueDate: string | null;
+  /** 마감 시각 "HH:mm:ss". 없으면 그날 하루 종일 */
+  suggestedDueTime?: string | null;
   suggestedDatetime: string | null;
   suggestedParticipantIds: number[];
   outputStatus: OutputStatus | null;
@@ -85,6 +87,7 @@ export interface ItemForm {
   content: string;
   suggestedAssigneeId: number | null;
   suggestedDueDate: string | null;
+  suggestedDueTime?: string | null;
   suggestedDatetime: string | null;
   suggestedParticipantIds: number[];
 }
@@ -162,7 +165,7 @@ export const createNotionDocument = (
 export const createFollowUpTask = (
   workspaceId: string,
   itemId: number,
-  body: { title: string; description: string; assigneeId: number | null; dueDate: string | null },
+  body: { title: string; description: string; assigneeId: number | null; dueDate: string | null; dueTime?: string | null },
 ) => http.post<OutputResultResponse>(ws(workspaceId, `/analysis-items/${itemId}/task`), body);
 
 export const getMeetingDraft = (workspaceId: string, itemId: number) =>

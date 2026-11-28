@@ -2,7 +2,8 @@ import DateTimePicker, {DatePicker} from '../../../components/DateTimePicker';
 import { useState, type FormEvent } from 'react';
 import type { MemberResponse } from '../../workspace/api';
 import { deleteItem, updateItem, type AnalysisItemResponse, type ItemForm, type ItemType } from '../api';
-import { formatDate, formatDateTime } from '../../../utils/date';
+import { formatDateTime, formatDue, timeInput } from '../../../utils/date';
+import DueTimeInput from '../../../components/DueTimeInput';
 import AnalysisIcon from './AnalysisIcon';
 
 /** 분석 항목 한 개: 내용, 근거 발언, 담당자·마감일(후속 작업), 일시·참여자(회의 제안) */
@@ -49,6 +50,7 @@ export default function ItemCard({
             content: item.content,
             suggestedAssigneeId: item.suggestedAssigneeId,
             suggestedDueDate: item.suggestedDueDate,
+            suggestedDueTime: timeInput(item.suggestedDueTime) || null,
             suggestedDatetime: item.suggestedDatetime,
             suggestedParticipantIds: item.suggestedParticipantIds ?? [],
           }}
@@ -120,7 +122,7 @@ export default function ItemCard({
         <div className="analysis-item-meta">
           <span className="analysis-meta-pill">담당자: {item.suggestedAssigneeName ?? decidedElsewhere}</span>
           <span className="analysis-meta-pill">
-            마감일: {item.suggestedDueDate ? formatDate(item.suggestedDueDate) : decidedElsewhere}
+            마감: {item.suggestedDueDate ? formatDue(item.suggestedDueDate, item.suggestedDueTime) : decidedElsewhere}
           </span>
         </div>
       )}
@@ -226,7 +228,10 @@ export function ItemEditor({
           </label>
           <label className="grow">
             마감일
-            <DatePicker label="후속 작업 마감일" disabled={saving} value={form.suggestedDueDate??''} onChange={value=>setForm({...form,suggestedDueDate:value||null})}/>
+            <div className="flex items-center gap-2">
+              <DatePicker label="후속 작업 마감일" className="min-w-0 flex-1" disabled={saving} value={form.suggestedDueDate??''} onChange={value=>setForm({...form,suggestedDueDate:value||null,...(value?{}:{suggestedDueTime:null})})}/>
+              <DueTimeInput label="후속 작업 마감 시각" disabled={saving || !form.suggestedDueDate} value={form.suggestedDueTime??''} onChange={value=>setForm({...form,suggestedDueTime:value||null})}/>
+            </div>
           </label>
         </div>
       )}

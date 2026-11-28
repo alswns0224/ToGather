@@ -45,8 +45,16 @@ public class SearchService {
     /** 문서 하나가 여러 조각으로 나와도 문서 수가 모자라지 않게, 보여 줄 수의 이 배수만큼 조각을 받는다 */
     static final int CHUNK_FETCH_FACTOR = 6;
     static final int MAX_CHUNK_FETCH = 300;
-    /** 낱말이 그대로 들어 있는 결과의 관련도 (문맥 검색 점수가 더 높으면 그 점수를 쓴다) */
-    static final double KEYWORD_SCORE = 0.7;
+    /**
+     * 낱말이 그대로 들어 있는 결과의 가장 낮은 관련도. 제목에 있거나 여러 번 나오면 더 높게 준다. (keywordScore)
+     * 문맥 검색 점수가 더 높으면 그 점수를 쓴다.
+     */
+    static final double KEYWORD_SCORE = 0.55;
+    /** 검색어가 제목(파일·문서 이름)에 들어 있으면 더하는 점수. Slack 메시지의 제목은 채널 이름이라 더하지 않는다 */
+    static final double KEYWORD_TITLE_BONUS = 0.2;
+    /** 검색어가 한 번 더 나올 때마다 더하는 점수와 그 한도 */
+    static final double KEYWORD_REPEAT_BONUS = 0.05;
+    static final double KEYWORD_REPEAT_MAX = 0.15;
     /** 이 글자 수 이하인 Slack 메시지는 문맥 검색에서 뺀다. ("ㅎㅇ", "ㅇㅋ" 등) */
     static final int MIN_MEANINGFUL_CHARS = 3;
     /** DriveSyncAdapter가 파일 본문 앞에 붙이는 표시 */
@@ -106,7 +114,7 @@ public class SearchService {
         for (ContentRef ref : contentAccess.filter(workspaceId, userId, keywordMatches(workspaceId, targets, q, size),
                 ref -> ref)) {
             refs.putIfAbsent(ref.getContentRefId(), ref);
-            scores.merge(ref.getContentRefId(), KEYWORD_SCORE, Math::max);
+            scores.merge(ref.getContentRefId(), keywordScore(ref, q), Math::max);
         }
         List<Long> ids = scores.entrySet().stream()
                 .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
@@ -184,6 +192,28 @@ public class SearchService {
                 : snippet(flat, query);
         return new Item(ref.getContentRefId(), ref.getProvider(), ref.getTitle(), snippet, ref.getDeepLink(),
                 ref.getCreatedAt(), ref.getAuthorName(), score, appPath(ref, roots), tasks);
+    }
+
+    /** 낱말 찾기 결과의 관련도: 기본 0.55, 제목에 있으면 +0.2, 한 번 더 나올 때마다 +0.05 (최대 +0.15) */
+    static double keywordScore(ContentRef ref, String query) {
+        String q = query.toLowerCase();
+        boolean slack = ref.getProvider() == Provider.SLACK;
+        String title = slack || ref.getTitle() == null ? "" : ref.getTitle().toLowerCase();
+        String body = slack ? SlackMessageFormat.parse(ref.getContent()).text() : ref.getContent();
+        String content = body == null ? "" : body.toLowerCase();
+        int count = occurrences(title, q) + occurrences(content, q);
+        double score = KEYWORD_SCORE
+                + (title.contains(q) ? KEYWORD_TITLE_BONUS : 0)
+                + Math.min(KEYWORD_REPEAT_MAX, KEYWORD_REPEAT_BONUS * Math.max(0, count - 1));
+        return Math.round(score * 100) / 100.0;
+    }
+
+    private static int occurrences(String text, String q) {
+        int count = 0;
+        for (int at = text.indexOf(q); at >= 0; at = text.indexOf(q, at + q.length())) {
+            count++;
+        }
+        return count;
     }
 
     private static boolean containsIgnoreCase(String text, String query) {

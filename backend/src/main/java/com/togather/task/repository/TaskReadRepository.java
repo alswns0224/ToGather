@@ -20,18 +20,18 @@ public class TaskReadRepository {
     private static final String SELECT = """
         select new com.togather.task.repository.TaskReadRow(
             t.taskId, t.workspaceId, t.title, t.assigneeId, t.dueDate, t.status,
-            count(d.deliverableId), sum(case when d.isSubmitted = true then 1L else 0L end))
+            count(d.deliverableId), sum(case when d.isSubmitted = true then 1L else 0L end), t.dueTime)
         from Task t left join t.deliverables d
         """;
     private static final String GROUP = """
-         group by t.taskId, t.workspaceId, t.title, t.assigneeId, t.dueDate, t.status, t.createdAt
+         group by t.taskId, t.workspaceId, t.title, t.assigneeId, t.dueDate, t.dueTime, t.status, t.createdAt
         """;
     private final EntityManager entityManager;
 
     public Page<TaskReadRow> findPage(Long workspaceId, TaskFilter filter, Pageable pageable) {
         QueryParts parts = where(workspaceId, filter);
         String order = filter.sort() == TaskSort.DUE_DATE
-                ? " order by t.dueDate asc nulls last, t.createdAt desc, t.taskId desc"
+                ? " order by t.dueDate asc nulls last, t.dueTime asc nulls last, t.createdAt desc, t.taskId desc"
                 : " order by t.createdAt desc, t.taskId desc";
         List<TaskReadRow> rows = bind(entityManager.createQuery(SELECT + parts.where() + GROUP + order,
                 TaskReadRow.class), parts.parameters())

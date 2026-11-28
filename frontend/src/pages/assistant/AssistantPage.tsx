@@ -29,7 +29,8 @@ import { ErrorBox, Loading } from '../../components/Status';
 import PageHeader from '../../components/PageHeader';
 import ServiceLogo from '../../components/ServiceLogo';
 import NavIcon from '../../layouts/NavIcon';
-import { formatDate, formatDateTime } from '../../utils/date';
+import { formatDate, formatDateTime, formatDue, timeInput } from '../../utils/date';
+import DueTimeInput from '../../components/DueTimeInput';
 import { useDetection } from './detectionStore';
 import './assistant.css';
 
@@ -236,7 +237,7 @@ function AssistantContent({ workspaceId }: { workspaceId: string }) {
                       className="assistant-cand flex items-center justify-between no-underline"
                     >
                       <span className="text-sm font-bold text-[var(--text)]">☑ {t.title}</span>
-                      {t.dueDate && <span className="text-xs text-[var(--muted)]">마감 {formatDate(t.dueDate)}</span>}
+                      {t.dueDate && <span className="text-xs text-[var(--muted)]">마감 {formatDue(t.dueDate, t.dueTime)}</span>}
                     </Link>
                   ))
                 )}
@@ -277,7 +278,7 @@ function SuggestionCard({
     s.type === 'SCHEDULE'
       ? candidateWhen(s.detectedDatetime, { date: formatDate, dateTime: formatDateTime })
       : s.dueDate
-        ? `마감 ${formatDate(s.dueDate)}`
+        ? `마감 ${formatDue(s.dueDate, s.dueTime)}`
         : '마감 미정';
   return (
     <button type="button" className={`assistant-cand${active ? ' active' : ''}`} onClick={onClick}>
@@ -324,6 +325,7 @@ function SuggestionReview({
     title: suggestion.title,
     detectedDatetime: suggestion.detectedDatetime,
     dueDate: suggestion.dueDate,
+    dueTime: timeInput(suggestion.dueTime) || null,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -333,7 +335,8 @@ function SuggestionReview({
   const dirty =
     form.title !== suggestion.title ||
     form.detectedDatetime !== suggestion.detectedDatetime ||
-    form.dueDate !== suggestion.dueDate;
+    form.dueDate !== suggestion.dueDate ||
+    form.dueTime !== (timeInput(suggestion.dueTime) || null);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -422,7 +425,10 @@ function SuggestionReview({
       ) : (
         <label className="assistant-field">
           <span>마감일</span>
-          <DatePicker label="할 일 마감일" disabled={busy} value={form.dueDate??''} onChange={value=>setForm({...form,dueDate:value||null})}/>
+          <div className="flex items-center gap-2">
+            <DatePicker label="할 일 마감일" className="min-w-0 flex-1" disabled={busy} value={form.dueDate??''} onChange={value=>setForm({...form,dueDate:value||null,...(value?{}:{dueTime:null})})}/>
+            <DueTimeInput label="할 일 마감 시각" disabled={busy || !form.dueDate} value={form.dueTime??''} onChange={value=>setForm({...form,dueTime:value||null})}/>
+          </div>
         </label>
       )}
       <div className="assistant-field">
@@ -535,7 +541,7 @@ function PersonalTodos({
   tasks: PersonalTaskResponse[];
   onChanged: () => void;
 }) {
-  const [form, setForm] = useState({ title: '', dueDate: '' });
+  const [form, setForm] = useState({ title: '', dueDate: '', dueTime: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -554,8 +560,10 @@ function PersonalTodos({
   const add = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) return;
-    if (await run(() => createPersonalTask(workspaceId, { title: form.title.trim(), dueDate: form.dueDate || null }))) {
-      setForm({ title: '', dueDate: '' });
+    if (await run(() => createPersonalTask(workspaceId, {
+      title: form.title.trim(), dueDate: form.dueDate || null, dueTime: form.dueDate && form.dueTime ? form.dueTime : null,
+    }))) {
+      setForm({ title: '', dueDate: '', dueTime: '' });
     }
   };
 
@@ -572,6 +580,7 @@ function PersonalTodos({
           onChange={(e) => setForm({ ...form, title: e.target.value })}
         />
         <DatePicker label="새 개인 할 일 마감일" className="w-[180px] max-w-full shrink-0" value={form.dueDate} onChange={value=>setForm({...form,dueDate:value})}/>
+        <DueTimeInput label="새 개인 할 일 마감 시각" disabled={!form.dueDate} value={form.dueTime} onChange={value=>setForm({...form,dueTime:value})}/>
         <button className="btn btn-primary btn-small" disabled={!form.title.trim()}>
           추가
         </button>
@@ -587,8 +596,8 @@ function PersonalTodos({
                 <PersonalTodoEditor
                   task={t}
                   onCancel={() => setEditingId(null)}
-                  onSave={async (title, dueDate) => {
-                    if (await run(() => updatePersonalTask(workspaceId, t.personalTaskId, { title, dueDate }))) {
+                  onSave={async (title, dueDate, dueTime) => {
+                    if (await run(() => updatePersonalTask(workspaceId, t.personalTaskId, { title, dueDate, dueTime }))) {
                       setEditingId(null);
                     }
                   }}
@@ -610,7 +619,7 @@ function PersonalTodos({
                   />
                   <span className={t.status === 'DONE' ? 'muted done-text' : ''}>{t.title}</span>
                 </label>
-                {t.dueDate && <span className="small muted">마감 {formatDate(t.dueDate)}</span>}
+                {t.dueDate && <span className="small muted">마감 {formatDue(t.dueDate, t.dueTime)}</span>}
                 <button className="link-button small" onClick={() => setEditingId(t.personalTaskId)}>
                   수정
                 </button>
@@ -638,21 +647,23 @@ function PersonalTodoEditor({
   onCancel,
 }: {
   task: PersonalTaskResponse;
-  onSave: (title: string, dueDate: string | null) => Promise<void>;
+  onSave: (title: string, dueDate: string | null, dueTime: string | null) => Promise<void>;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate ?? '');
+  const [dueTime, setDueTime] = useState(timeInput(task.dueTime));
   return (
     <form
       className="row flex-wrap"
       onSubmit={(e) => {
         e.preventDefault();
-        if (title.trim()) void onSave(title.trim(), dueDate || null);
+        if (title.trim()) void onSave(title.trim(), dueDate || null, dueDate && dueTime ? dueTime : null);
       }}
     >
       <input className="input grow" style={{ width: 'auto' }} maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
       <DatePicker label="개인 할 일 마감일" className="w-[180px] max-w-full shrink-0" value={dueDate} onChange={setDueDate}/>
+      <DueTimeInput label="개인 할 일 마감 시각" disabled={!dueDate} value={dueTime} onChange={setDueTime}/>
       <button type="button" className="btn btn-small" onClick={onCancel}>
         취소
       </button>

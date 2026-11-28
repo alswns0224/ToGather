@@ -10,6 +10,8 @@ export interface SuggestionDTO {
   detectedDatetime: string | null;
   timeUndetermined: boolean;
   dueDate: string | null;
+  /** 할 일 후보의 마감 시각 "HH:mm:ss". 없으면 그날 하루 종일 */
+  dueTime?: string | null;
   sourceContentRefId: number | null;
   sourceProvider: 'SLACK' | 'GMAIL' | string | null;
   sourceTitle: string | null;
@@ -23,12 +25,13 @@ export interface PersonalTaskResponse {
   personalTaskId: number;
   title: string;
   dueDate: string | null;
+  dueTime?: string | null;
   status: 'TODO' | 'DONE';
   sourceContentRefId: number | null;
 }
 
 export interface MyTodoListDTO {
-  assignedTasks: { taskId: number; workspaceId: number; title: string; dueDate: string | null }[];
+  assignedTasks: { taskId: number; workspaceId: number; title: string; dueDate: string | null; dueTime?: string | null }[];
   personalTasks: PersonalTaskResponse[];
   taskSuggestions: SuggestionDTO[];
 }
@@ -50,7 +53,7 @@ export const detectCandidates = (workspaceId: string) =>
 export const updateSuggestion = (
   workspaceId: string,
   id: number,
-  body: { title: string; detectedDatetime: string | null; dueDate: string | null },
+  body: { title: string; detectedDatetime: string | null; dueDate: string | null; dueTime?: string | null },
 ) => http.patch<SuggestionDTO>(base(workspaceId, `/suggestions/${id}`), body);
 
 export const approveSchedule = (workspaceId: string, id: number, endAt: string | null = null) =>
@@ -75,10 +78,10 @@ export const getMyTodoList = (workspaceId: string) => http.get<MyTodoListDTO>(ba
 export const completePersonalTask = (workspaceId: string, id: number) =>
   http.post<void>(base(workspaceId, `/personal-tasks/${id}/complete`));
 
-export const createPersonalTask = (workspaceId: string, body: { title: string; dueDate: string | null }) =>
+export const createPersonalTask = (workspaceId: string, body: { title: string; dueDate: string | null; dueTime?: string | null }) =>
   http.post<PersonalTaskResponse>(base(workspaceId, '/personal-tasks'), body);
 
-export const updatePersonalTask = (workspaceId: string, id: number, body: { title: string; dueDate: string | null }) =>
+export const updatePersonalTask = (workspaceId: string, id: number, body: { title: string; dueDate: string | null; dueTime?: string | null }) =>
   http.patch<PersonalTaskResponse>(base(workspaceId, `/personal-tasks/${id}`), body);
 
 export const reopenPersonalTask = (workspaceId: string, id: number) =>

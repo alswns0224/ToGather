@@ -15,6 +15,8 @@ export interface TaskSummary {
   title: string;
   assigneeId: number | null;
   dueDate: string | null;
+  /** 마감 시각 "HH:mm:ss". 없으면 그날 하루 종일 */
+  dueTime?: string | null;
   status: TaskStatus;
   progress: number;
   riskLevel: RiskLevel;
@@ -27,6 +29,7 @@ export interface TaskDetail {
   description: string | null;
   assigneeId: number | null;
   dueDate: string | null;
+  dueTime?: string | null;
   status: TaskStatus;
   progress: number;
   riskLevel: RiskLevel;
@@ -94,6 +97,7 @@ export interface TaskCreateRequest {
   description?: string;
   assigneeId?: number | null;
   dueDate?: string | null;
+  dueTime?: string | null;
   status?: TaskStatus;
   deliverables?: DeliverableInput[];
 }
@@ -103,6 +107,8 @@ export interface TaskUpdateRequest {
   description?: string;
   assigneeId?: number | null;
   dueDate?: string | null;
+  /** 마감일과 함께 보낼 때만 바뀐다 */
+  dueTime?: string | null;
   status?: TaskStatus;
 }
 

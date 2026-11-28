@@ -4,6 +4,7 @@ import com.togather.common.enums.ItemType;
 import com.togather.common.enums.OutputStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -16,5 +17,14 @@ public record AnalysisItemResponse(Long itemId, ItemType itemType, String conten
                                    Long suggestedAssigneeId, String suggestedAssigneeName, LocalDate suggestedDueDate,
                                    LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
                                    OutputStatus outputStatus, Long outputTargetId,
-                                   List<AnalysisEvidenceDTO> evidences) {
+                                   List<AnalysisEvidenceDTO> evidences, LocalTime suggestedDueTime) {
+
+    public AnalysisItemResponse(Long itemId, ItemType itemType, String content, boolean undetermined,
+                                Long suggestedAssigneeId, String suggestedAssigneeName, LocalDate suggestedDueDate,
+                                LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
+                                OutputStatus outputStatus, Long outputTargetId,
+                                List<AnalysisEvidenceDTO> evidences) {
+        this(itemId, itemType, content, undetermined, suggestedAssigneeId, suggestedAssigneeName, suggestedDueDate,
+                suggestedDatetime, suggestedParticipantIds, outputStatus, outputTargetId, evidences, null);
+    }
 }
