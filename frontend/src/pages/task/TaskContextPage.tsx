@@ -1,5 +1,5 @@
 // UI-09 Task 협업 맥락 (담당: C)
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../../api/client';
@@ -7,18 +7,17 @@ import { MUTED } from '../../components/ui';
 import NavIcon from '../../layouts/NavIcon';
 import { useAsync } from '../../hooks/useAsync';
 import { formatDateTime } from '../../utils/date';
-import { uploadDriveFile } from '../drive/api';
-import { getIntegrations, type TargetItem } from '../integration/api';
 import { getMembers } from '../workspace/api';
 import { STATUS_TEXT as MEETING_STATUS } from '../meeting/MeetingListPage';
 import { SOURCES } from './TaskContextPanels';
+import DeliverableSubmitDialog from './DeliverableSubmitDialog';
 import {
   addTaskDeliverable,
   getReferenceCandidates,
   getTaskContext,
   linkTaskReference,
   removeTaskDeliverable,
-  submitTaskDeliverable,
+  updateTaskDeliverable,
   unlinkTaskReference,
   unsubmitTaskDeliverable,
   type TaskContext,
@@ -62,9 +61,6 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
   const [revision, setRevision] = useState(0);
   const [candidates, setCandidates] = useState<TaskReferenceCandidate[] | null>(null);
   const [candidateError, setCandidateError] = useState<string | null>(null);
-  const [folders, setFolders] = useState<TargetItem[] | null>(null);
-  const [folderError, setFolderError] = useState<string | null>(null);
-  const [folderId, setFolderId] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'ALL' | TaskReferenceProvider>('ALL');
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
 
@@ -80,22 +76,6 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
       });
     return () => { active = false; };
   }, [workspaceId, taskId, contextRevision]);
-
-  useEffect(() => {
-    let active = true;
-    getIntegrations(workspaceId)
-      .then(integrations => {
-        if (!active) return;
-        const selected = integrations.find(integration => integration.provider === 'GOOGLE_DRIVE')
-          ?.connections.filter(connection => connection.status === 'CONNECTED')
-          .flatMap(connection => connection.targets) ?? [];
-        const unique = [...new Map(selected.map(folder => [folder.id, folder])).values()];
-        setFolders(unique);
-        setFolderId(unique[0]?.id ?? '');
-      })
-      .catch(error => { if (active) setFolderError(errorText(error, 'Drive 폴더를 불러오지 못했습니다.')); });
-    return () => { active = false; };
-  }, [workspaceId, taskId]);
 
   useEffect(() => {
     let active = true;
@@ -356,31 +336,9 @@ function TaskResources({ workspaceId, taskId }: { workspaceId: string; taskId: s
                 )}
                 {context.deliverables.length > 0 && (
                   <>
-                    {folderError && <p role="alert" className="m-0 text-sm text-[var(--danger)]">{folderError}</p>}
-                    {folders?.length === 0 && (
-                      <p className={`m-0 text-sm ${MUTED}`}>
-                        업로드할 폴더를 <Link to={`/workspaces/${workspaceId}/integrations`}>연동 관리</Link>에서 선택해 주세요.
-                      </p>
-                    )}
-                    {folders && folders.length > 1 && (
-                      <label className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
-                        업로드할 폴더
-                        <select
-                          className="input !w-auto flex-1"
-                          disabled={busy}
-                          value={folderId}
-                          onChange={(event) => setFolderId(event.target.value)}
-                        >
-                          {folders.map((folder) => (
-                            <option key={folder.id} value={folder.id}>
-                              {folder.name ?? folder.id}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
                     {context.deliverables.map((deliverable) => (
-                      <DeliverableCard key={deliverable.deliverableId} {...{ workspaceId, taskId, folderId, deliverable, busy, run }} />
+                      <DeliverableCard key={deliverable.deliverableId} {...{ workspaceId, taskId, deliverable, busy, run }}
+                        onSubmitted={() => setContextRevision((current) => current + 1)} />
                     ))}
                   </>
                 )}
@@ -466,13 +424,15 @@ function RefCard({
   );
 }
 
-function DeliverableForm({ busy, onCancel, onAdd }: {
+function DeliverableForm({ busy, onCancel, onAdd, initial, submitLabel = '항목 추가' }: {
   busy: boolean;
   onCancel: () => void;
   onAdd: (name: string, ext: string) => void;
+  initial?: { name: string; ext: string };
+  submitLabel?: string;
 }) {
-  const [name, setName] = useState('');
-  const [ext, setExt] = useState('');
+  const [name, setName] = useState(initial?.name ?? '');
+  const [ext, setExt] = useState(initial?.ext ?? '');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -494,7 +454,7 @@ function DeliverableForm({ busy, onCancel, onAdd }: {
       <div className="flex justify-end gap-2">
         <button type="button" className="btn btn-small" disabled={busy} onClick={onCancel}>취소</button>
         <button type="submit" className="btn btn-primary btn-small" disabled={busy || !name.trim()}>
-          {busy ? '추가 중...' : '항목 추가'}
+          {busy ? '저장 중...' : submitLabel}
         </button>
       </div>
     </form>
@@ -502,19 +462,17 @@ function DeliverableForm({ busy, onCancel, onAdd }: {
 }
 
 function DeliverableCard({
-  workspaceId, taskId, folderId, deliverable, busy, run,
+  workspaceId, taskId, deliverable, busy, run, onSubmitted,
 }: {
   workspaceId: string;
   taskId: string;
-  folderId: string;
   deliverable: TaskDeliverable;
   busy: boolean;
   run: (action: () => Promise<void>) => Promise<void>;
+  onSubmitted: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [pendingContentId, setPendingContentId] = useState<number | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const extension = deliverable.ext?.trim().replace(/^\./, '').toLowerCase();
   const url = externalUrl(deliverable.link);
 
@@ -522,25 +480,21 @@ function DeliverableCard({
     const message = deliverable.submitted
       ? `‘${deliverable.name}’ 항목과 제출 기록을 삭제할까요? 원본 Drive 파일은 유지됩니다.`
       : `‘${deliverable.name}’ 항목을 삭제할까요? Drive에 올린 파일은 유지됩니다.`;
-    if (window.confirm(`${message}\n마지막 항목을 삭제하면 현재 상태가 유지되고, 상태를 직접 변경할 수 있습니다.`)) {
+    if (window.confirm(`${message}
+마지막 항목을 삭제하면 현재 상태가 유지되고, 상태를 직접 변경할 수 있습니다.`)) {
       void run(() => removeTaskDeliverable(workspaceId, taskId, deliverable.deliverableId));
     }
   }
 
-  function submit(chosen: File | null = file) {
-    if (!chosen || (!folderId && pendingContentId === null)) return;
-    if (extension && !chosen.name.toLowerCase().endsWith(`.${extension}`)) {
-      setFileError(`.${extension} 파일만 제출할 수 있습니다.`);
-      return;
-    }
-    setFileError(null);
-    void run(async () => {
-      const contentId = pendingContentId ?? (await uploadDriveFile(workspaceId, folderId, chosen)).contentRefId;
-      setPendingContentId(contentId);
-      await submitTaskDeliverable(workspaceId, taskId, deliverable.deliverableId, contentId);
-      setPendingContentId(null);
-      setFile(null);
-    });
+  if (editing) {
+    return (
+      <DeliverableForm busy={busy} submitLabel="저장" onCancel={() => setEditing(false)}
+        initial={{ name: deliverable.name, ext: deliverable.ext ?? '' }}
+        onAdd={(name, ext) => void run(async () => {
+          await updateTaskDeliverable(workspaceId, taskId, deliverable.deliverableId, { name, ext });
+          setEditing(false);
+        })} />
+    );
   }
 
   return (
@@ -551,7 +505,7 @@ function DeliverableCard({
             {deliverable.name}
             {extension && <span className="ml-1 text-xs font-semibold text-[var(--muted)]">.{extension}</span>}
           </div>
-          {deliverable.submitted ? (
+          {deliverable.submitted && (
             url ? (
               <a href={url} target="_blank" rel="noreferrer" className="text-xs">
                 ✓ {deliverable.fileName ?? 'Drive 파일 열기'}
@@ -559,8 +513,6 @@ function DeliverableCard({
             ) : (
               <span className="text-xs text-[var(--success)]">✓ {deliverable.fileName ?? '제출 완료'}</span>
             )
-          ) : (
-            file && <span className="text-xs text-[var(--muted)]">{file.name}</span>
           )}
           {deliverable.submitted && deliverable.fileStatus && (
             <span className="ml-2 text-xs text-[var(--warning)]">
@@ -578,42 +530,27 @@ function DeliverableCard({
             제출 해제
           </button>
         ) : (
-          <>
-            <input
-              ref={inputRef}
-              className="hidden"
-              aria-label={`${deliverable.name} 파일 선택`}
-              type="file"
-              accept={extension ? `.${extension}` : undefined}
-              disabled={busy || !folderId}
-              onChange={(event) => {
-                const chosen = event.target.files?.[0] ?? null;
-                setFile(chosen);
-                setPendingContentId(null);
-                setFileError(null);
-                event.target.value = '';
-                if (chosen) submit(chosen);
-              }}
-            />
-            <button
-              type="button"
-              className="btn btn-primary btn-small flex-shrink-0"
-              disabled={busy || (!folderId && pendingContentId === null)}
-              title={!folderId ? '연동 관리에서 Drive 폴더를 먼저 선택해 주세요.' : 'Drive에 올리고 제출해요'}
-              onClick={() => (pendingContentId !== null ? submit() : inputRef.current?.click())}
-            >
-              {busy && file ? '제출 중...' : pendingContentId === null ? '제출하기' : '다시 시도'}
-            </button>
-          </>
+          <button type="button" className="btn btn-primary btn-small flex-shrink-0" disabled={busy}
+            onClick={() => setSubmitting(true)}>
+            제출하기
+          </button>
         )}
       </div>
-      {fileError && <p role="alert" className="m-0 text-sm text-[var(--danger)]">{fileError}</p>}
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2 flex justify-end gap-3">
+        <button type="button" className="link-button text-xs" disabled={busy}
+          aria-label={`${deliverable.name} 항목 수정`} onClick={() => setEditing(true)}>
+          항목 수정
+        </button>
         <button type="button" className="link-button text-xs !text-[var(--danger)]" disabled={busy}
           aria-label={`${deliverable.name} 항목 삭제`} onClick={remove}>
           항목 삭제
         </button>
       </div>
+      {submitting && (
+        <DeliverableSubmitDialog workspaceId={workspaceId} taskId={taskId} deliverable={deliverable}
+          onClose={() => setSubmitting(false)}
+          onSubmitted={() => { setSubmitting(false); onSubmitted(); }} />
+      )}
     </article>
   );
 }

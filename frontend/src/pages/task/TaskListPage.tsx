@@ -8,6 +8,7 @@ import {
   getTaskProgress,
   getTask,
   getTaskDeletionBlockers,
+  getTaskContext,
   getTasks,
   updateTask,
   type DeliverableInput,
@@ -26,6 +27,7 @@ import PageHeader from '../../components/PageHeader';
 import { BTN_AI, BTN_SUB, CARD, INPUT, MUTED } from '../../components/ui';
 import NavIcon from '../../layouts/NavIcon';
 import TaskProgressPanel from './TaskProgressPanel';
+import TaskCompleteDialog from './TaskCompleteDialog';
 
 export default function TaskListPage() {
   const { workspaceId } = useParams();
@@ -83,6 +85,9 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
   const [deletingTaskId, setDeletingTaskId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // "완료": 산출물이 있는 작업은 제출 창을 연다.
+  const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
+  const [completeLoading, setCompleteLoading] = useState<number | null>(null);
 
   // 다른 팀원이 팀 작업을 만들거나 고치거나 지우면 새로고침 없이 다시 불러온다.
   useWorkspaceEvents(workspaceId, (event) => {
@@ -276,6 +281,37 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * 진행 중인 작업 완료. 필수 산출물이 없으면 바로 완료로 바꾸고,
+   * 있으면 남은 산출물을 제출하는 창을 연다. (산출물을 모두 제출하면 자동으로 완료된다)
+   */
+  const handleComplete = async (taskId: number) => {
+    if (!workspaceId) return;
+    try {
+      setCompleteLoading(taskId);
+      setError(null);
+      const context = await getTaskContext(workspaceId, String(taskId));
+      if (context.deliverables.length > 0) {
+        setCompletingTaskId(taskId);
+        return;
+      }
+      const task = context.task;
+      if (!window.confirm(`'${task.title}' 팀 작업을 완료로 바꿀까요?`)) return;
+      await updateTask(workspaceId, taskId, {
+        title: task.title,
+        description: task.description?.trim() || undefined,
+        assigneeId: task.assigneeId,
+        dueDate: task.dueDate,
+        status: 'DONE',
+      });
+      setRevision((value) => value + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '팀 작업을 완료하지 못했습니다.');
+    } finally {
+      setCompleteLoading(null);
     }
   };
 
@@ -640,6 +676,17 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
                   )}
                 </span>
                 <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                  {task.status !== 'DONE' && (
+                    <button
+                      type="button"
+                      className="btn btn-small btn-primary"
+                      disabled={completeLoading === task.taskId}
+                      title="산출물이 없으면 바로 완료하고, 있으면 남은 산출물을 제출해요"
+                      onClick={() => void handleComplete(task.taskId)}
+                    >
+                      {completeLoading === task.taskId ? '확인 중' : '완료'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-small"
@@ -662,6 +709,11 @@ function TaskList({ workspaceId }: { workspaceId: string }) {
           )
         )}
       </div>
+
+      {completingTaskId !== null && (
+        <TaskCompleteDialog workspaceId={workspaceId} taskId={completingTaskId}
+          onClose={() => { setCompletingTaskId(null); setRevision((value) => value + 1); }} />
+      )}
 
       {/* 페이지네이션 */}
       {!loading && total > pageSize && (

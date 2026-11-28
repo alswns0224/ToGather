@@ -94,6 +94,18 @@ public class TaskResourceService {
         return TaskDeliverableSummary.from(deliverable);
     }
 
+    /** 산출물 항목의 이름·허용 확장자 수정. 제출한 파일과 맞지 않는 확장자로는 바꿀 수 없다. */
+    @Transactional
+    public TaskDeliverableSummary updateDeliverable(Long workspaceId, Long userId, Long taskId, Long deliverableId,
+                                                    DeliverableInput input) {
+        Task task = lockTask(workspaceId, userId, taskId);
+        TaskDeliverable deliverable = findDeliverable(task, deliverableId);
+        if (!deliverable.update(input.name().strip(), input.ext())) {
+            throw new BusinessException(ErrorCode.DELIVERABLE_EXTENSION_MISMATCH);
+        }
+        return TaskDeliverableSummary.from(deliverable);
+    }
+
     @Transactional
     public void removeDeliverable(Long workspaceId, Long userId, Long taskId, Long deliverableId) {
         Task task = lockTask(workspaceId, userId, taskId);

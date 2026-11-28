@@ -1213,7 +1213,7 @@ hr {
 
 .task-row {
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(0, 0.8fr) minmax(140px, 1fr) 110px 120px 120px;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 0.8fr) minmax(140px, 1fr) 110px 120px 176px;
   align-items: center;
   gap: 12px;
   padding: 12px 20px;

@@ -65,6 +65,22 @@ public class TaskDeliverable extends BaseTimeEntity {
             && fileName.substring(dot + 1).equalsIgnoreCase(expected);
     }
 
+    /**
+     * 이름·허용 확장자를 고친다. 이미 제출한 파일이 새 확장자와 맞지 않으면 바꿀 수 없다. (먼저 제출을 해제해야 한다)
+     *
+     * @return 바꿀 수 있으면 true
+     */
+    public boolean update(String name, String ext) {
+        String previous = this.ext;
+        this.ext = ext;
+        if (isSubmitted && !acceptsExtension(fileName)) {
+            this.ext = previous;
+            return false;
+        }
+        this.name = name;
+        return true;
+    }
+
     public void submit(String fileId, String fileName, String link, Long by) {
         this.fileId = fileId;
         this.fileName = fileName;

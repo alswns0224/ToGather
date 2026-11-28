@@ -246,6 +246,30 @@ class DeliverableManagementTest extends IntegrationTestSupport {
         assertState(taskId, TaskStatus.IN_PROGRESS, 0, 1);
     }
 
+    @Test
+    void 항목의_이름과_확장자를_고치고_제출한_파일과_맞지_않는_확장자로는_바꿀_수_없다() throws Exception {
+        Long taskId = createTask(TaskStatus.IN_PROGRESS);
+        Long deliverableId = add(taskId, "초안", "");
+
+        mvc.perform(patch(path(taskId) + "/deliverables/" + deliverableId).session(session)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"  최종 자료 \",\"ext\":\"pdf\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.name").value("최종 자료"))
+            .andExpect(jsonPath("$.data.ext").value("pdf"));
+
+        Long otherId = add(taskId, "발표", "");
+        resources.submit(workspaceId, userId, taskId, otherId, driveFile());
+        String fileName = jdbc.queryForObject("SELECT file_name FROM task_deliverable WHERE deliverable_id = ?",
+            String.class, otherId);
+        String wrongExt = fileName != null && fileName.endsWith(".hwp") ? "pdf" : "hwp";
+        mvc.perform(patch(path(taskId) + "/deliverables/" + otherId).session(session)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"발표 자료\",\"ext\":\"" + wrongExt + "\"}"))
+            .andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT name FROM task_deliverable WHERE deliverable_id = ?",
+            String.class, otherId)).isEqualTo("발표");
+        assertState(taskId, TaskStatus.IN_PROGRESS, 50, 2);
+    }
+
     private Long createTask(TaskStatus status) {
         return taskService.createTask(workspaceId, new TaskCommand("항목 관리 Task", null, userId, null,
             status, List.of(), null));

@@ -222,6 +222,9 @@ export const unlinkTaskReference = (workspaceId: string, taskId: string, content
 export const addTaskDeliverable = (workspaceId: string, taskId: string, body: DeliverableInput) =>
   http.post<TaskDeliverable>(`${taskPath(workspaceId, taskId)}/deliverables`, body);
 
+export const updateTaskDeliverable = (workspaceId: string, taskId: string, deliverableId: number, body: DeliverableInput) =>
+  http.patch<TaskDeliverable>(`${taskPath(workspaceId, taskId)}/deliverables/${deliverableId}`, body);
+
 export const removeTaskDeliverable = (workspaceId: string, taskId: string, deliverableId: number) =>
   http.delete<void>(`${taskPath(workspaceId, taskId)}/deliverables/${deliverableId}`);
 

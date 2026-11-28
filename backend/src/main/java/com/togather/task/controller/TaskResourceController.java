@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -60,6 +61,14 @@ public class TaskResourceController {
         @Valid @RequestBody DeliverableInput input
     ) {
         return ApiResponse.ok(resources.addDeliverable(workspaceId, userId, taskId, input));
+    }
+
+    @PatchMapping("/deliverables/{deliverableId}")
+    public ApiResponse<TaskDeliverableSummary> updateDeliverable(
+        @LoginUser Long userId, @PathVariable Long workspaceId, @PathVariable Long taskId,
+        @PathVariable Long deliverableId, @Valid @RequestBody DeliverableInput input
+    ) {
+        return ApiResponse.ok(resources.updateDeliverable(workspaceId, userId, taskId, deliverableId, input));
     }
 
     @DeleteMapping("/deliverables/{deliverableId}")
