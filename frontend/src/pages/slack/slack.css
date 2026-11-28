@@ -360,6 +360,77 @@
   font-size: 13px;
 }
 
+.slack-composer-box {
+  position: relative;
+}
+
+.slack-composer-box.dragging {
+  border-color: var(--primary);
+  border-style: dashed;
+  background: var(--primary-soft);
+}
+
+.slack-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--primary-soft) 92%, transparent);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* 첨부 파일: 전송할 때 Drive에 올라간다 */
+.slack-attachment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.slack-attachment-file {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.slack-attachment-folder,
+.slack-attachment-remove {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.slack-attachment-folder:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.slack-attachment-remove {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.slack-composer-box.compact:has(.slack-attachment) {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .slack-composer-bar {
   display: flex;
   align-items: center;

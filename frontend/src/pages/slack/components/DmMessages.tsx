@@ -1,4 +1,5 @@
 // 내 Slack 1:1 DM 대화 보기·답장 (UI-04). 저장하지 않고 열 때마다 Slack에서 바로 읽는다.
+import SlackText from './SlackText';
 import { useEffect, useState } from 'react';
 import { deleteDm, getDmMessages, sendDm, updateDm, type SlackDmMessage } from '../api';
 import { useAsync } from '../../../hooks/useAsync';
@@ -116,7 +117,7 @@ function DmMessageItem({ workspaceId, channelId, message, onChanged }: {
               setEditing(false);
               onChanged();
             }} onCancel={() => setEditing(false)} />
-        ) : <p className="pre slack-text">{message.text}</p>}
+        ) : <p className="pre slack-text"><SlackText text={message.text} /></p>}
         {confirmingDelete && <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3" role="group" aria-label="DM 삭제 확인">
           <p className="m-0 text-xs">이 DM을 삭제할까요? Slack에서도 삭제됩니다.</p>
           <div className="mt-2 flex justify-end gap-2">

@@ -386,6 +386,7 @@ function ChannelMessages({
 
       <div className="slack-col-foot">
         <Composer
+          attachToDrive
           placeholder={`#${channelName}에 메시지 보내기`}
           onSubmit={async (text) => {
             await createMessage(workspaceId, channelId, text);

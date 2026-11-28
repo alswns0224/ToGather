@@ -1,3 +1,4 @@
+import SlackText from './SlackText';
 import { useState, type MouseEvent } from 'react';
 import type { SlackMessageResponse } from '../api';
 import { formatDateTime, formatTime } from '../../../utils/date';
@@ -119,7 +120,7 @@ export default function MessageItem({
             />
           </div>
         ) : (
-          <p className={`pre slack-text${message.isOriginDeleted ? ' muted' : ''}`}>{message.text}</p>
+          <p className={`pre slack-text${message.isOriginDeleted ? ' muted' : ''}`}><SlackText text={message.text} /></p>
         )}
 
         {message.attachments.map((a, i) => {

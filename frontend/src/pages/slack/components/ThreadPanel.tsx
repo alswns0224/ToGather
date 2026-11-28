@@ -137,6 +137,7 @@ export default function ThreadPanel({
         <div className="slack-col-foot">
           <Composer
             compact
+            attachToDrive
             placeholder="스레드에 답글 남기기"
             onSubmit={async (text) => {
               await createReply(workspaceId, channelId, ts, text);
