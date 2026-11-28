@@ -1,5 +1,6 @@
 package com.togather.assistant.service;
 
+import com.togather.analysis.service.AnalysisService;
 import com.togather.analysis.service.TaskGateway;
 import com.togather.assistant.domain.PersonalTask;
 import com.togather.assistant.domain.Suggestion;
@@ -64,8 +65,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class SuggestionService {
 
     static final int LOOKBACK_DAYS = 14;
-    /** Gemini 한 번에 보내는 최대 메시지 수 */
+    /** 한 번의 탐지에서 살펴보는 최대 메시지 수 (남은 메시지는 다음 탐지에서 본다) */
     static final int MAX_MESSAGES = 60;
+    /** Gemini 한 번 호출에 넣는 메시지 수 (묶음끼리는 동시에 보낸다) */
+    static final int BATCH_SIZE = 20;
+    private static final java.util.concurrent.ExecutorService AI_EXECUTOR =
+            java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+    /** 내가 참여한 스레드의 대화를 함께 볼 때 한 번에 보는 최대 스레드 수 */
+    static final int MAX_THREADS = 30;
     private static final int MAX_MESSAGE_LENGTH = 800;
     private static final int EXCERPT_LENGTH = 120;
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd(E) HH:mm", java.util.Locale.KOREAN);
@@ -82,6 +89,8 @@ public class SuggestionService {
     private final PromptTemplates promptTemplates;
     private final UserService userService;
     private final com.togather.meeting.repository.MeetingRepository meetingRepository;
+    private final AnalysisService analysisService;
+    private final com.togather.integration.service.IntegrationService integrationService;
 
     /**
      * 워크스페이스·사용자별로 이미 분석한 콘텐츠와 수정 시각을 기록한다.
@@ -110,6 +119,63 @@ public class SuggestionService {
         if (messages.isEmpty()) {
             return new DetectResultResponse(0, List.of(), direct.warnings());
         }
+        // 한 번에 많이 보내면 Gemini 응답이 60초를 넘겨 실패한다. 스레드는 쪼개지 않고 BATCH_SIZE개 안팎으로 나눠 동시에 보낸다.
+        String userName = userService.getUser(userId).name();
+        List<List<ContentRef>> batches = batches(messages);
+        List<java.util.concurrent.CompletableFuture<List<Found>>> futures = batches.stream()
+                .map(batch -> java.util.concurrent.CompletableFuture.supplyAsync(() -> detectBatch(userName, batch),
+                        AI_EXECUTOR))
+                .toList();
+        Map<Long, LocalDateTime> revisions = scannedRevisions.computeIfAbsent(scanKey(workspaceId, userId),
+                ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+        List<Found> found = new ArrayList<>();
+        int scanned = 0;
+        for (int i = 0; i < batches.size(); i++) {
+            try {
+                found.addAll(futures.get(i).join());
+                batches.get(i).forEach(message -> revisions.put(message.getContentRefId(), revision(message)));
+                scanned += batches.get(i).size();
+            } catch (java.util.concurrent.CompletionException e) {
+                log.warn("후보 탐지 일부 실패: workspaceId={}, userId={}, batch={}/{}, messages={}", workspaceId, userId,
+                        i + 1, batches.size(), batches.get(i).size());
+            }
+        }
+        if (scanned == 0) {
+            throw new BusinessException(ErrorCode.AI_CALL_FAILED);
+        }
+        List<String> warnings = new ArrayList<>(direct.warnings());
+        if (scanned < messages.size()) {
+            warnings.add("AI 응답이 늦어 메시지 " + (messages.size() - scanned) + "개는 살펴보지 못했어요. 다시 찾으면 이어서 살펴봐요.");
+        }
+
+        List<Suggestion> candidates = new ArrayList<>();
+        for (Found f : found) {
+            AiCandidate c = f.candidate();
+            SuggestionType candidateType = parseType(c.type());
+            if (candidateType == null || c.title() == null || c.title().isBlank()) {
+                continue;
+            }
+            if (type != null && candidateType != type) {
+                continue;
+            }
+            candidates.add(new Suggestion(userId, candidateType, f.source().getContentRefId(),
+                    truncate(c.title().strip(), 200),
+                    candidateType == SuggestionType.SCHEDULE ? parseDateTime(c.datetime()) : null,
+                    candidateType == SuggestionType.TASK ? parseDate(c.dueDate()) : null));
+        }
+        List<Suggestion> saved = saveNew(userId,
+                excludeDuplicateCandidates(userId, excludeConfirmedMeetings(workspaceId, candidates)));
+        log.info("후보 탐지: workspaceId={}, userId={}, messages={}, batches={}, created={}", workspaceId, userId,
+                scanned, batches.size(), saved.size());
+        return new DetectResultResponse(scanned, toDtos(saved), warnings);
+    }
+
+    /** AI가 찾은 후보와 근거 메시지 */
+    private record Found(AiCandidate candidate, ContentRef source) {
+    }
+
+    /** 메시지 묶음 하나를 Gemini에 보내 후보를 찾는다. 근거 번호(s1, s2 …)는 묶음 안에서 매긴다. */
+    private List<Found> detectBatch(String userName, List<ContentRef> messages) {
         Map<String, ContentRef> bySource = new LinkedHashMap<>();
         StringBuilder lines = new StringBuilder();
         for (int i = 0; i < messages.size(); i++) {
@@ -122,40 +188,60 @@ public class SuggestionService {
                     .append(messageText(m)).append('\n');
         }
         String prompt = promptTemplates.render("assistant-candidates", Map.of(
-                "userName", userService.getUser(userId).name(),
+                "userName", userName,
                 "today", PromptTemplates.today(LocalDate.now(SlackApiClient.ZONE)),
                 "calendar", PromptTemplates.calendar(LocalDate.now(SlackApiClient.ZONE).minusDays(14), 35),
                 "messages", lines.toString()));
         AiResult result = geminiClient.generateJson(prompt, AiResult.class);
-        Map<Long, LocalDateTime> revisions = scannedRevisions.computeIfAbsent(scanKey(workspaceId, userId),
-                ignored -> new java.util.concurrent.ConcurrentHashMap<>());
-        messages.forEach(message -> revisions.put(message.getContentRefId(), revision(message)));
-
-        List<Suggestion> candidates = new ArrayList<>();
+        List<Found> found = new ArrayList<>();
         for (AiCandidate c : result.candidates() == null ? List.<AiCandidate>of() : result.candidates()) {
-            SuggestionType candidateType = parseType(c.type());
             ContentRef source = c.source() == null ? null : bySource.get(c.source().strip());
-            if (candidateType == null || source == null || c.title() == null || c.title().isBlank()) {
-                continue;
+            if (source != null) {
+                found.add(new Found(c, source));
             }
-            if (type != null && candidateType != type) {
-                continue;
-            }
-            candidates.add(new Suggestion(userId, candidateType, source.getContentRefId(), truncate(c.title().strip(), 200),
-                    candidateType == SuggestionType.SCHEDULE ? parseDateTime(c.datetime()) : null,
-                    candidateType == SuggestionType.TASK ? parseDate(c.dueDate()) : null));
         }
-        List<Suggestion> saved = saveNew(userId,
-                excludeDuplicateCandidates(userId, excludeConfirmedMeetings(workspaceId, candidates)));
-        log.info("후보 탐지: workspaceId={}, userId={}, messages={}, created={}", workspaceId, userId,
-                messages.size(), saved.size());
-        return new DetectResultResponse(messages.size(), toDtos(saved), direct.warnings());
+        return found;
+    }
+
+    /**
+     * 같은 Slack 스레드의 메시지는 한 묶음에 넣어 대화 맥락을 지킨다. 묶음은 BATCH_SIZE개를 넘으면 닫는다.
+     * (스레드 하나가 BATCH_SIZE보다 길면 그 스레드만으로 한 묶음)
+     */
+    static List<List<ContentRef>> batches(List<ContentRef> messages) {
+        Map<String, List<ContentRef>> groups = new LinkedHashMap<>();
+        for (ContentRef m : messages) {
+            String key = m.getProvider() == Provider.SLACK && m.getOwnerUserId() == null
+                    ? "thread:" + threadRootId(m) : "single:" + m.getContentRefId();
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(m);
+        }
+        List<List<ContentRef>> batches = new ArrayList<>();
+        List<ContentRef> current = new ArrayList<>();
+        for (List<ContentRef> group : groups.values()) {
+            if (!current.isEmpty() && current.size() + group.size() > BATCH_SIZE) {
+                batches.add(current);
+                current = new ArrayList<>();
+            }
+            current.addAll(group);
+        }
+        if (!current.isEmpty()) {
+            batches.add(current);
+        }
+        return batches;
     }
 
     // ===================== 조회 =====================
 
+    /** 논의 정리에서 확정한 스레드나 내가 보낸 메일에서 나온 후보는 보여 주지 않는다. */
     public List<SuggestionDTO> getSuggestions(Long workspaceId, Long userId, SuggestionType type) {
-        return toDtos(suggestionRepository.findByOwnerInWorkspace(userId, workspaceId, SuggestionStatus.PENDING, type));
+        List<Suggestion> pending = suggestionRepository.findByOwnerInWorkspace(userId, workspaceId,
+                SuggestionStatus.PENDING, type);
+        List<ContentRef> sources = contentRefRepository.findAllById(pending.stream()
+                .map(Suggestion::getSourceContentRefId).filter(Objects::nonNull).distinct().toList());
+        Set<Long> hidden = new HashSet<>(coveredByConfirmedAnalysis(sources));
+        String myAddress = myGmailAddress(workspaceId, userId);
+        sources.stream().filter(source -> source.getProvider() == Provider.GMAIL && sentBy(source, myAddress))
+                .forEach(source -> hidden.add(source.getContentRefId()));
+        return toDtos(pending.stream().filter(s -> !hidden.contains(s.getSourceContentRefId())).toList());
     }
 
     public MyTodoListDTO getMyTodoList(Long workspaceId, Long userId) {
@@ -308,11 +394,18 @@ public class SuggestionService {
     private List<ContentRef> filterRelevantMessages(Long workspaceId, Long userId, List<ContentRef> directMessages) {
         syncGmail(workspaceId, userId);
         LocalDateTime after = LocalDateTime.now(SlackApiClient.ZONE).minusDays(LOOKBACK_DAYS);
-        List<ContentRef> all = new ArrayList<>(slackContentService.findMessagesByUser(workspaceId, userId));
+        List<ContentRef> mine = slackContentService.findMessagesByUser(workspaceId, userId);
+        List<ContentRef> all = new ArrayList<>(mine);
+        all.addAll(threadContext(workspaceId, mine, after));
+        Set<Long> covered = coveredByConfirmedAnalysis(all);
+        all.removeIf(m -> covered.contains(m.getContentRefId()));
         directMessages.stream().filter(message -> workspaceId.equals(message.getWorkspaceId())
                 && userId.equals(message.getOwnerUserId()) && message.getProvider() == Provider.SLACK).forEach(all::add);
-        all.addAll(contentRefRepository.findAllByWorkspaceIdAndOwnerUserIdAndProviderAndCreatedAtAfterOrderByCreatedAtDesc(
-                workspaceId, userId, Provider.GMAIL, after));
+        String myAddress = myGmailAddress(workspaceId, userId);
+        contentRefRepository.findAllByWorkspaceIdAndOwnerUserIdAndProviderAndCreatedAtAfterOrderByCreatedAtDesc(
+                        workspaceId, userId, Provider.GMAIL, after).stream()
+                .filter(mail -> !sentBy(mail, myAddress))
+                .forEach(all::add);
         Map<Long, LocalDateTime> scanned = scannedRevisions.computeIfAbsent(scanKey(workspaceId, userId),
                 ignored -> new java.util.concurrent.ConcurrentHashMap<>());
         scanned.keySet().retainAll(all.stream().map(ContentRef::getContentRefId).toList());
@@ -330,6 +423,69 @@ public class SuggestionService {
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(MAX_MESSAGES)
                 .toList();
+    }
+
+    /** 내 Gmail 연결의 메일 주소. 모르면 null (그때는 보낸 메일도 거르지 못한다) */
+    private String myGmailAddress(Long workspaceId, Long userId) {
+        try {
+            return integrationService.findOwnExternalAccountId(workspaceId, userId, Provider.GMAIL).orElse(null);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 내가 보낸 메일인지. (보낸편지함의 메일도 함께 수집되므로, 받은 메일에서만 후보를 찾으려고 거른다)
+     * 보낸 사람은 "이름 <주소>" 또는 "주소" 형식이다.
+     */
+    static boolean sentBy(ContentRef mail, String myAddress) {
+        if (myAddress == null || myAddress.isBlank() || mail.getAuthorName() == null) {
+            return false;
+        }
+        String from = mail.getAuthorName().toLowerCase();
+        String me = myAddress.strip().toLowerCase();
+        return from.equals(me) || from.contains("<" + me + ">");
+    }
+
+    /**
+     * 내가 쓰거나 멘션된 채널 메시지가 속한 스레드의 나머지 대화. (예: 내가 참여한 스레드에서 팀원이 "화요일 3시에 리허설 하자")
+     * 최근 스레드부터 MAX_THREADS개까지만 본다.
+     */
+    private List<ContentRef> threadContext(Long workspaceId, List<ContentRef> mine, LocalDateTime after) {
+        List<Long> roots = mine.stream().map(SuggestionService::threadRootId).distinct().limit(MAX_THREADS).toList();
+        List<ContentRef> context = new ArrayList<>(contentRefRepository.findAllById(roots));
+        roots.forEach(root -> context.addAll(contentRefRepository.findAllByParentRefIdOrderByCreatedAtAsc(root)));
+        return context.stream()
+                .filter(m -> m.getProvider() == Provider.SLACK && m.getOwnerUserId() == null
+                        && workspaceId.equals(m.getWorkspaceId()) && !m.isOriginDeleted()
+                        && m.getCreatedAt() != null && m.getCreatedAt().isAfter(after))
+                .toList();
+    }
+
+    /** Slack 채널 메시지면 스레드 루트, 아니면 자기 자신 */
+    private static Long threadRootId(ContentRef message) {
+        return message.getParentRefId() != null ? message.getParentRefId() : message.getContentRefId();
+    }
+
+    /**
+     * 논의 정리에서 확정한 분석이 이미 다룬 Slack 채널 메시지 ID. (분석이 다룬 마지막 메시지 시각까지)
+     * 확정 뒤에 새로 달린 메시지는 다시 후보가 될 수 있다.
+     */
+    private Set<Long> coveredByConfirmedAnalysis(Collection<ContentRef> messages) {
+        List<ContentRef> channel = messages.stream()
+                .filter(m -> m.getProvider() == Provider.SLACK && m.getOwnerUserId() == null).toList();
+        if (channel.isEmpty()) {
+            return Set.of();
+        }
+        Map<Long, LocalDateTime> coverage = analysisService.getConfirmedCoverage(
+                channel.stream().map(SuggestionService::threadRootId).distinct().toList());
+        return channel.stream()
+                .filter(m -> {
+                    LocalDateTime until = coverage.get(threadRootId(m));
+                    return until != null && (m.getCreatedAt() == null || !m.getCreatedAt().isAfter(until));
+                })
+                .map(ContentRef::getContentRefId)
+                .collect(Collectors.toSet());
     }
 
     /**

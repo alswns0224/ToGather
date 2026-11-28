@@ -15,6 +15,9 @@ public interface DiscussionAnalysisRepository extends JpaRepository<DiscussionAn
 
     List<DiscussionAnalysis> findAllByContentRefIdOrderByAnalysisIdAsc(Long contentRefId);
 
+    /** 여러 스레드의 특정 상태 분석 (AI 업무 보조가 확정된 스레드를 거를 때) */
+    List<DiscussionAnalysis> findAllByContentRefIdInAndStatus(Collection<Long> contentRefIds, AnalysisStatus status);
+
     /** 결정사항 정리로 만든 Notion 문서 구분 (UI-05) */
     List<DiscussionAnalysis> findAllByNotionPageRefIdIn(Collection<Long> notionPageRefIds);
 

@@ -3,6 +3,7 @@ package com.togather.assistant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -15,6 +16,7 @@ import com.togather.assistant.dto.SuggestionDTO;
 import com.togather.assistant.dto.SuggestionUpdateRequest;
 import com.togather.assistant.service.SuggestionService.AiCandidate;
 import com.togather.assistant.service.SuggestionService.AiResult;
+import com.togather.analysis.service.AnalysisService;
 import com.togather.common.ai.GeminiClient;
 import com.togather.common.enums.ContentType;
 import com.togather.common.enums.Provider;
@@ -33,6 +35,7 @@ import com.togather.support.IntegrationTestSupport;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +54,8 @@ class SuggestionServiceTest extends IntegrationTestSupport {
     private CalendarContentService calendarContentService;
     @MockitoBean
     private GmailContentService gmailContentService;
+    @MockitoBean
+    private AnalysisService analysisService;
 
     @Autowired
     private SuggestionService suggestionService;
@@ -217,6 +222,84 @@ class SuggestionServiceTest extends IntegrationTestSupport {
                 SuggestionService.normalize("발표자료작성!"))).isTrue();
         assertThat(SuggestionService.isSimilar(SuggestionService.normalize("회의"),
                 SuggestionService.normalize("회의록 공유"))).isFalse();
+    }
+
+    @Test
+    void 내가_참여한_스레드의_다른_사람_메시지도_함께_본다() {
+        ContentRefDTO root = save(Provider.SLACK, ContentType.MESSAGE, "T:root", null, "U2", "민준",
+                "다음 주 화요일 3시에 리허설 하자", now.minusMinutes(30));
+        saveReply("T:r1", root.contentRefId(), "U1", "철준", "좋아요", now.minusMinutes(20));
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of()));
+
+        DetectResultResponse result = suggestionService.detectCandidates(workspaceId, userId, null);
+
+        // 내 멘션, 내 메시지, 내 메일 + 내가 답한 스레드의 루트(민준)와 내 답글
+        assertThat(result.scannedMessages()).isEqualTo(5);
+        verify(geminiClient).generateJson(org.mockito.ArgumentMatchers.contains("리허설 하자"), eq(AiResult.class));
+    }
+
+    @Test
+    void 논의_정리에서_확정한_스레드의_후보는_숨기고_다시_찾지_않는다() {
+        ContentRefDTO root = save(Provider.SLACK, ContentType.MESSAGE, "T:root", null, "U1", "철준",
+                "시연 준비는 내가 맡을게", now.minusMinutes(30));
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of(
+                new AiCandidate("TASK", "시연 준비", "s1", null, null))));
+        DetectResultResponse first = suggestionService.detectCandidates(workspaceId, userId, null);
+        assertThat(first.created()).extracting(SuggestionDTO::title).containsExactly("시연 준비");
+
+        // 확정 전에 달린 답글(아직 살펴보지 않음)과, 그 스레드의 논의 정리 확정
+        saveReply("T:r0", root.contentRefId(), "U2", "민준", "성능 측정은 금요일까지 할게", now.minusMinutes(25));
+        when(analysisService.getConfirmedCoverage(anyCollection()))
+                .thenReturn(Map.of(root.contentRefId(), now.minusMinutes(10)));
+
+        assertThat(suggestionService.getSuggestions(workspaceId, userId, null)).isEmpty();
+
+        saveReply("T:r1", root.contentRefId(), "U1", "철준", "발표 대본도 내가 쓸게", now.minusMinutes(5));
+        org.mockito.Mockito.clearInvocations(geminiClient);
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of()));
+        DetectResultResponse second = suggestionService.detectCandidates(workspaceId, userId, null);
+
+        // 확정한 범위의 답글은 보내지 않고, 확정 뒤에 달린 답글만 본다.
+        assertThat(second.scannedMessages()).isEqualTo(1);
+        verify(geminiClient).generateJson(org.mockito.ArgumentMatchers.contains("발표 대본도 내가 쓸게"), eq(AiResult.class));
+    }
+
+    @Test
+    void 메시지가_많으면_나눠서_AI에_보내고_일부가_실패해도_나머지_후보는_만든다() {
+        for (int i = 0; i < 25; i++) {
+            save(Provider.SLACK, ContentType.MESSAGE, "many:" + i, null, "U1", "철준", "메모 " + i, now.minusMinutes(60 - i));
+        }
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class)))
+                .thenReturn(new AiResult(List.of(new AiCandidate("TASK", "보고서 정리", "s1", null, null))))
+                .thenThrow(new BusinessException(ErrorCode.AI_CALL_FAILED));
+
+        DetectResultResponse result = suggestionService.detectCandidates(workspaceId, userId, null);
+
+        // 28개(내 멘션·메시지·메일 3 + 25) → 20개, 8개 두 묶음. 하나만 성공
+        verify(geminiClient, org.mockito.Mockito.times(2)).generateJson(anyString(), eq(AiResult.class));
+        assertThat(result.created()).extracting(SuggestionDTO::title).containsExactly("보고서 정리");
+        assertThat(result.scannedMessages()).isLessThan(28);
+        assertThat(result.warnings()).anyMatch(w -> w.contains("살펴보지 못했어요"));
+    }
+
+    @Test
+    void 내가_보낸_메일에서는_후보를_찾지_않는다() {
+        when(integrationService.findOwnExternalAccountId(workspaceId, userId, Provider.GMAIL))
+                .thenReturn(Optional.of("CJ@test.com"));
+        save(Provider.GMAIL, ContentType.MAIL, "sent-1", userId, null, "\"철준\" <cj@test.com>",
+                "리허설은 화요일 3시입니다", now.minusHours(1));
+        when(geminiClient.generateJson(anyString(), eq(AiResult.class))).thenReturn(new AiResult(List.of()));
+
+        DetectResultResponse result = suggestionService.detectCandidates(workspaceId, userId, null);
+
+        assertThat(result.scannedMessages()).isEqualTo(3); // 내 멘션, 내 메시지, 받은 메일만
+        verify(geminiClient, never()).generateJson(org.mockito.ArgumentMatchers.contains("리허설은 화요일"), eq(AiResult.class));
+    }
+
+    private ContentRefDTO saveReply(String originId, Long parentRefId, String author, String authorName, String text,
+                                    LocalDateTime at) {
+        return contentRefService.upsert(new ContentRefUpsert(workspaceId, null, Provider.SLACK, ContentType.MESSAGE,
+                originId + ":" + workspaceId, "C1", parentRefId, "#general", text, null, at, at, author, authorName));
     }
 
     private ContentRefDTO save(Provider provider, ContentType type, String originId, Long owner, String author,

@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -209,6 +210,24 @@ public class AnalysisService {
                     effectiveStatus(a), a.getRequestedBy() == null, itemCounts.getOrDefault(a.getAnalysisId(), 0L),
                     a.getCreatedAt());
         }).toList();
+    }
+
+    /**
+     * AI 업무 보조용. 스레드(루트 메시지 ID)별로 확정한 분석이 다룬 마지막 메시지 시각.
+     * 이 시각까지의 메시지는 논의 정리에서 이미 결정·팀 작업·일정으로 정리했으므로 후보로 다시 내지 않는다.
+     * 확정한 분석이 없는 스레드는 넣지 않는다.
+     */
+    public Map<Long, LocalDateTime> getConfirmedCoverage(Collection<Long> threadRefIds) {
+        if (threadRefIds == null || threadRefIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, LocalDateTime> coverage = new HashMap<>();
+        for (DiscussionAnalysis analysis : analysisRepository.findAllByContentRefIdInAndStatus(threadRefIds,
+                AnalysisStatus.CONFIRMED)) {
+            LocalDateTime until = analysis.getAnalyzedUntil() != null ? analysis.getAnalyzedUntil() : LocalDateTime.MAX;
+            coverage.merge(analysis.getContentRefId(), until, (a, b) -> a.isAfter(b) ? a : b);
+        }
+        return coverage;
     }
 
     /** 스레드의 최신 분석. 없으면 빈 값 (UI-04에서 "논의 정리" 진입 시 기존 결과 확인) */

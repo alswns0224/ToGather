@@ -172,7 +172,10 @@ public class GeminiClient {
                 }
                 failure = "status=" + status;
             } catch (RestClientException e) {
-                failure = e.getClass().getSimpleName();
+                // 예: ResourceAccessException(SocketTimeoutException) = 응답이 attemptTimeout보다 늦음
+                Throwable cause = e.getMostSpecificCause();
+                failure = e.getClass().getSimpleName() + (cause != e ? "(" + cause.getClass().getSimpleName() + ")" : "")
+                        + ", elapsedMs=" + (System.currentTimeMillis() - (deadline - properties.timeoutSeconds() * 1000L));
             }
             long backoff = retryBackoffMillis * (attempt + 1);
             boolean timeLeft = System.currentTimeMillis() + backoff + attemptMillis <= deadline;
