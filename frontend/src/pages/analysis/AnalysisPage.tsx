@@ -294,12 +294,10 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
 
         <div className="analysis-side">
           {data && <EvidencePanel workspaceId={workspaceId} data={data} />}
-          {data?.status === 'CONFIRMED' ? (
+          {data?.status === 'CONFIRMED' && (
             <div className="card analysis-side-card">
               <OutputPanel workspaceId={workspaceId} analysis={data} onChanged={analysis.reload} />
             </div>
-          ) : (
-            data && <NextActions data={data} />
           )}
         </div>
       </div>
@@ -343,29 +341,6 @@ function EvidencePanel({ workspaceId, data }: { workspaceId: string; data: Analy
           </a>
         )}
       </div>
-    </div>
-  );
-}
-
-/** 확정 전: 확정하면 할 수 있는 작업 안내 */
-function NextActions({ data }: { data: AnalysisResultDTO }) {
-  const count = (t: ItemType) => data.items.filter((i) => i.itemType === t).length;
-  return (
-    <div className="card analysis-side-card">
-      <strong className="text-sm">확정 후 가능한 작업</strong>
-      <div className="analysis-next">
-        <span>📄 Notion 결정사항 문서 작성</span>
-        <span>›</span>
-      </div>
-      <div className="analysis-next">
-        <span>☑ 후속 작업 {count('FOLLOW_UP')}개를 팀 작업으로 생성</span>
-        <span>›</span>
-      </div>
-      <div className="analysis-next">
-        <span>📅 회의 제안 {count('MEETING_PROPOSAL')}개를 일정으로 등록</span>
-        <span>›</span>
-      </div>
-      <div className="text-[11px] text-[var(--muted)]">가운데에서 "검토 완료 · 확정"을 누르면 사용할 수 있어요.</div>
     </div>
   );
 }
