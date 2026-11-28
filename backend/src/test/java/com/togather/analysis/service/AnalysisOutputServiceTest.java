@@ -3,8 +3,11 @@ package com.togather.analysis.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.togather.analysis.dto.AnalysisItemResponse;
@@ -13,15 +16,18 @@ import com.togather.analysis.dto.DocumentDraftDTO;
 import com.togather.analysis.dto.FollowUpTaskRequest;
 import com.togather.analysis.dto.MeetingDraftDTO;
 import com.togather.analysis.dto.NotionOutputRequest;
+import com.togather.analysis.dto.OutputResultResponse;
 import com.togather.analysis.service.DiscussionAnalyzer.AiItem;
 import com.togather.analysis.service.DiscussionAnalyzer.AiResult;
 import com.togather.common.ai.GeminiClient;
 import com.togather.common.enums.ContentType;
 import com.togather.common.enums.ItemType;
+import com.togather.common.enums.MeetingStatus;
 import com.togather.common.enums.OutputStatus;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
+import com.togather.content.calendar.dto.CalendarEventResponse;
 import com.togather.content.calendar.service.CalendarContentService;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.notion.service.NotionContentService;
@@ -30,6 +36,8 @@ import com.togather.content.service.ContentRefService.ContentRefUpsert;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.content.slack.client.SlackApiClient.SlackUser;
 import com.togather.integration.service.IntegrationService;
+import com.togather.meeting.dto.MeetingDetailResponse;
+import com.togather.meeting.service.MeetingService;
 import com.togather.support.IntegrationTestSupport;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -61,6 +69,8 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
     private ContentRefService contentRefService;
     @Autowired
     private TaskGateway taskGateway;
+    @Autowired
+    private MeetingService meetingService;
 
     private Long userId;
     private Long memberId;
@@ -150,7 +160,7 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 회의_제안은_스레드_참여자로_초안을_만들고_팀_캘린더에_등록한다() {
+    void 회의_제안은_스레드_참여자로_초안을_만들고_그_시간으로_확정된_회의를_만든다() {
         analysisService.confirmAnalysis(workspaceId, analysis.analysisId());
         AnalysisItemResponse meeting = item(ItemType.MEETING_PROPOSAL);
 
@@ -158,14 +168,38 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
         assertThat(draft.startAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 15, 0));
         assertThat(draft.participantIds()).containsExactlyInAnyOrder(userId, memberId);
 
-        when(calendarContentService.createContent(eq(workspaceId), eq(userId), any())).thenReturn(
-                new ContentRefDTO(77L, Provider.GOOGLE_CALENDAR, ContentType.EVENT, "e1", draft.title(), null,
-                        "https://calendar/e1", null, null, 0, false));
-        outputService.registerMeetingSchedule(workspaceId, userId, meeting.itemId(), draft);
+        Long eventRefId = contentRefService.upsert(new ContentRefUpsert(workspaceId, null, Provider.GOOGLE_CALENDAR,
+                ContentType.EVENT, "event-1:" + workspaceId, "team-cal", null, "리허설", null, "https://calendar/e1",
+                LocalDateTime.now())).contentRefId();
+        when(calendarContentService.createMeetingEvent(eq(workspaceId), eq(userId), anyString(), any(), any(), anyList(),
+                any())).thenAnswer(inv -> new CalendarEventResponse(eventRefId, inv.getArgument(2), inv.getArgument(3),
+                inv.getArgument(4), false, null, List.of(), "https://calendar/e1", "https://meet/abc", null, false));
+        OutputResultResponse result = outputService.registerMeetingSchedule(workspaceId, userId, meeting.itemId(), draft);
 
         AnalysisItemResponse done = item(ItemType.MEETING_PROPOSAL);
         assertThat(done.outputStatus()).isEqualTo(OutputStatus.SUCCESS);
-        assertThat(done.outputTargetId()).isEqualTo(77L);
+        assertThat(done.outputTargetId()).isEqualTo(result.targetId());
+        MeetingDetailResponse created = meetingService.getMeeting(workspaceId, result.targetId(), userId);
+        assertThat(created.status()).isEqualTo(MeetingStatus.CONFIRMED);
+        assertThat(created.startAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 15, 0));
+        assertThat(created.durationMinutes()).isEqualTo(60);
+        assertThat(created.calendarRefId()).isEqualTo(eventRefId);
+        assertThat(created.meetLink()).isEqualTo("https://meet/abc");
+    }
+
+    @Test
+    void 일시가_없는_회의_제안은_일정_조율_중인_회의로_만든다() {
+        analysisService.confirmAnalysis(workspaceId, analysis.analysisId());
+        AnalysisItemResponse meeting = item(ItemType.MEETING_PROPOSAL);
+
+        OutputResultResponse result = outputService.registerMeetingSchedule(workspaceId, userId, meeting.itemId(),
+                new MeetingDraftDTO("다음 주 리허설", null, null, List.of(userId, memberId), null));
+
+        MeetingDetailResponse created = meetingService.getMeeting(workspaceId, result.targetId(), userId);
+        assertThat(created.status()).isEqualTo(MeetingStatus.SCHEDULING);
+        assertThat(created.title()).isEqualTo("다음 주 리허설");
+        assertThat(created.candidateStartAt().toLocalTime()).isEqualTo(java.time.LocalTime.of(9, 0));
+        verify(calendarContentService, never()).createMeetingEvent(any(), any(), any(), any(), any(), any(), any());
     }
 
     private AnalysisItemResponse item(ItemType type) {

@@ -208,14 +208,21 @@ class FinalDemoScenarioTest extends IntegrationTestSupport {
         Long demoTaskId = outputService.createFollowUpTask(workspaceId, demo.itemId(),
                 new FollowUpTaskRequest("시연 준비", null, cheoljun, FRIDAY)).targetId();
 
-        // 회의 제안 → 팀 캘린더 일정
+        // 회의 제안 → 확정된 회의 (팀 캘린더 일정·Meet 링크)
         AnalysisItemResponse proposal = analysis.items().stream()
                 .filter(i -> i.itemType() == ItemType.MEETING_PROPOSAL).findFirst().orElseThrow();
         MeetingDraftDTO meetingDraft = outputService.previewMeetingSchedule(workspaceId, cheoljun, proposal.itemId());
         assertThat(meetingDraft.startAt()).as("'다음 주 화요일 오후 3시'").isEqualTo(NEXT_TUESDAY.atTime(15, 0));
-        when(calendar.createContent(eq(workspaceId), eq(cheoljun), any())).thenReturn(calendarRef("rehearsal-event"));
+        when(calendar.createMeetingEvent(eq(workspaceId), eq(cheoljun), anyString(), any(), any(), anyList(), any()))
+                .thenAnswer(inv -> new CalendarEventResponse(contents.upsert(calendarUpsert("rehearsal-event")).contentRefId(),
+                        inv.getArgument(2), inv.getArgument(3), inv.getArgument(4), false, null, List.of(),
+                        "https://calendar.google.com/e/0", "https://meet.google.com/rehearsal", null, false));
         OutputResultResponse event = outputService.registerMeetingSchedule(workspaceId, cheoljun, proposal.itemId(), meetingDraft);
         assertThat(event.status()).isEqualTo(OutputStatus.SUCCESS);
+        MeetingDetailResponse rehearsal = meetingService.getMeeting(workspaceId, event.targetId(), cheoljun);
+        assertThat(rehearsal.status()).as("회의 메뉴에 확정된 회의로").isEqualTo(MeetingStatus.CONFIRMED);
+        assertThat(rehearsal.startAt()).isEqualTo(NEXT_TUESDAY.atTime(15, 0));
+        assertThat(rehearsal.meetLink()).isNotBlank();
 
         analysis = analysisService.getAnalysis(workspaceId, analysis.analysisId());
         assertThat(analysis.notionOutputStatus()).as("한 번의 확정으로 문서가 생성됐다").isEqualTo(OutputStatus.SUCCESS);
@@ -247,18 +254,20 @@ class FinalDemoScenarioTest extends IntegrationTestSupport {
                 .satisfies(d -> assertThat(d.submitted()).isTrue());
 
         // ===== 장면 6. 회의 추천 (UC-10-01 · 04~09, 07-01) =====
-        LocalDateTime from = NEXT_TUESDAY.atTime(14, 0);
+        // 화요일 15시는 회의 제안으로 만든 리허설 회의가 있으므로 수요일로 잡는다.
+        final LocalDate NEXT_WEDNESDAY = NEXT_TUESDAY.plusDays(1);
+        LocalDateTime from = NEXT_WEDNESDAY.atTime(14, 0);
         MeetingDetailResponse meeting = meetingService.createMeeting(workspaceId, cheoljun, new MeetingCreateRequest(
-                "질의응답 대비 문서 담당 정하기", 60, from, NEXT_TUESDAY.atTime(18, 0),
+                "질의응답 대비 문서 담당 정하기", 60, from, NEXT_WEDNESDAY.atTime(18, 0),
                 List.of(cheoljun, minjun, chanseo), "온라인", List.of(demoTaskId)));
         assertThat(meeting.agendas()).as("안건으로 Task 선택").hasSize(1);
 
         // 민준은 캘린더에 16시 일정이 있다 → 자동 불가능
         when(calendar.isCalendarConnected(workspaceId, minjun)).thenReturn(true);
         when(calendar.getBusyTimes(eq(workspaceId), eq(minjun), any()))
-                .thenReturn(List.of(new DateRange(NEXT_TUESDAY.atTime(16, 0), NEXT_TUESDAY.atTime(17, 0))));
+                .thenReturn(List.of(new DateRange(NEXT_WEDNESDAY.atTime(16, 0), NEXT_WEDNESDAY.atTime(17, 0))));
         AvailabilityResponse mine = meetingService.getMyAvailability(workspaceId, meeting.meetingId(), minjun);
-        assertThat(mine.busySlots()).as("캘린더 일정이 있는 시간은 자동으로 불가능").contains(NEXT_TUESDAY.atTime(16, 0));
+        assertThat(mine.busySlots()).as("캘린더 일정이 있는 시간은 자동으로 불가능").contains(NEXT_WEDNESDAY.atTime(16, 0));
 
         save(meeting, cheoljun, slots(from, 4, SlotPreference.AVAILABLE));            // 14:00~16:00 가능
         save(meeting, minjun, slots(from, 4, SlotPreference.AVAILABLE));              // 14:00~16:00 가능
@@ -273,7 +282,7 @@ class FinalDemoScenarioTest extends IntegrationTestSupport {
 
         List<TimeCandidateResponse> candidates = meetingService.recommendTimes(workspaceId, meeting.meetingId(), cheoljun);
         TimeCandidateResponse best = candidates.getFirst();
-        assertThat(best.startAt()).as("3명 모두 가능하고 비선호가 없는 15시가 1순위").isEqualTo(NEXT_TUESDAY.atTime(15, 0));
+        assertThat(best.startAt()).as("3명 모두 가능하고 비선호가 없는 15시가 1순위").isEqualTo(NEXT_WEDNESDAY.atTime(15, 0));
         assertThat(best.availableCount()).isEqualTo(3);
         assertThat(best.nonPreferredCount()).isZero();
 

@@ -16,8 +16,6 @@ import com.togather.common.enums.OutputStatus;
 import com.togather.common.enums.Provider;
 import com.togather.common.exception.BusinessException;
 import com.togather.common.exception.ErrorCode;
-import com.togather.content.calendar.dto.CalendarEventRequest;
-import com.togather.content.calendar.service.CalendarContentService;
 import com.togather.content.domain.ContentRef;
 import com.togather.content.dto.ContentRefDTO;
 import com.togather.content.notion.dto.NotionPageRequest;
@@ -26,7 +24,12 @@ import com.togather.content.repository.ContentRefRepository;
 import com.togather.content.slack.service.SlackContentService;
 import com.togather.content.slack.service.SlackContentService.ThreadMessage;
 import com.togather.content.slack.service.SlackDirectory;
+import com.togather.content.slack.client.SlackApiClient;
+import com.togather.meeting.dto.MeetingCreateRequest;
+import com.togather.meeting.dto.MeetingDetailResponse;
+import com.togather.meeting.service.MeetingService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -63,12 +66,12 @@ public class AnalysisOutputService {
     private final AnalysisStore analysisStore;
     private final AnalysisItemRepository itemRepository;
     private final NotionContentService notionContentService;
-    private final CalendarContentService calendarContentService;
     private final TaskGateway taskGateway;
     private final ContentRefRepository contentRefRepository;
     private final SlackContentService slackContentService;
     private final SlackDirectory slackDirectory;
     private final TeamTokenResolver teamTokenResolver;
+    private final MeetingService meetingService;
 
     // ===================== Notion 문서 (SD-08-03) =====================
 
@@ -115,7 +118,7 @@ public class AnalysisOutputService {
         return new OutputResultResponse(OutputStatus.SUCCESS, taskId, null);
     }
 
-    // ===================== 회의 제안 → Calendar (SD-08-05, [결정 5]) =====================
+    // ===================== 회의 제안 → 회의 (SD-08-05) =====================
 
     /** 참여자를 정하지 않았으면 스레드 참여자(팀원으로 연결된 사람)로 채운다. */
     public MeetingDraftDTO previewMeetingSchedule(Long workspaceId, Long userId, Long itemId) {
@@ -132,17 +135,49 @@ public class AnalysisOutputService {
                 participants, description);
     }
 
-    /** 팀 캘린더에 일정을 등록한다. outputTargetId = Calendar 일정의 ContentRef ID */
+    /**
+     * 회의 제안으로 ToGather 회의를 만든다. (설계 C-04-03 registerMeetingSchedule: 회의를 생성·확정)
+     * <ul>
+     *   <li>일시가 있으면 그 시간으로 바로 확정한다. 회의 확정과 같이 팀 캘린더에 Google Meet 링크와 함께 등록된다.</li>
+     *   <li>일시가 없으면 "일정 조율 중" 회의로 만든다. 참여자가 가용 시간을 입력하고 추천 시간으로 확정하면 된다.
+     *       후보 기간은 내일 {@value #PROPOSAL_DAY_START}시 ~ {@value #PROPOSAL_PERIOD_DAYS}일 뒤 {@value #PROPOSAL_DAY_END}시.</li>
+     * </ul>
+     * outputTargetId = 회의 ID
+     */
     public OutputResultResponse registerMeetingSchedule(Long workspaceId, Long userId, Long itemId,
                                                         MeetingDraftDTO draft) {
         getOutputItem(workspaceId, itemId, ItemType.MEETING_PROPOSAL);
-        ContentRefDTO event = record(() -> calendarContentService.createContent(workspaceId, userId,
-                        new CalendarEventRequest(draft.title(), draft.startAt(), draft.endAt(),
-                                draft.participantIds() == null ? List.of() : draft.participantIds(),
-                                draft.description())),
+        Long meetingId = record(() -> createMeetingFromProposal(workspaceId, userId, draft),
                 failed -> analysisStore.recordItemOutput(itemId, null, OutputStatus.FAILED));
-        analysisStore.recordItemOutput(itemId, event.contentRefId(), OutputStatus.SUCCESS);
-        return new OutputResultResponse(OutputStatus.SUCCESS, event.contentRefId(), event.deepLink());
+        analysisStore.recordItemOutput(itemId, meetingId, OutputStatus.SUCCESS);
+        return new OutputResultResponse(OutputStatus.SUCCESS, meetingId, null);
+    }
+
+    static final int PROPOSAL_DAY_START = 9;
+    static final int PROPOSAL_DAY_END = 22;
+    static final int PROPOSAL_PERIOD_DAYS = 7;
+    static final int DEFAULT_MEETING_MINUTES = 60;
+    private static final int MIN_MEETING_MINUTES = 15;
+    private static final int MAX_MEETING_MINUTES = 480;
+
+    private Long createMeetingFromProposal(Long workspaceId, Long userId, MeetingDraftDTO draft) {
+        String title = draft.title().strip();
+        List<Long> participants = draft.participantIds() == null ? List.of() : draft.participantIds();
+        if (draft.startAt() != null) {
+            LocalDateTime start = draft.startAt();
+            long minutes = draft.endAt() != null && draft.endAt().isAfter(start)
+                    ? java.time.Duration.between(start, draft.endAt()).toMinutes() : DEFAULT_MEETING_MINUTES;
+            int duration = (int) Math.max(MIN_MEETING_MINUTES, Math.min(MAX_MEETING_MINUTES, minutes));
+            // 정한 시간 하나만 후보 기간으로 두고 바로 확정한다. (확정하면 캘린더 등록·Meet 링크 생성)
+            MeetingDetailResponse meeting = meetingService.createMeeting(workspaceId, userId, new MeetingCreateRequest(
+                    title, duration, start, start.plusMinutes(duration), participants, null, List.of()));
+            meetingService.confirmMeeting(workspaceId, meeting.meetingId(), userId, start, true);
+            return meeting.meetingId();
+        }
+        LocalDate tomorrow = LocalDate.now(SlackApiClient.ZONE).plusDays(1);
+        return meetingService.createMeeting(workspaceId, userId, new MeetingCreateRequest(title, DEFAULT_MEETING_MINUTES,
+                tomorrow.atTime(PROPOSAL_DAY_START, 0), tomorrow.plusDays(PROPOSAL_PERIOD_DAYS).atTime(PROPOSAL_DAY_END, 0),
+                participants, null, List.of())).meetingId();
     }
 
     // ===================== 내부 =====================
