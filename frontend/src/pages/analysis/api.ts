@@ -92,6 +92,12 @@ export interface ItemForm {
 export const analyzeThread = (workspaceId: string, contentRefId: number) =>
   http.post<AnalysisResultDTO>(ws(workspaceId, '/analyses'), { contentRefId });
 
+/** 스레드의 최신 분석 ID. 분석한 적이 없으면 null */
+export const getLatestAnalysisId = (workspaceId: string, contentRefId: number) =>
+  http
+    .get<{ analysisId: number | null }>(ws(workspaceId, `/analyses/latest?contentRefId=${contentRefId}`))
+    .then((r) => r.analysisId);
+
 export const getPendingAnalyses = (workspaceId: string) =>
   http.get<AnalysisSummaryDTO[]>(ws(workspaceId, '/analyses'));
 

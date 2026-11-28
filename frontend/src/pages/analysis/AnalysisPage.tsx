@@ -1,9 +1,9 @@
 // UI-08 논의 정리 · 실행 연계 (담당: B)
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getRun, markSeen, resumeOrStart, retryAnalysis, useAnalysisRun } from './analysisRunStore';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   addItem,
-  analyzeThread,
   confirmAnalysis,
   discardAnalysis,
   getAnalysis,
@@ -55,7 +55,10 @@ export default function AnalysisPage() {
   return <AnalysisDetail key={analysisId} workspaceId={workspaceId} analysisId={Number(analysisId)} />;
 }
 
-/** "논의 정리" 실행: 분석이 끝날 때까지 처리 단계를 보여준다. (보통 15초 안팎, 최대 90초) */
+/**
+ * "논의 정리" 실행: 분석이 끝날 때까지 처리 단계를 보여준다. (보통 15초 안팎, 최대 90초)
+ * 진행 상태는 analysisRunStore에 있어, 다른 메뉴에 갔다 와도 이어서 보이고 요청을 다시 보내지 않는다.
+ */
 function NewAnalysis({
   workspaceId,
   contentRefId,
@@ -65,32 +68,43 @@ function NewAnalysis({
   contentRefId: number;
   onDone: (analysisId: number) => void;
 }) {
-  const [step, setStep] = useState(0);
-  const [error, setError] = useState<Error | null>(null);
-  const started = useRef(false);
+  const run = useAnalysisRun(workspaceId, contentRefId);
+  const [now, setNow] = useState(() => Date.now());
 
-  const run = () => {
-    setError(null);
-    setStep(0);
-    const timers = [setTimeout(() => setStep(1), 800), setTimeout(() => setStep(2), 12000)];
-    analyzeThread(workspaceId, contentRefId)
-      .then((result) => onDone(result.analysisId))
-      .catch((e: Error) => setError(e))
-      .finally(() => timers.forEach(clearTimeout));
-  };
+  // 진행 중이거나 아직 보지 않은 결과가 있으면 그것을 보여 준다. 이미 본 결과뿐이면(같은 스레드를 다시 분석) 새로 시작한다.
+  // 기억이 없으면(처음이거나 새로고침) 서버 상태를 보고 이어 가거나 새로 시작한다.
+  useEffect(() => {
+    const existing = getRun(workspaceId, contentRefId);
+    if (existing && existing.state !== 'running' && existing.seen) {
+      retryAnalysis(workspaceId, contentRefId);
+    } else {
+      resumeOrStart(workspaceId, contentRefId);
+    }
+  }, [workspaceId, contentRefId]);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    run();
+    if (run?.state !== 'done') return;
+    markSeen(workspaceId, contentRefId);
+    onDone(run.analysisId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [run]);
+
+  useEffect(() => {
+    if (run?.state !== 'running') return;
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [run?.state]);
+
+  // 처리 단계는 시작한 뒤 지난 시간으로 보여 준다. (다른 메뉴에 갔다 와도 같은 단계)
+  const elapsed = run ? now - run.startedAt : 0;
+  const step = elapsed < 800 ? 0 : elapsed < 12000 ? 1 : 2;
 
   return (
     <section className="stack">
       <AnalysisHeader status="ANALYZING" />
-      {error ? (
-        <ErrorBox error={new Error(`분석하지 못했습니다. ${error.message}`)} onRetry={run} />
+      {run?.state === 'failed' ? (
+        <ErrorBox error={new Error(`분석하지 못했습니다. ${run.message}`)}
+          onRetry={() => retryAnalysis(workspaceId, contentRefId)} />
       ) : (
         <ol className="card analysis-steps analysis-analyzing">
           {STEPS.map((s, i) => (
@@ -101,6 +115,7 @@ function NewAnalysis({
           ))}
         </ol>
       )}
+      <p className="m-0 text-xs text-[var(--muted)]">다른 메뉴로 가도 분석은 계속돼요. 끝나면 알려 드려요.</p>
       <Link to={`/workspaces/${workspaceId}/slack`}>← Slack으로 돌아가기</Link>
     </section>
   );
@@ -137,6 +152,15 @@ function AnalysisDetail({ workspaceId, analysisId }: { workspaceId: string; anal
 
   const data = analysis.data;
   const editable = !!data && data.status !== 'CONFIRMED' && data.status !== 'ANALYZING';
+
+  // 목록 등에서 아직 분석 중인 결과를 열었으면, 끝날 때까지 몇 초마다 다시 불러온다.
+  const analyzing = data?.status === 'ANALYZING';
+  useEffect(() => {
+    if (!analyzing) return;
+    const timer = setInterval(() => analysis.reload(), 3000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyzing]);
 
   const confirm = async () => {
     if (!data) return;

@@ -8,6 +8,7 @@ import { ErrorBox, Loading } from '../components/Status';
 import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
 import NavIcon, { type IconName } from './NavIcon';
+import AnalysisRunNotice from '../pages/analysis/AnalysisRunNotice';
 
 type Menu = { to: string; label: string; icon: IconName; also?: string };
 
@@ -184,6 +185,7 @@ export default function WorkspaceLayout() {
             {workspace.data && <Outlet />}
           </div>
         </main>
+        {workspace.data && <AnalysisRunNotice workspaceId={workspaceId} />}
       </div>
     </div>
   );
