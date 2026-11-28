@@ -1,3 +1,4 @@
+import DateTimePicker, {DatePicker} from '../../../components/DateTimePicker';
 import { useState, type FormEvent } from 'react';
 import type { MemberResponse } from '../../workspace/api';
 import { deleteItem, updateItem, type AnalysisItemResponse, type ItemForm, type ItemType } from '../api';
@@ -225,12 +226,7 @@ export function ItemEditor({
           </label>
           <label className="grow">
             마감일
-            <input
-              type="date"
-              className="input"
-              value={form.suggestedDueDate ?? ''}
-              onChange={(e) => setForm({ ...form, suggestedDueDate: e.target.value || null })}
-            />
+            <DatePicker label="후속 작업 마감일" disabled={saving} value={form.suggestedDueDate??''} onChange={value=>setForm({...form,suggestedDueDate:value||null})}/>
           </label>
         </div>
       )}
@@ -238,12 +234,7 @@ export function ItemEditor({
         <>
           <label>
             일시
-            <input
-              type="datetime-local"
-              className="input"
-              value={form.suggestedDatetime?.slice(0, 16) ?? ''}
-              onChange={(e) => setForm({ ...form, suggestedDatetime: e.target.value ? `${e.target.value}:00` : null })}
-            />
+            <DateTimePicker label="회의 제안 일시" disabled={saving} value={form.suggestedDatetime?.slice(0,16)??''} onChange={value=>setForm({...form,suggestedDatetime:value?`${value}:00`:null})}/>
           </label>
           <div className="tags">
             {members.map((m) => (

@@ -1,3 +1,4 @@
+import DateTimePicker, {DatePicker} from '../../components/DateTimePicker';
 // UI-13 AI 업무 보조 (담당: B)
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
@@ -405,26 +406,14 @@ function SuggestionReview({
         <>
           <label className="assistant-field">
             <span>시작</span>
-            <input
-              type="datetime-local"
-              className="input"
-              value={form.detectedDatetime?.slice(0, 16) ?? ''}
-              onChange={(e) => setForm({ ...form, detectedDatetime: e.target.value ? `${e.target.value}:00` : null })}
-            />
+            <DateTimePicker label="일정 시작" disabled={busy} value={form.detectedDatetime?.slice(0,16)??''} onChange={value=>setForm({...form,detectedDatetime:value?`${value}:00`:null})}/>
           </label>
           {isDateOnly(form.detectedDatetime) && (
             <div className="pl-[122px] text-xs text-[var(--warning)]">메일에 시간이 없어 날짜만 채웠어요. 시간을 정해 주세요.</div>
           )}
           <label className="assistant-field">
             <span>종료</span>
-            <input
-              type="datetime-local"
-              className="input"
-              value={endValue}
-              min={form.detectedDatetime?.slice(0, 16)}
-              onChange={(e) => setEndAt(e.target.value)}
-              disabled={!form.detectedDatetime}
-            />
+            <DateTimePicker label="일정 종료" disabled={busy||!form.detectedDatetime} min={form.detectedDatetime?.slice(0,16)} invalid={endInvalid} value={endValue} onChange={setEndAt}/>
           </label>
           {endInvalid && (
             <div className="pl-[122px] text-xs text-[var(--danger)]">종료 시각은 시작 시각보다 뒤여야 해요.</div>
@@ -433,12 +422,7 @@ function SuggestionReview({
       ) : (
         <label className="assistant-field">
           <span>마감일</span>
-          <input
-            type="date"
-            className="input"
-            value={form.dueDate ?? ''}
-            onChange={(e) => setForm({ ...form, dueDate: e.target.value || null })}
-          />
+          <DatePicker label="할 일 마감일" disabled={busy} value={form.dueDate??''} onChange={value=>setForm({...form,dueDate:value||null})}/>
         </label>
       )}
       <div className="assistant-field">
@@ -578,7 +562,7 @@ function PersonalTodos({
   return (
     <div className="card stack">
       <strong className="text-[15px]">개인 할 일</strong>
-      <form className="row" onSubmit={add}>
+      <form className="row flex-wrap" onSubmit={add}>
         <input
           className="input grow"
           style={{ width: 'auto' }}
@@ -587,13 +571,7 @@ function PersonalTodos({
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
         />
-        <input
-          type="date"
-          className="input"
-          style={{ width: 'auto' }}
-          value={form.dueDate}
-          onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-        />
+        <DatePicker label="새 개인 할 일 마감일" className="w-[180px] max-w-full shrink-0" value={form.dueDate} onChange={value=>setForm({...form,dueDate:value})}/>
         <button className="btn btn-primary btn-small" disabled={!form.title.trim()}>
           추가
         </button>
@@ -667,14 +645,14 @@ function PersonalTodoEditor({
   const [dueDate, setDueDate] = useState(task.dueDate ?? '');
   return (
     <form
-      className="row"
+      className="row flex-wrap"
       onSubmit={(e) => {
         e.preventDefault();
         if (title.trim()) void onSave(title.trim(), dueDate || null);
       }}
     >
       <input className="input grow" style={{ width: 'auto' }} maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-      <input type="date" className="input" style={{ width: 'auto' }} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+      <DatePicker label="개인 할 일 마감일" className="w-[180px] max-w-full shrink-0" value={dueDate} onChange={setDueDate}/>
       <button type="button" className="btn btn-small" onClick={onCancel}>
         취소
       </button>
