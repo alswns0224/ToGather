@@ -160,7 +160,7 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 회의_제안은_스레드_참여자로_초안을_만들고_그_시간으로_확정된_회의를_만든다() {
+    void 회의_제안은_스레드_참여자로_초안을_만들고_그_날을_후보_기간으로_시간_조율_회의를_만든다() {
         analysisService.confirmAnalysis(workspaceId, analysis.analysisId());
         AnalysisItemResponse meeting = item(ItemType.MEETING_PROPOSAL);
 
@@ -168,23 +168,19 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
         assertThat(draft.startAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 15, 0));
         assertThat(draft.participantIds()).containsExactlyInAnyOrder(userId, memberId);
 
-        Long eventRefId = contentRefService.upsert(new ContentRefUpsert(workspaceId, null, Provider.GOOGLE_CALENDAR,
-                ContentType.EVENT, "event-1:" + workspaceId, "team-cal", null, "리허설", null, "https://calendar/e1",
-                LocalDateTime.now())).contentRefId();
-        when(calendarContentService.createMeetingEvent(eq(workspaceId), eq(userId), anyString(), any(), any(), anyList(),
-                any())).thenAnswer(inv -> new CalendarEventResponse(eventRefId, inv.getArgument(2), inv.getArgument(3),
-                inv.getArgument(4), false, null, List.of(), "https://calendar/e1", "https://meet/abc", null, false));
+        assertThat(draft.candidateStartAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 9, 0));
+        assertThat(draft.candidateEndAt()).isEqualTo(LocalDateTime.of(2026, 10, 17, 22, 0));
         OutputResultResponse result = outputService.registerMeetingSchedule(workspaceId, userId, meeting.itemId(), draft);
 
         AnalysisItemResponse done = item(ItemType.MEETING_PROPOSAL);
         assertThat(done.outputStatus()).isEqualTo(OutputStatus.SUCCESS);
         assertThat(done.outputTargetId()).isEqualTo(result.targetId());
         MeetingDetailResponse created = meetingService.getMeeting(workspaceId, result.targetId(), userId);
-        assertThat(created.status()).isEqualTo(MeetingStatus.CONFIRMED);
-        assertThat(created.startAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 15, 0));
+        assertThat(created.status()).isEqualTo(MeetingStatus.SCHEDULING);
+        assertThat(created.candidateStartAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 9, 0));
+        assertThat(created.candidateEndAt()).isEqualTo(LocalDateTime.of(2026, 10, 17, 22, 0));
         assertThat(created.durationMinutes()).isEqualTo(60);
-        assertThat(created.calendarRefId()).isEqualTo(eventRefId);
-        assertThat(created.meetLink()).isEqualTo("https://meet/abc");
+        verify(calendarContentService, never()).createMeetingEvent(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -200,6 +196,23 @@ class AnalysisOutputServiceTest extends IntegrationTestSupport {
         assertThat(created.title()).isEqualTo("다음 주 리허설");
         assertThat(created.candidateStartAt().toLocalTime()).isEqualTo(java.time.LocalTime.of(9, 0));
         verify(calendarContentService, never()).createMeetingEvent(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void 대화에_나온_회의_길이로_초안과_회의를_만든다() {
+        AnalysisItemResponse meeting = item(ItemType.MEETING_PROPOSAL);
+        LocalDateTime start = LocalDateTime.of(2026, 12, 1, 15, 0);
+        analysisService.updateItem(workspaceId, meeting.itemId(), new com.togather.analysis.dto.AnalysisItemUpdateRequest(
+                meeting.content(), null, null, start, List.of(userId), null, 120));
+        analysisService.confirmAnalysis(workspaceId, analysis.analysisId());
+
+        MeetingDraftDTO draft = outputService.previewMeetingSchedule(workspaceId, userId, meeting.itemId());
+        assertThat(draft.durationMinutes()).isEqualTo(120);
+        assertThat(draft.endAt()).isEqualTo(start.plusHours(2));
+
+        OutputResultResponse result = outputService.registerMeetingSchedule(workspaceId, userId, meeting.itemId(),
+                new MeetingDraftDTO("리허설", null, null, List.of(userId), null, 120));
+        assertThat(meetingService.getMeeting(workspaceId, result.targetId(), userId).durationMinutes()).isEqualTo(120);
     }
 
     private AnalysisItemResponse item(ItemType type) {

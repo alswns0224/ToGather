@@ -11,6 +11,7 @@
   - MEETING_PROPOSAL: 회의 · 모임을 하자는 제안 (일시·참여자가 나오면 함께 적는다)
 - 회의 · 모임의 일시나 진행 여부는 팀이 합의해 확정했더라도 DECISION이 아니라 MEETING_PROPOSAL로 만든다.
   datetime에 합의한 일시를, participants에 참석하겠다고 한 사람을 적는다. (확정하면 캘린더 일정으로 만들어진다)
+  durationMinutes에는 "2시간 정도", "30분만"처럼 대화에 나온 회의 길이를 분 단위 숫자로 적는다(예: 120). 나오지 않으면 null.
   같은 회의를 DECISION으로 한 번 더 만들지 않는다. 회의에서 다룰 안건 자체에 대한 결정만 DECISION이다.
 - evidence에는 그 항목의 근거가 된 메시지 번호(예: "m3")를 1개 이상 적는다.
 - assignee, participants에는 메시지 앞에 적힌 작성자 ID(예: "U123")만 쓴다. 대화에서 알 수 없으면 null 또는 빈 배열.
@@ -30,7 +31,7 @@
 - settled: 논의가 마무리된 것으로 보이면 true, 아직 진행 중이면 false.
 
 ## 응답 형식 (JSON만 출력)
-{"items": [{"type": "DECISION", "content": "...", "evidence": ["m1"], "assignee": null, "dueDate": null, "dueTime": null, "datetime": null, "participants": []}], "settled": true}
+{"items": [{"type": "DECISION", "content": "...", "evidence": ["m1"], "assignee": null, "dueDate": null, "dueTime": null, "datetime": null, "durationMinutes": null, "participants": []}], "settled": true}
 
 ## 날짜표 (날짜(요일))
 {{calendar}}

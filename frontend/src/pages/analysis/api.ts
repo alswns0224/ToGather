@@ -41,6 +41,8 @@ export interface AnalysisItemResponse {
   /** 마감 시각 "HH:mm:ss". 없으면 그날 하루 종일 */
   suggestedDueTime?: string | null;
   suggestedDatetime: string | null;
+  /** 회의 제안의 길이(분). 없으면 1시간 */
+  suggestedDurationMinutes?: number | null;
   suggestedParticipantIds: number[];
   outputStatus: OutputStatus | null;
   outputTargetId: number | null;
@@ -89,6 +91,7 @@ export interface ItemForm {
   suggestedDueDate: string | null;
   suggestedDueTime?: string | null;
   suggestedDatetime: string | null;
+  suggestedDurationMinutes?: number | null;
   suggestedParticipantIds: number[];
 }
 
@@ -145,6 +148,11 @@ export interface MeetingDraftDTO {
   endAt: string | null;
   participantIds: number[];
   description: string | null;
+  /** 회의 길이(분). 대화에 나온 길이가 기본값 */
+  durationMinutes?: number | null;
+  /** 시간 투표를 받을 후보 기간 */
+  candidateStartAt?: string | null;
+  candidateEndAt?: string | null;
 }
 
 export interface OutputResultResponse {

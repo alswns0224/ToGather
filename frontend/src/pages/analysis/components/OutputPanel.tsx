@@ -17,6 +17,7 @@ import { useAsync } from '../../../hooks/useAsync';
 import { useUndo } from '../../../hooks/useUndo';
 import { formatDateTime, timeInput } from '../../../utils/date';
 import DueTimeInput from '../../../components/DueTimeInput';
+import DurationSelect from '../../../components/DurationSelect';
 import AnalysisIcon, { type AnalysisIconName } from './AnalysisIcon';
 
 /**
@@ -365,6 +366,10 @@ function MeetingStep({
     );
   }
 
+  const periodInvalid = !!draft.candidateStartAt && !!draft.candidateEndAt
+    && new Date(draft.candidateEndAt).getTime() - new Date(draft.candidateStartAt).getTime()
+      < (draft.durationMinutes ?? 60) * 60_000;
+
   const toggle = (id: number) =>
     setDraft({
       ...draft,
@@ -382,14 +387,23 @@ function MeetingStep({
         value={draft.title}
         onChange={(e) => setDraft({ ...draft, title: e.target.value })}
       />
+      {draft.startAt && (
+        <p className="m-0 text-xs text-[var(--muted)]">대화에서 나온 시간 · {formatDateTime(draft.startAt)}</p>
+      )}
       <div className="row">
         <label className="grow">
-          시작
-          <DateTimePicker label="회의 시작" disabled={busy} value={draft.startAt?.slice(0,16)??''} onChange={value=>setDraft({...draft,startAt:value?`${value}:00`:null})}/>
+          후보 기간 시작
+          <DateTimePicker label="후보 기간 시작" required disabled={busy} value={draft.candidateStartAt?.slice(0,16)??''} onChange={value=>setDraft({...draft,candidateStartAt:value?`${value}:00`:null})}/>
         </label>
         <label className="grow">
-          종료
-          <DateTimePicker label="회의 종료" disabled={busy} value={draft.endAt?.slice(0,16)??''} onChange={value=>setDraft({...draft,endAt:value?`${value}:00`:null})}/>
+          후보 기간 끝
+          <DateTimePicker label="후보 기간 끝" required disabled={busy} invalid={periodInvalid} value={draft.candidateEndAt?.slice(0,16)??''} onChange={value=>setDraft({...draft,candidateEndAt:value?`${value}:00`:null})}/>
+        </label>
+      </div>
+      <div className="row">
+        <label className="grow">
+          회의 길이
+          <DurationSelect label="회의 길이" disabled={busy} value={draft.durationMinutes ?? 60} onChange={value=>setDraft({...draft,durationMinutes:value,endAt:null})}/>
         </label>
       </div>
       <div className="tags">
@@ -405,9 +419,9 @@ function MeetingStep({
         ))}
       </div>
       <p className="m-0 text-xs text-[var(--muted)]">
-        {draft.startAt
-          ? '이 시간으로 확정된 회의를 만들고, 팀 캘린더와 참여자 캘린더에 Google Meet 링크와 함께 등록해요.'
-          : '시작 시각을 비우면 "일정 조율 중" 회의로 만들어요. 참여자가 가능한 시간을 입력하면 추천 시간으로 확정할 수 있어요.'}
+        {periodInvalid
+          ? '후보 기간 끝은 시작보다 회의 길이 이상 뒤여야 해요.'
+          : '"일정 조율 중" 회의로 만들어요. 참여자들이 후보 기간 안에서 가능한 시간을 입력하면, 추천 시간으로 확정해 캘린더에 등록할 수 있어요.'}
       </p>
       {error && <div className="alert alert-error small">회의를 만들지 못했습니다. {error}</div>}
       <div className="row">
@@ -415,8 +429,8 @@ function MeetingStep({
         <button type="button" className="btn btn-small" onClick={() => setDraft(null)} disabled={busy}>
           닫기
         </button>
-        <button className="btn btn-primary btn-small" disabled={busy}>
-          {busy ? '만드는 중...' : error ? '다시 시도' : draft.startAt ? '이 시간으로 회의 확정' : '시간 조율 회의 만들기'}
+        <button className="btn btn-primary btn-small" disabled={busy || periodInvalid || !draft.candidateStartAt || !draft.candidateEndAt}>
+          {busy ? '만드는 중...' : error ? '다시 시도' : '시간 투표 회의 만들기'}
         </button>
       </div>
     </form>

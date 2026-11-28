@@ -10,7 +10,15 @@ import java.util.List;
 /** 항목 수정: 내용과 담당자·마감일(후속 작업), 일시·참여자(회의 제안) */
 public record AnalysisItemUpdateRequest(@NotBlank @Size(max = 2000) String content, Long suggestedAssigneeId,
                                         LocalDate suggestedDueDate, LocalDateTime suggestedDatetime,
-                                        List<Long> suggestedParticipantIds, LocalTime suggestedDueTime) {
+                                        List<Long> suggestedParticipantIds, LocalTime suggestedDueTime,
+                                        Integer suggestedDurationMinutes) {
+
+    public AnalysisItemUpdateRequest(String content, Long suggestedAssigneeId, LocalDate suggestedDueDate,
+                                     LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
+                                     LocalTime suggestedDueTime) {
+        this(content, suggestedAssigneeId, suggestedDueDate, suggestedDatetime, suggestedParticipantIds,
+                suggestedDueTime, null);
+    }
 
     public AnalysisItemUpdateRequest(String content, Long suggestedAssigneeId, LocalDate suggestedDueDate,
                                      LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds) {

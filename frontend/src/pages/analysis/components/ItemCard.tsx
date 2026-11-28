@@ -4,6 +4,8 @@ import type { MemberResponse } from '../../workspace/api';
 import { deleteItem, updateItem, type AnalysisItemResponse, type ItemForm, type ItemType } from '../api';
 import { formatDateTime, formatDue, timeInput } from '../../../utils/date';
 import DueTimeInput from '../../../components/DueTimeInput';
+import DurationSelect from '../../../components/DurationSelect';
+import { durationLabel } from '../../meeting/MeetingFormFields';
 import AnalysisIcon from './AnalysisIcon';
 
 /** 분석 항목 한 개: 내용, 근거 발언, 담당자·마감일(후속 작업), 일시·참여자(회의 제안) */
@@ -52,6 +54,7 @@ export default function ItemCard({
             suggestedDueDate: item.suggestedDueDate,
             suggestedDueTime: timeInput(item.suggestedDueTime) || null,
             suggestedDatetime: item.suggestedDatetime,
+            suggestedDurationMinutes: item.suggestedDurationMinutes ?? null,
             suggestedParticipantIds: item.suggestedParticipantIds ?? [],
           }}
           onCancel={() => setEditing(false)}
@@ -131,6 +134,9 @@ export default function ItemCard({
           <span className="analysis-meta-pill">
             일시: {item.suggestedDatetime ? formatDateTime(item.suggestedDatetime) : decidedElsewhere}
           </span>
+          {item.suggestedDurationMinutes != null && (
+            <span className="analysis-meta-pill">길이: {durationLabel(item.suggestedDurationMinutes)}</span>
+          )}
           <span className="analysis-meta-pill">
             참여자:{' '}
             {item.suggestedParticipantIds?.length
@@ -240,6 +246,10 @@ export function ItemEditor({
           <label>
             일시
             <DateTimePicker label="회의 제안 일시" disabled={saving} value={form.suggestedDatetime?.slice(0,16)??''} onChange={value=>setForm({...form,suggestedDatetime:value?`${value}:00`:null})}/>
+          </label>
+          <label>
+            회의 길이
+            <DurationSelect label="회의 길이" disabled={saving} value={form.suggestedDurationMinutes ?? 60} onChange={value=>setForm({...form,suggestedDurationMinutes:value})}/>
           </label>
           <div className="tags">
             {members.map((m) => (

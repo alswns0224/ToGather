@@ -1,5 +1,6 @@
 package com.togather.analysis.service;
 
+import com.togather.analysis.domain.AnalysisItem;
 import com.togather.common.ai.GeminiClient;
 import com.togather.common.ai.PromptTemplates;
 import com.togather.common.enums.ItemType;
@@ -39,23 +40,30 @@ public class DiscussionAnalyzer {
     }
 
     public record AiItem(String type, String content, List<String> evidence, String assignee, String dueDate,
-                         String datetime, List<String> participants, String dueTime) {
+                         String datetime, List<String> participants, String dueTime, Integer durationMinutes) {
 
         public AiItem(String type, String content, List<String> evidence, String assignee, String dueDate,
                       String datetime, List<String> participants) {
-            this(type, content, evidence, assignee, dueDate, datetime, participants, null);
+            this(type, content, evidence, assignee, dueDate, datetime, participants, null, null);
         }
     }
 
     /** 변환한 항목 후보. 담당자·참여자는 아직 Slack 사용자 ID */
     public record Candidate(ItemType itemType, String content, List<Long> evidenceContentRefIds,
                             String assigneeSlackId, LocalDate dueDate, LocalDateTime datetime,
-                            List<String> participantSlackIds, LocalTime dueTime) {
+                            List<String> participantSlackIds, LocalTime dueTime, Integer durationMinutes) {
+
+        public Candidate(ItemType itemType, String content, List<Long> evidenceContentRefIds, String assigneeSlackId,
+                         LocalDate dueDate, LocalDateTime datetime, List<String> participantSlackIds,
+                         LocalTime dueTime) {
+            this(itemType, content, evidenceContentRefIds, assigneeSlackId, dueDate, datetime, participantSlackIds,
+                    dueTime, null);
+        }
 
         public Candidate(ItemType itemType, String content, List<Long> evidenceContentRefIds, String assigneeSlackId,
                          LocalDate dueDate, LocalDateTime datetime, List<String> participantSlackIds) {
             this(itemType, content, evidenceContentRefIds, assigneeSlackId, dueDate, datetime, participantSlackIds,
-                    null);
+                    null, null);
         }
     }
 
@@ -105,7 +113,8 @@ public class DiscussionAnalyzer {
             candidates.add(new Candidate(type, item.content().strip(), evidence, blankToNull(item.assignee()),
                     parseDate(item.dueDate()), parseDateTime(item.datetime()),
                     item.participants() == null ? List.of() : item.participants().stream()
-                            .filter(Objects::nonNull).distinct().toList(), parseTime(item.dueTime())));
+                            .filter(Objects::nonNull).distinct().toList(), parseTime(item.dueTime()),
+                    type == ItemType.MEETING_PROPOSAL ? AnalysisItem.normalizeDuration(item.durationMinutes()) : null));
         }
         return new Result(candidates, Boolean.TRUE.equals(result.settled()));
     }

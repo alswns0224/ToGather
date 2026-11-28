@@ -9,6 +9,7 @@
 - 대화에 실제로 나온 내용만 쓴다. 추측해서 만들어 내지 않는다.
 - title은 한국어로 짧게 (예: "기획 회의", "발표 자료 초안 작성").
 - source에는 근거 메시지 번호(예: "s2")를 하나 적는다.
+- SCHEDULE의 durationMinutes에는 "2시간 회의", "30분 통화"처럼 나온 일정 길이를 분 단위 숫자로 적는다(예: 120). 없으면 null.
 - SCHEDULE의 datetime은 "YYYY-MM-DDTHH:mm" 형식이다. 날짜는 있는데 시간이 없으면 그 날짜의 "T00:00"으로 쓴다. (시간 미정, 사용자가 승인할 때 정한다) 날짜도 없으면 null.
 - 한 메시지에 일정이나 할 일이 여러 개 있으면 각각 따로 고른다.
 - TASK의 dueDate는 "YYYY-MM-DD" 형식이다. 마감이 없으면 null.
@@ -21,7 +22,7 @@
 {{calendar}}
 
 ## 응답 형식 (JSON만 출력)
-{"candidates": [{"type": "SCHEDULE", "title": "...", "source": "s1", "datetime": null, "dueDate": null, "dueTime": null}]}
+{"candidates": [{"type": "SCHEDULE", "title": "...", "source": "s1", "datetime": null, "dueDate": null, "dueTime": null, "durationMinutes": null}]}
 
 ## 메시지 (번호 [출처] 작성자 작성 시각: 내용)
 {{messages}}

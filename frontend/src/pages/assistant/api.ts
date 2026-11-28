@@ -12,6 +12,8 @@ export interface SuggestionDTO {
   dueDate: string | null;
   /** 할 일 후보의 마감 시각 "HH:mm:ss". 없으면 그날 하루 종일 */
   dueTime?: string | null;
+  /** 일정 후보의 길이(분). 없으면 1시간 */
+  durationMinutes?: number | null;
   sourceContentRefId: number | null;
   sourceProvider: 'SLACK' | 'GMAIL' | string | null;
   sourceTitle: string | null;

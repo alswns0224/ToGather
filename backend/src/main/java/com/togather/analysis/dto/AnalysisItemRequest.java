@@ -13,7 +13,14 @@ import java.util.List;
 public record AnalysisItemRequest(@NotNull ItemType itemType, @NotBlank @Size(max = 2000) String content,
                                   Long suggestedAssigneeId, LocalDate suggestedDueDate,
                                   LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
-                                  LocalTime suggestedDueTime) {
+                                  LocalTime suggestedDueTime, Integer suggestedDurationMinutes) {
+
+    public AnalysisItemRequest(ItemType itemType, String content, Long suggestedAssigneeId,
+                               LocalDate suggestedDueDate, LocalDateTime suggestedDatetime,
+                               List<Long> suggestedParticipantIds, LocalTime suggestedDueTime) {
+        this(itemType, content, suggestedAssigneeId, suggestedDueDate, suggestedDatetime, suggestedParticipantIds,
+                suggestedDueTime, null);
+    }
 
     public AnalysisItemRequest(ItemType itemType, String content, Long suggestedAssigneeId,
                                LocalDate suggestedDueDate, LocalDateTime suggestedDatetime,

@@ -56,6 +56,9 @@ public class AnalysisItem extends BaseTimeEntity {
 
     private LocalDateTime suggestedDatetime;
 
+    /** 회의 제안의 길이(분). 대화에 "2시간 정도"처럼 나오면 채운다. 없으면 1시간 */
+    private Integer suggestedDurationMinutes;
+
     /** 비어 있으면 스레드 참여자로 대체 */
     @JdbcTypeCode(SqlTypes.ARRAY)
     private List<Long> suggestedParticipantIds = new ArrayList<>();
@@ -74,6 +77,16 @@ public class AnalysisItem extends BaseTimeEntity {
         this.suggestedDueDate = suggestedDueDate;
         this.suggestedDatetime = suggestedDatetime;
         this.suggestedParticipantIds = suggestedParticipantIds == null ? new ArrayList<>() : new ArrayList<>(suggestedParticipantIds);
+    }
+
+    public void changeSuggestedDuration(Integer minutes) {
+        this.suggestedDurationMinutes = itemType == com.togather.common.enums.ItemType.MEETING_PROPOSAL
+                ? normalizeDuration(minutes) : null;
+    }
+
+    /** 15분 ~ 8시간 사이만 받는다. 그 밖이면 비워 둔다(1시간으로 본다). */
+    public static Integer normalizeDuration(Integer minutes) {
+        return minutes == null || minutes < 15 || minutes > 480 ? null : minutes;
     }
 
     /** 마감 시각. 마감일이 없으면 시각도 두지 않는다. */

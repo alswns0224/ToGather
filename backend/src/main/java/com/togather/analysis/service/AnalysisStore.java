@@ -34,12 +34,19 @@ public class AnalysisStore {
 
     public record NewItem(ItemType itemType, String content, boolean undetermined, Long assigneeId,
                           LocalDate dueDate, LocalDateTime datetime, List<Long> participantIds,
-                          List<Long> evidenceContentRefIds, LocalTime dueTime) {
+                          List<Long> evidenceContentRefIds, LocalTime dueTime, Integer durationMinutes) {
+
+        public NewItem(ItemType itemType, String content, boolean undetermined, Long assigneeId, LocalDate dueDate,
+                       LocalDateTime datetime, List<Long> participantIds, List<Long> evidenceContentRefIds,
+                       LocalTime dueTime) {
+            this(itemType, content, undetermined, assigneeId, dueDate, datetime, participantIds,
+                    evidenceContentRefIds, dueTime, null);
+        }
 
         public NewItem(ItemType itemType, String content, boolean undetermined, Long assigneeId, LocalDate dueDate,
                        LocalDateTime datetime, List<Long> participantIds, List<Long> evidenceContentRefIds) {
             this(itemType, content, undetermined, assigneeId, dueDate, datetime, participantIds,
-                    evidenceContentRefIds, null);
+                    evidenceContentRefIds, null, null);
         }
     }
 
@@ -75,6 +82,7 @@ public class AnalysisStore {
             AnalysisItem item = new AnalysisItem(analysisId, n.itemType(), n.content(), n.undetermined());
             item.update(n.content(), n.assigneeId(), n.dueDate(), n.datetime(), n.participantIds());
             item.changeSuggestedDueTime(n.dueTime());
+            item.changeSuggestedDuration(n.durationMinutes());
             Long itemId = itemRepository.save(item).getItemId();
             evidenceRepository.saveAll(n.evidenceContentRefIds().stream()
                     .map(refId -> new AnalysisEvidence(itemId, refId))

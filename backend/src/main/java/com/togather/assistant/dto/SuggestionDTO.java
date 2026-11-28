@@ -16,7 +16,7 @@ public record SuggestionDTO(Long suggestionId, SuggestionType type, SuggestionSt
                             LocalDateTime detectedDatetime, boolean timeUndetermined, LocalDate dueDate,
                             Long sourceContentRefId, Provider sourceProvider, String sourceTitle,
                             String sourceAuthor, LocalDateTime sourceCreatedAt, String sourceExcerpt,
-                            String sourceLink, LocalTime dueTime) {
+                            String sourceLink, LocalTime dueTime, Integer durationMinutes) {
 
     public SuggestionDTO(Long suggestionId, SuggestionType type, SuggestionStatus status, String title,
                          LocalDateTime detectedDatetime, boolean timeUndetermined, LocalDate dueDate,
@@ -24,6 +24,6 @@ public record SuggestionDTO(Long suggestionId, SuggestionType type, SuggestionSt
                          String sourceAuthor, LocalDateTime sourceCreatedAt, String sourceExcerpt,
                          String sourceLink) {
         this(suggestionId, type, status, title, detectedDatetime, timeUndetermined, dueDate, sourceContentRefId,
-                sourceProvider, sourceTitle, sourceAuthor, sourceCreatedAt, sourceExcerpt, sourceLink, null);
+                sourceProvider, sourceTitle, sourceAuthor, sourceCreatedAt, sourceExcerpt, sourceLink, null, null);
     }
 }

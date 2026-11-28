@@ -104,10 +104,10 @@ public class SuggestionService {
     }
 
     public record AiCandidate(String type, String title, String source, String datetime, String dueDate,
-                              String dueTime) {
+                              String dueTime, Integer durationMinutes) {
 
         public AiCandidate(String type, String title, String source, String datetime, String dueDate) {
-            this(type, title, source, datetime, dueDate, null);
+            this(type, title, source, datetime, dueDate, null, null);
         }
     }
 
@@ -171,6 +171,7 @@ public class SuggestionService {
             if (candidateType == SuggestionType.TASK) {
                 suggestion.changeDueTime(parseTime(c.dueTime()));
             }
+            suggestion.changeDuration(c.durationMinutes());
             candidates.add(suggestion);
         }
         List<Suggestion> saved = saveNew(userId,
@@ -640,7 +641,7 @@ public class SuggestionService {
                     source == null ? null : source.getTitle(), source == null ? null : source.getAuthorName(),
                     source == null ? null : source.getCreatedAt(),
                     source == null ? null : truncate(messageText(source), EXCERPT_LENGTH),
-                    source == null ? null : source.getDeepLink(), s.getDueTime());
+                    source == null ? null : source.getDeepLink(), s.getDueTime(), s.getDurationMinutes());
         }).toList();
     }
 

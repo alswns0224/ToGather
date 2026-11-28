@@ -208,21 +208,17 @@ class FinalDemoScenarioTest extends IntegrationTestSupport {
         Long demoTaskId = outputService.createFollowUpTask(workspaceId, demo.itemId(),
                 new FollowUpTaskRequest("시연 준비", null, cheoljun, FRIDAY)).targetId();
 
-        // 회의 제안 → 확정된 회의 (팀 캘린더 일정·Meet 링크)
+        // 회의 제안 → 일정 조율 중 회의 (대화에서 정한 날부터 후보 기간, 참여자가 시간 투표)
         AnalysisItemResponse proposal = analysis.items().stream()
                 .filter(i -> i.itemType() == ItemType.MEETING_PROPOSAL).findFirst().orElseThrow();
         MeetingDraftDTO meetingDraft = outputService.previewMeetingSchedule(workspaceId, cheoljun, proposal.itemId());
         assertThat(meetingDraft.startAt()).as("'다음 주 화요일 오후 3시'").isEqualTo(NEXT_TUESDAY.atTime(15, 0));
-        when(calendar.createMeetingEvent(eq(workspaceId), eq(cheoljun), anyString(), any(), any(), anyList(), any()))
-                .thenAnswer(inv -> new CalendarEventResponse(contents.upsert(calendarUpsert("rehearsal-event")).contentRefId(),
-                        inv.getArgument(2), inv.getArgument(3), inv.getArgument(4), false, null, List.of(),
-                        "https://calendar.google.com/e/0", "https://meet.google.com/rehearsal", null, false));
         OutputResultResponse event = outputService.registerMeetingSchedule(workspaceId, cheoljun, proposal.itemId(), meetingDraft);
         assertThat(event.status()).isEqualTo(OutputStatus.SUCCESS);
         MeetingDetailResponse rehearsal = meetingService.getMeeting(workspaceId, event.targetId(), cheoljun);
-        assertThat(rehearsal.status()).as("회의 메뉴에 확정된 회의로").isEqualTo(MeetingStatus.CONFIRMED);
-        assertThat(rehearsal.startAt()).isEqualTo(NEXT_TUESDAY.atTime(15, 0));
-        assertThat(rehearsal.meetLink()).isNotBlank();
+        assertThat(rehearsal.status()).as("회의 메뉴에 시간 조율 중인 회의로").isEqualTo(MeetingStatus.SCHEDULING);
+        assertThat(rehearsal.candidateStartAt()).isBeforeOrEqualTo(NEXT_TUESDAY.atTime(15, 0));
+        assertThat(rehearsal.candidateEndAt()).isAfter(NEXT_TUESDAY.atTime(16, 0));
 
         analysis = analysisService.getAnalysis(workspaceId, analysis.analysisId());
         assertThat(analysis.notionOutputStatus()).as("한 번의 확정으로 문서가 생성됐다").isEqualTo(OutputStatus.SUCCESS);

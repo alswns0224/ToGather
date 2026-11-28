@@ -251,10 +251,10 @@ function AssistantContent({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-/** "2026-12-25T00:00(:00)" → 1시간 뒤 "2026-12-25T01:00" (datetime-local 값) */
-function plusHour(datetime: string) {
+/** "2026-12-25T00:00(:00)" → minutes분 뒤 "2026-12-25T01:00" (datetime-local 값). 기본 1시간 */
+function plusHour(datetime: string, minutes = 60) {
   const d = new Date(datetime.slice(0, 16));
-  d.setHours(d.getHours() + 1);
+  d.setMinutes(d.getMinutes() + minutes);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -329,7 +329,8 @@ function SuggestionReview({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const endValue = endAt || (form.detectedDatetime ? plusHour(form.detectedDatetime) : '');
+  // 끝 시각 기본값: 메시지에 나온 일정 길이(없으면 1시간)
+  const endValue = endAt || (form.detectedDatetime ? plusHour(form.detectedDatetime, suggestion.durationMinutes ?? 60) : '');
   const endInvalid = !!form.detectedDatetime && !!endValue && endValue <= form.detectedDatetime.slice(0, 16);
   const isSchedule = suggestion.type === 'SCHEDULE';
   const dirty =

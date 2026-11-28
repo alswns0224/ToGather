@@ -45,6 +45,9 @@ public class Suggestion extends BaseTimeEntity {
 
     private LocalDate dueDate;
 
+    /** 일정 후보의 길이(분). 메시지에 나오면 채운다. 없으면 1시간 */
+    private Integer durationMinutes;
+
     /** 할 일 후보의 마감 시각. 없으면 그날 하루 종일 */
     private LocalTime dueTime;
 
@@ -70,6 +73,11 @@ public class Suggestion extends BaseTimeEntity {
         this.title = title;
         this.detectedDatetime = detectedDatetime;
         this.dueDate = dueDate;
+    }
+
+    public void changeDuration(Integer minutes) {
+        this.durationMinutes = type != SuggestionType.SCHEDULE || minutes == null || minutes < 15 || minutes > 480
+                ? null : minutes;
     }
 
     /** 마감 시각. 마감일이 없으면 시각도 두지 않는다. */

@@ -17,7 +17,18 @@ public record AnalysisItemResponse(Long itemId, ItemType itemType, String conten
                                    Long suggestedAssigneeId, String suggestedAssigneeName, LocalDate suggestedDueDate,
                                    LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
                                    OutputStatus outputStatus, Long outputTargetId,
-                                   List<AnalysisEvidenceDTO> evidences, LocalTime suggestedDueTime) {
+                                   List<AnalysisEvidenceDTO> evidences, LocalTime suggestedDueTime,
+                                   Integer suggestedDurationMinutes) {
+
+    public AnalysisItemResponse(Long itemId, ItemType itemType, String content, boolean undetermined,
+                                Long suggestedAssigneeId, String suggestedAssigneeName, LocalDate suggestedDueDate,
+                                LocalDateTime suggestedDatetime, List<Long> suggestedParticipantIds,
+                                OutputStatus outputStatus, Long outputTargetId,
+                                List<AnalysisEvidenceDTO> evidences, LocalTime suggestedDueTime) {
+        this(itemId, itemType, content, undetermined, suggestedAssigneeId, suggestedAssigneeName, suggestedDueDate,
+                suggestedDatetime, suggestedParticipantIds, outputStatus, outputTargetId, evidences, suggestedDueTime,
+                null);
+    }
 
     public AnalysisItemResponse(Long itemId, ItemType itemType, String content, boolean undetermined,
                                 Long suggestedAssigneeId, String suggestedAssigneeName, LocalDate suggestedDueDate,
@@ -25,6 +36,6 @@ public record AnalysisItemResponse(Long itemId, ItemType itemType, String conten
                                 OutputStatus outputStatus, Long outputTargetId,
                                 List<AnalysisEvidenceDTO> evidences) {
         this(itemId, itemType, content, undetermined, suggestedAssigneeId, suggestedAssigneeName, suggestedDueDate,
-                suggestedDatetime, suggestedParticipantIds, outputStatus, outputTargetId, evidences, null);
+                suggestedDatetime, suggestedParticipantIds, outputStatus, outputTargetId, evidences, null, null);
     }
 }

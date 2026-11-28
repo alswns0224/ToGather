@@ -26,7 +26,6 @@ import com.togather.content.slack.service.SlackContentService.ThreadMessage;
 import com.togather.content.slack.service.SlackDirectory;
 import com.togather.content.slack.client.SlackApiClient;
 import com.togather.meeting.dto.MeetingCreateRequest;
-import com.togather.meeting.dto.MeetingDetailResponse;
 import com.togather.meeting.service.MeetingService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -131,17 +130,23 @@ public class AnalysisOutputService {
         ContentRef thread = contentRefRepository.findById(analysis.getContentRefId()).orElse(null);
         String description = item.getContent()
                 + (thread != null && thread.getDeepLink() != null ? "\n\n논의 스레드: " + thread.getDeepLink() : "");
-        return new MeetingDraftDTO(truncate(item.getContent(), 200), item.getSuggestedDatetime(),
-                item.getSuggestedDatetime() == null ? null : item.getSuggestedDatetime().plusHours(1),
-                participants, description);
+        int minutes = item.getSuggestedDurationMinutes() != null
+                ? item.getSuggestedDurationMinutes() : DEFAULT_MEETING_MINUTES;
+        LocalDateTime start = item.getSuggestedDatetime();
+        LocalDateTime[] period = defaultPeriod(start);
+        return new MeetingDraftDTO(truncate(item.getContent(), 200), start,
+                start == null ? null : start.plusMinutes(minutes), participants, description, minutes,
+                period[0], period[1]);
     }
 
     /**
-     * 회의 제안으로 ToGather 회의를 만든다. (설계 C-04-03 registerMeetingSchedule: 회의를 생성·확정)
+     * 회의 제안으로 ToGather 회의를 만든다. (설계 C-04-03 registerMeetingSchedule)
+     * 일반 회의 만들기와 같이 항상 "일정 조율 중"으로 만든다. 참여자가 후보 기간 안에서 가능한 시간을 입력하고,
+     * 추천 시간으로 확정하면 팀 캘린더에 Google Meet 링크와 함께 등록된다.
      * <ul>
-     *   <li>일시가 있으면 그 시간으로 바로 확정한다. 회의 확정과 같이 팀 캘린더에 Google Meet 링크와 함께 등록된다.</li>
-     *   <li>일시가 없으면 "일정 조율 중" 회의로 만든다. 참여자가 가용 시간을 입력하고 추천 시간으로 확정하면 된다.
-     *       후보 기간은 내일 {@value #PROPOSAL_DAY_START}시 ~ {@value #PROPOSAL_PERIOD_DAYS}일 뒤 {@value #PROPOSAL_DAY_END}시.</li>
+     *   <li>대화에서 정한 일시가 있으면 그날 {@value #PROPOSAL_DAY_START}시부터 {@value #PROPOSAL_NEAR_DAYS}일 뒤
+     *       {@value #PROPOSAL_DAY_END}시까지를 후보 기간으로 둔다.</li>
+     *   <li>없으면 내일 {@value #PROPOSAL_DAY_START}시 ~ {@value #PROPOSAL_PERIOD_DAYS}일 뒤 {@value #PROPOSAL_DAY_END}시.</li>
      * </ul>
      * outputTargetId = 회의 ID
      */
@@ -157,28 +162,36 @@ public class AnalysisOutputService {
     static final int PROPOSAL_DAY_START = 9;
     static final int PROPOSAL_DAY_END = 22;
     static final int PROPOSAL_PERIOD_DAYS = 7;
+    /** 대화에서 정한 날이 있을 때 그날부터 며칠 뒤까지 후보로 둘지 */
+    static final int PROPOSAL_NEAR_DAYS = 2;
     static final int DEFAULT_MEETING_MINUTES = 60;
     private static final int MIN_MEETING_MINUTES = 15;
     private static final int MAX_MEETING_MINUTES = 480;
 
+    /** 후보 기간 기본값. 대화에서 정한 일시가 기간 안에 들어가게 한다. */
+    static LocalDateTime[] defaultPeriod(LocalDateTime suggested) {
+        if (suggested != null) {
+            LocalDateTime dayStart = suggested.toLocalDate().atTime(PROPOSAL_DAY_START, 0);
+            return new LocalDateTime[] {suggested.isBefore(dayStart) ? suggested : dayStart,
+                suggested.toLocalDate().plusDays(PROPOSAL_NEAR_DAYS).atTime(PROPOSAL_DAY_END, 0)};
+        }
+        LocalDate tomorrow = LocalDate.now(SlackApiClient.ZONE).plusDays(1);
+        return new LocalDateTime[] {tomorrow.atTime(PROPOSAL_DAY_START, 0),
+            tomorrow.plusDays(PROPOSAL_PERIOD_DAYS).atTime(PROPOSAL_DAY_END, 0)};
+    }
+
     private Long createMeetingFromProposal(Long workspaceId, Long userId, MeetingDraftDTO draft) {
         String title = draft.title().strip();
         List<Long> participants = draft.participantIds() == null ? List.of() : draft.participantIds();
-        if (draft.startAt() != null) {
-            LocalDateTime start = draft.startAt();
-            long minutes = draft.endAt() != null && draft.endAt().isAfter(start)
-                    ? java.time.Duration.between(start, draft.endAt()).toMinutes() : DEFAULT_MEETING_MINUTES;
-            int duration = (int) Math.max(MIN_MEETING_MINUTES, Math.min(MAX_MEETING_MINUTES, minutes));
-            // 정한 시간 하나만 후보 기간으로 두고 바로 확정한다. (확정하면 캘린더 등록·Meet 링크 생성)
-            MeetingDetailResponse meeting = meetingService.createMeeting(workspaceId, userId, new MeetingCreateRequest(
-                    title, duration, start, start.plusMinutes(duration), participants, null, List.of()));
-            meetingService.confirmMeeting(workspaceId, meeting.meetingId(), userId, start, true);
-            return meeting.meetingId();
-        }
-        LocalDate tomorrow = LocalDate.now(SlackApiClient.ZONE).plusDays(1);
-        return meetingService.createMeeting(workspaceId, userId, new MeetingCreateRequest(title, DEFAULT_MEETING_MINUTES,
-                tomorrow.atTime(PROPOSAL_DAY_START, 0), tomorrow.plusDays(PROPOSAL_PERIOD_DAYS).atTime(PROPOSAL_DAY_END, 0),
-                participants, null, List.of())).meetingId();
+        long minutes = draft.durationMinutes() != null ? draft.durationMinutes()
+                : draft.startAt() != null && draft.endAt() != null && draft.endAt().isAfter(draft.startAt())
+                ? java.time.Duration.between(draft.startAt(), draft.endAt()).toMinutes() : DEFAULT_MEETING_MINUTES;
+        int duration = (int) Math.max(MIN_MEETING_MINUTES, Math.min(MAX_MEETING_MINUTES, minutes));
+        LocalDateTime[] period = draft.candidateStartAt() != null && draft.candidateEndAt() != null
+                ? new LocalDateTime[] {draft.candidateStartAt(), draft.candidateEndAt()}
+                : defaultPeriod(draft.startAt());
+        return meetingService.createMeeting(workspaceId, userId, new MeetingCreateRequest(title, duration,
+                period[0], period[1], participants, null, List.of())).meetingId();
     }
 
     // ===================== 내부 =====================

@@ -267,6 +267,7 @@ public class AnalysisService {
         validateMembers(analysisWorkspace(analysis), v.assigneeId(), v.participantIds());
         item.update(request.content().strip(), v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds());
         item.changeSuggestedDueTime(request.suggestedDueTime());
+        item.changeSuggestedDuration(request.suggestedDurationMinutes());
         item.markUndetermined(isUndetermined(item.getItemType(), v.assigneeId(), v.dueDate(), v.datetime()));
         return toResponses(workspaceId, List.of(item)).getFirst();
     }
@@ -282,6 +283,7 @@ public class AnalysisService {
                 isUndetermined(request.itemType(), v.assigneeId(), v.dueDate(), v.datetime()));
         item.update(request.content().strip(), v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds());
         item.changeSuggestedDueTime(request.suggestedDueTime());
+        item.changeSuggestedDuration(request.suggestedDurationMinutes());
         itemRepository.save(item);
         if (analysis.getStatus() != AnalysisStatus.REVIEWING) {
             analysis.changeStatus(AnalysisStatus.REVIEWING); // NO_CONTENT·FAILED에서 직접 작성
@@ -393,7 +395,7 @@ public class AnalysisService {
                         .sorted(Comparator.comparing(e -> messages.get(e.getContentRefId()).getCreatedAt(),
                                 Comparator.nullsLast(Comparator.naturalOrder())))
                         .map(e -> toEvidence(e, messages.get(e.getContentRefId())))
-                        .toList(), item.getSuggestedDueTime()))
+                        .toList(), item.getSuggestedDueTime(), item.getSuggestedDurationMinutes()))
                 .toList();
     }
 
@@ -478,7 +480,7 @@ public class AnalysisService {
             items.add(new NewItem(c.itemType(), c.content(),
                     isUndetermined(c.itemType(), v.assigneeId(), v.dueDate(), v.datetime()),
                     v.assigneeId(), v.dueDate(), v.datetime(), v.participantIds(), c.evidenceContentRefIds(),
-                    v.dueDate() == null ? null : c.dueTime()));
+                    v.dueDate() == null ? null : c.dueTime(), c.durationMinutes()));
         }
         return items;
     }
