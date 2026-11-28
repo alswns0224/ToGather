@@ -17,10 +17,13 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>후보 시작 시각은 후보 기간 안에서 30분 간격, 하루 중 {@value #DAY_START_HOUR}시 ~ {@value #DAY_END_HOUR}시 사이만 본다.</li>
  *   <li>참여자가 회의 시간의 모든 칸을 "가능" 또는 "비선호"로 표시했으면 참석 가능. 표시하지 않은 칸이나 "불가능"이 하나라도 있으면 불가능.</li>
- *   <li>가능 인원이 많은 순 → 비선호 인원이 적은 순 → 이른 시각 순으로 정렬한다.</li>
+ *   <li>가능 인원이 많은 순 → 가중치 점수가 높은 순 → 이른 시각 순으로 정렬한다.</li>
+ *   <li>가중치 점수(설계 TimeScore): 참석 가능한 사람마다 회의 시간을 30분 칸으로 보고 가능 칸 {@value #AVAILABLE_WEIGHT},
+ *       비선호 칸 {@value #NOT_PREFERRED_WEIGHT}점의 평균을 내어 모두 더한다. 2시간 회의에서 1칸만 비선호면 0.875점,
+ *       4칸 모두 비선호면 0.5점이라 비선호가 짧은 시간이 앞선다. 가능 인원을 먼저 보므로 더 많이 올 수 있는 시간이 항상 앞선다.</li>
  *   <li>후보끼리 시간이 겹쳐도 모두 보여 준다. (예: 10~14시 가능, 2시간 회의 → 10~12, 10:30~12:30, 11~13,
  *       11:30~13:30, 12~14)</li>
- *   <li>가능 인원과 비선호 인원이 같으면 공동 순위다. 다음 순위는 공동 개수만큼 건너뛴다. (예: 1, 1, 1, 4)</li>
+ *   <li>가능 인원과 가중치 점수가 같으면 공동 순위다. 다음 순위는 공동 개수만큼 건너뛴다. (예: 1, 1, 1, 4)</li>
  *   <li>가용 시간에 응답하지 않은 참여자는 계산에서 뺀다.</li>
  * </ul>
  */
@@ -32,20 +35,24 @@ public class MeetingTimeRecommender {
     public static final int DAY_END_HOUR = 22;
     /** 화면에서는 5개씩 "더 보기"로 보여 준다. */
     public static final int MAX_CANDIDATES = 30;
+    static final double AVAILABLE_WEIGHT = 1.0;
+    static final double NOT_PREFERRED_WEIGHT = 0.5;
 
     /**
-     * @param rank               순위. 가능 인원·비선호 인원이 같으면 같은 순위(공동)
+     * @param rank               순위. 가능 인원·가중치 점수가 같으면 같은 순위(공동)
+     * @param nonPreferredCount  비선호 칸이 하나라도 있는 참석 가능 인원 (화면 표시용)
+     * @param score              가중치 점수 (참석 가능한 사람별 칸 점수 평균의 합)
      * @param unavailableUserIds 이 시간에 참석할 수 없는 참여자
      */
-    public record Scored(int rank, LocalDateTime startAt, int availableCount, int nonPreferredCount,
+    public record Scored(int rank, LocalDateTime startAt, int availableCount, int nonPreferredCount, double score,
                          List<Long> unavailableUserIds) {
 
         Scored withRank(int rank) {
-            return new Scored(rank, startAt, availableCount, nonPreferredCount, unavailableUserIds);
+            return new Scored(rank, startAt, availableCount, nonPreferredCount, score, unavailableUserIds);
         }
 
         boolean sameScore(Scored other) {
-            return availableCount == other.availableCount && nonPreferredCount == other.nonPreferredCount;
+            return availableCount == other.availableCount && Math.abs(score - other.score) < 1e-9;
         }
     }
 
@@ -59,7 +66,7 @@ public class MeetingTimeRecommender {
             scores.add(score(start, durationMinutes, responses));
         }
         scores.sort(Comparator.comparingInt(Scored::availableCount).reversed()
-                .thenComparingInt(Scored::nonPreferredCount)
+                .thenComparing(Comparator.comparingDouble(Scored::score).reversed())
                 .thenComparing(Scored::startAt));
 
         List<Scored> selected = scores.stream()
@@ -115,10 +122,12 @@ public class MeetingTimeRecommender {
                          Map<Long, Map<LocalDateTime, SlotPreference>> responses) {
         int available = 0;
         int nonPreferred = 0;
+        double total = 0;
         List<Long> unavailable = new ArrayList<>();
         for (Map.Entry<Long, Map<LocalDateTime, SlotPreference>> entry : responses.entrySet()) {
             boolean canAttend = true;
-            boolean notPreferred = false;
+            int cells = 0;
+            int notPreferredCells = 0;
             for (LocalDateTime cell = start; cell.isBefore(start.plusMinutes(durationMinutes));
                  cell = cell.plusMinutes(SLOT_MINUTES)) {
                 SlotPreference preference = entry.getValue().get(cell);
@@ -126,20 +135,22 @@ public class MeetingTimeRecommender {
                     canAttend = false;
                     break;
                 }
+                cells++;
                 if (preference == SlotPreference.NOT_PREFERRED) {
-                    notPreferred = true;
+                    notPreferredCells++;
                 }
             }
-            if (canAttend) {
+            if (canAttend && cells > 0) {
                 available++;
-                if (notPreferred) {
+                if (notPreferredCells > 0) {
                     nonPreferred++;
                 }
+                total += ((cells - notPreferredCells) * AVAILABLE_WEIGHT + notPreferredCells * NOT_PREFERRED_WEIGHT) / cells;
             } else {
                 unavailable.add(entry.getKey());
             }
         }
-        return new Scored(0, start, available, nonPreferred, unavailable);
+        return new Scored(0, start, available, nonPreferred, total, unavailable);
     }
 
     /** 같은 날, DAY_START ~ DAY_END 안에 들어가는지 */

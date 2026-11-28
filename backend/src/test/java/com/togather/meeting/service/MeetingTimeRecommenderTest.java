@@ -44,6 +44,45 @@ class MeetingTimeRecommenderTest {
     }
 
     @Test
+    void 가능_인원이_같으면_비선호_칸이_짧은_시간이_앞선다() {
+        Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
+        // 10~12시: 4칸 모두 비선호 / 14~16시: 4칸 중 1칸만 비선호
+        Map<LocalDateTime, SlotPreference> user1 = cells(SlotPreference.NOT_PREFERRED, at(10, 0), at(10, 30),
+                at(11, 0), at(11, 30));
+        user1.putAll(cells(SlotPreference.AVAILABLE, at(14, 0), at(14, 30), at(15, 0)));
+        user1.put(at(15, 30), SlotPreference.NOT_PREFERRED);
+        responses.put(1L, user1);
+
+        List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(18, 0)), 120, responses);
+
+        assertThat(result.get(0).startAt()).isEqualTo(at(14, 0));
+        assertThat(result.get(0).score()).isEqualTo(0.875);
+        Scored allNotPreferred = result.stream().filter(s -> s.startAt().equals(at(10, 0))).findFirst().orElseThrow();
+        assertThat(allNotPreferred.score()).isEqualTo(0.5);
+        // 화면에 보이는 비선호 인원은 둘 다 1명
+        assertThat(result.get(0).nonPreferredCount()).isEqualTo(1);
+        assertThat(allNotPreferred.nonPreferredCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 더_많이_올_수_있는_시간은_비선호가_있어도_앞선다() {
+        Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
+        // 10시: 3명 모두 비선호로 가능 / 15시: 2명만 가능(선호)
+        responses.put(1L, cells(SlotPreference.NOT_PREFERRED, at(10, 0)));
+        responses.put(2L, cells(SlotPreference.NOT_PREFERRED, at(10, 0)));
+        Map<LocalDateTime, SlotPreference> user3 = cells(SlotPreference.NOT_PREFERRED, at(10, 0));
+        responses.put(3L, user3);
+        responses.get(1L).put(at(15, 0), SlotPreference.AVAILABLE);
+        responses.get(2L).put(at(15, 0), SlotPreference.AVAILABLE);
+
+        List<Scored> result = recommender.recommend(new DateRange(at(9, 0), at(18, 0)), 30, responses);
+
+        assertThat(result).extracting(Scored::startAt).containsExactly(at(10, 0), at(15, 0));
+        assertThat(result.get(0).score()).isEqualTo(1.5);
+        assertThat(result.get(1).score()).isEqualTo(2.0);
+    }
+
+    @Test
     void 불가능_칸이_하나라도_있으면_참석할_수_없다() {
         Map<Long, Map<LocalDateTime, SlotPreference>> responses = new HashMap<>();
         Map<LocalDateTime, SlotPreference> user1 = cells(SlotPreference.AVAILABLE, at(10, 0));
