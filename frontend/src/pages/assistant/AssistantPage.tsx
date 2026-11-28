@@ -1,5 +1,5 @@
 // UI-13 AI 업무 보조 (담당: B)
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   approveSchedule,
@@ -9,7 +9,6 @@ import {
   completePersonalTask,
   createPersonalTask,
   deletePersonalTask,
-  detectCandidates,
   dismissSuggestion,
   getMyTodoList,
   getSuggestions,
@@ -30,6 +29,7 @@ import PageHeader from '../../components/PageHeader';
 import ServiceLogo from '../../components/ServiceLogo';
 import NavIcon from '../../layouts/NavIcon';
 import { formatDate, formatDateTime } from '../../utils/date';
+import { useDetection } from './detectionStore';
 import './assistant.css';
 
 type Tab = 'SCHEDULE' | 'TASK' | 'TODO';
@@ -45,36 +45,36 @@ function AssistantContent({ workspaceId }: { workspaceId: string }) {
   const todos = useAsync(() => getMyTodoList(workspaceId), [workspaceId]);
   const members = useAsync(() => getMembers(workspaceId), [workspaceId]);
   const [approved, setApproved] = useState<{ text: string; to: string | null; tab?: Tab } | null>(null);
-  const [detecting, setDetecting] = useState(false);
-  const [sourceWarnings, setSourceWarnings] = useState<string[]>([]);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  // 찾는 중 상태는 화면 밖에 둔다. 다른 메뉴로 갔다 와도 "살펴보는 중"과 결과가 이어서 보인다.
+  const detection = useDetection(workspaceId);
+  const detecting = detection.running;
+  const outcome = detection.outcome;
+  const sourceWarnings = outcome?.ok ? outcome.result.warnings ?? [] : [];
+  const notice = !outcome
+    ? null
+    : outcome.ok
+      ? {
+          ok: true,
+          text:
+            outcome.result.scannedMessages === 0
+              ? '새로 살펴볼 메시지가 없습니다.'
+              : `메시지 ${outcome.result.scannedMessages}개를 살펴보고 후보 ${outcome.result.created.length}개를 찾았습니다.`,
+        }
+      : { ok: false, text: `후보를 찾지 못했습니다. ${outcome.message}` };
 
   const reload = () => {
     suggestions.reload();
     todos.reload();
   };
 
-  const detect = async () => {
-    setDetecting(true);
-    setNotice(null);
-    setSourceWarnings([]);
-    try {
-      const result = await detectCandidates(workspaceId);
-      setSourceWarnings(result.warnings ?? []);
-      setNotice({
-        ok: true,
-        text:
-          result.scannedMessages === 0
-            ? '새로 살펴볼 메시지가 없습니다.'
-            : `메시지 ${result.scannedMessages}개를 살펴보고 후보 ${result.created.length}개를 찾았습니다.`,
-      });
-      reload();
-    } catch (e) {
-      setNotice({ ok: false, text: `후보를 찾지 못했습니다. ${(e as Error).message}` });
-    } finally {
-      setDetecting(false);
-    }
-  };
+  // 찾기가 끝나면 (이 화면에 있든, 다른 메뉴에 갔다 돌아왔든) 목록을 다시 불러온다.
+  const finishedAt = outcome?.finishedAt;
+  useEffect(() => {
+    if (finishedAt) reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finishedAt]);
+
+  const detect = detection.start;
 
   const pending = (suggestions.data ?? []).filter((s) => s.status === 'PENDING');
   const list = pending.filter((s) => s.type === tab);
