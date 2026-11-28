@@ -261,25 +261,47 @@
   background: var(--primary-soft);
   color: var(--primary);
 }
+/* 항목마다 연한 카드로 나눈다. 왼쪽 막대는 섹션 아이콘과 같은 색 (미결 사항은 경고색) */
 .list:has(> li.analysis-item) {
-  gap: 0;
+  gap: 10px;
+  margin-top: 4px;
 }
 .list > li.analysis-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 9px;
-  padding: 15px 0 !important;
-  border: 0;
-  border-bottom: 1px solid var(--border-soft);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  padding: 13px 16px 11px 19px !important;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   font-size: 13px;
   font-weight: 400;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .list > li.analysis-item:last-child {
-  border-bottom: 0;
+  border-bottom: 1px solid var(--border-soft); /* 공통 .list 마지막 줄 규칙이 아래 테두리를 지우지 않게 */
+}
+.list > li.analysis-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
+  opacity: 0.55;
+}
+.list > li.analysis-item.type-open_issue::before {
+  background: var(--warning);
+}
+.list > li.analysis-item:hover,
+.list > li.analysis-item:focus-within {
+  border-color: var(--border);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 .analysis-item > .row {
   align-items: flex-start;
