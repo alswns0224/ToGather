@@ -36,7 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 내 Slack 1:1 DM 보기·답장 (UI-04).
+ * 내 Slack 1:1 DM 보기·답장·수정·삭제 (UI-04).
  * DM은 본인만 보는 개인 자료라 팀 토큰이 아니라 반드시 내 Slack 연결의 토큰으로 읽고 보낸다.
  * DB에 저장하지 않는다. 처음 열 때만 Slack에서 읽어 기억해 두고, 그 뒤로는 Slack이 보내 주는 DM 이벤트(웹훅)로
  * 기억한 목록·메시지를 고친 뒤 본인 화면에만 알린다. Slack의 대화 기록 조회 한도에 걸리지 않게 하려는 것이다.
@@ -77,6 +77,8 @@ public class SlackDmService {
     private final Map<String, Cached<List<Conversation>>> lists = new ConcurrentHashMap<>();
     /** DM 대화별 메시지 (워크스페이스:사용자:대화) */
     private final Map<String, Cached<List<Message>>> histories = new ConcurrentHashMap<>();
+    /** Slack 계정이 바뀌면 이전 계정의 개인 캐시를 버린다. */
+    private final Map<String, String> accounts = new ConcurrentHashMap<>();
     /** 팀원별 내 Slack 사용자 ID */
     private final Map<String, Cached<String>> slackIds = new ConcurrentHashMap<>();
 
@@ -181,9 +183,58 @@ public class SlackDmService {
         return sent;
     }
 
+    /** 내가 작성한 DM만 수정한다. Slack 권한과 별개로 작성자를 먼저 확인한다. */
+    public Message update(Long workspaceId, Long userId, String channelId, String ts, String text) {
+        requireDm(channelId);
+        requireMessageTs(ts);
+        if (text == null || text.isBlank() || text.length() > 4000) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        String token = myToken(workspaceId, userId);
+        Message original = ownMessage(workspaceId, userId, channelId, ts, token);
+        SlackMessage response = client.updateMessage(token, channelId, ts, text);
+        String rawText = response.text() == null ? text : response.text();
+        Message updated = new Message(original.ts(), original.userId(), original.userName(),
+                directory.renderMentions(workspaceId, rawText), original.createdAt(), true, rawText, true);
+        String key = workspaceId + ":" + userId + ":" + channelId;
+        histories.computeIfPresent(key, (ignored, cached) -> new Cached<>(cached.value().stream()
+                .map(message -> message.ts().equals(ts) ? updated : message).toList(), cached.at()));
+        workspaceEvents.publishToUser(workspaceId, userId, EVENT_PROVIDER, channelId);
+        return updated;
+    }
+
+    /** 관리자라도 상대가 보낸 DM은 삭제할 수 없다. */
+    public void delete(Long workspaceId, Long userId, String channelId, String ts) {
+        requireDm(channelId);
+        requireMessageTs(ts);
+        String token = myToken(workspaceId, userId);
+        ownMessage(workspaceId, userId, channelId, ts, token);
+        client.deleteMessage(token, channelId, ts);
+        removeCachedMessage(workspaceId + ":" + userId + ":" + channelId, ts);
+        workspaceEvents.publishToUser(workspaceId, userId, EVENT_PROVIDER, channelId);
+    }
+
+    private Message ownMessage(Long workspaceId, Long userId, String channelId, String ts, String token) {
+        String me = mySlackId(workspaceId + ":" + userId, token);
+        Cached<List<Message>> cached = histories.get(workspaceId + ":" + userId + ":" + channelId);
+        List<Message> messages = cached == null ? getMessages(workspaceId, userId, channelId) : cached.value();
+        Message original = messages.stream().filter(message -> message.ts().equals(ts)).findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (me == null || !me.equals(original.userId())) {
+            throw new BusinessException(ErrorCode.SLACK_ACTION_FORBIDDEN);
+        }
+        return original;
+    }
+
+    private void removeCachedMessage(String key, String ts) {
+        histories.computeIfPresent(key, (ignored, cached) -> new Cached<>(cached.value().stream()
+                .filter(message -> !message.ts().equals(ts)).toList(), cached.at()));
+    }
+
     private Message toMessage(Long workspaceId, SlackMessage m, Map<String, SlackUser> users, String me) {
         return new Message(m.ts(), m.userId(), nameOf(users.get(m.userId()), m.userId()),
-                directory.renderMentions(workspaceId, m.text()), m.createdAt(), me != null && me.equals(m.userId()));
+                directory.renderMentions(workspaceId, m.text()), m.createdAt(), me != null && me.equals(m.userId()),
+                m.text(), m.editedAt() != null);
     }
 
     // ===================== 웹훅 (Slack Events API의 message.im) =====================
@@ -242,9 +293,29 @@ public class SlackDmService {
                     lists.remove(userKey); // 누가 보냈는지 가릴 수 없으면 다음에 새로 읽는다.
                 }
             } else {
-                histories.remove(historyKey); // 수정·삭제: 다음에 열 때 새로 읽는다.
+                applyCachedChange(owner.workspaceId(), historyKey, event);
             }
             workspaceEvents.publishToUser(owner.workspaceId(), owner.userId(), EVENT_PROVIDER, channelId);
+        }
+    }
+
+    /** 수정·삭제 웹훅도 캐시에 바로 반영해 대화 기록을 다시 읽지 않는다. */
+    private void applyCachedChange(Long workspaceId, String key, Map<String, Object> event) {
+        String subtype = str(event, "subtype");
+        String deletedTs = str(event, "deleted_ts");
+        Map<String, Object> message = obj(event, "message");
+        String ts = str(message, "ts");
+        String text = str(message, "text");
+        if ("message_deleted".equals(subtype) && deletedTs != null) {
+            removeCachedMessage(key, deletedTs);
+        } else if ("message_changed".equals(subtype) && ts != null && text != null) {
+            String rendered = directory.renderMentions(workspaceId, text);
+            histories.computeIfPresent(key, (ignored, cached) -> new Cached<>(cached.value().stream()
+                    .map(original -> !original.ts().equals(ts) ? original : new Message(original.ts(),
+                            original.userId(), original.userName(), rendered, original.createdAt(), original.mine(),
+                            text, true)).toList(), cached.at()));
+        } else {
+            histories.remove(key);
         }
     }
 
@@ -260,7 +331,8 @@ public class SlackDmService {
         String sender = str(event, "user");
         String name = sender;
         try {
-            String token = integrations.findAccessToken(owner.workspaceId(), owner.userId(), Provider.SLACK).orElse(null);
+            String token = integrations.findOwnAccess(owner.workspaceId(), owner.userId(), Provider.SLACK)
+                    .map(IntegrationService.OwnAccess::accessToken).orElse(null);
             if (token != null && sender != null) {
                 name = nameOf(directory.getUsers(owner.workspaceId(), token, List.of(sender)).get(sender), sender);
             }
@@ -269,7 +341,7 @@ public class SlackDmService {
         }
         Message message = new Message(ts, sender, name == null ? "알 수 없음" : name,
                 directory.renderMentions(owner.workspaceId(), str(event, "text")), SlackApiClient.toLocal(ts),
-                me != null && me.equals(sender));
+                me != null && me.equals(sender), str(event, "text"), false);
         List<Message> next = new ArrayList<>(cached.value());
         next.add(message);
         next.sort(Comparator.comparing(m -> new BigDecimal(m.ts())));
@@ -305,8 +377,25 @@ public class SlackDmService {
 
     private String myToken(Long workspaceId, Long userId) {
         access.checkMember(workspaceId, userId);
-        return integrations.findAccessToken(workspaceId, userId, Provider.SLACK)
+        IntegrationService.OwnAccess own = integrations.findOwnAccess(workspaceId, userId, Provider.SLACK)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONNECTION_NOT_FOUND));
+        String userKey = workspaceId + ":" + userId;
+        String account = own.connectionId() + ":" + own.externalAccountId();
+        accounts.compute(userKey, (key, previous) -> {
+            if (!account.equals(previous)) {
+                lists.remove(key);
+                slackIds.remove(key);
+                histories.keySet().removeIf(historyKey -> historyKey.startsWith(key + ":"));
+            }
+            return account;
+        });
+        return own.accessToken();
+    }
+
+    private static void requireMessageTs(String ts) {
+        if (ts == null || !ts.matches("[0-9]{1,20}\\.[0-9]{1,6}")) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     private static void requireDm(String channelId) {

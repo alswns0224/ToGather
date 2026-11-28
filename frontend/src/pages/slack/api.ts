@@ -109,6 +109,8 @@ export interface SlackDmMessage {
   text: string;
   createdAt: string | null;
   mine: boolean;
+  rawText?: string;
+  edited?: boolean;
 }
 
 const dms = (workspaceId: string, path = '') => ws(workspaceId, `/slack/dms${path}`);
@@ -120,6 +122,12 @@ export const getDmMessages = (workspaceId: string, channelId: string) =>
 
 export const sendDm = (workspaceId: string, channelId: string, text: string) =>
   http.post<SlackDmMessage>(dms(workspaceId, `/${enc(channelId)}/messages`), { text });
+
+export const updateDm = (workspaceId: string, channelId: string, ts: string, text: string) =>
+  http.patch<SlackDmMessage>(dms(workspaceId, `/${enc(channelId)}/messages/${enc(ts)}`), { text });
+
+export const deleteDm = (workspaceId: string, channelId: string, ts: string) =>
+  http.delete<void>(dms(workspaceId, `/${enc(channelId)}/messages/${enc(ts)}`));
 
 export const createMessage = (workspaceId: string, channelId: string, text: string) =>
   http.post<SlackMessageResponse>(channels(workspaceId, `/${enc(channelId)}/messages`), { text });

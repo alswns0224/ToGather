@@ -19,6 +19,9 @@ public final class SlackDmResponse {
 
     /** DM 메시지 한 개. mine이면 내가 보낸 메시지 */
     public record Message(String ts, String userId, String userName, String text, LocalDateTime createdAt,
-                          boolean mine) {
+                          boolean mine, String rawText, boolean edited) {
+        public Message(String ts, String userId, String userName, String text, LocalDateTime createdAt, boolean mine) {
+            this(ts, userId, userName, text, createdAt, mine, text, false);
+        }
     }
 }
