@@ -1,3 +1,4 @@
+import DateTimePicker, {DatePicker} from '../../../components/DateTimePicker';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
@@ -282,14 +283,7 @@ function TaskStep({
             </option>
           ))}
         </select>
-        <input
-          type="date"
-          aria-label="팀 작업 마감일"
-          className="input grow"
-          required
-          value={form.dueDate ?? ''}
-          onChange={(e) => setForm({ ...form, dueDate: e.target.value || null })}
-        />
+        <DatePicker label="팀 작업 마감일" className="grow min-w-[150px]" required disabled={busy} value={form.dueDate??''} onChange={value=>setForm({...form,dueDate:value||null})}/>
         <button className="btn btn-primary btn-small" disabled={busy || !form.assigneeId || !form.dueDate}>
           {busy ? '만드는 중...' : item.outputStatus === 'FAILED' ? '다시 시도' : '팀 작업 만들기'}
         </button>
@@ -384,22 +378,11 @@ function MeetingStep({
       <div className="row">
         <label className="grow">
           시작
-          <input
-            type="datetime-local"
-            className="input"
-            required
-            value={draft.startAt?.slice(0, 16) ?? ''}
-            onChange={(e) => setDraft({ ...draft, startAt: e.target.value ? `${e.target.value}:00` : null })}
-          />
+          <DateTimePicker label="일정 시작" required disabled={busy} value={draft.startAt?.slice(0,16)??''} onChange={value=>setDraft({...draft,startAt:value?`${value}:00`:null})}/>
         </label>
         <label className="grow">
           종료
-          <input
-            type="datetime-local"
-            className="input"
-            value={draft.endAt?.slice(0, 16) ?? ''}
-            onChange={(e) => setDraft({ ...draft, endAt: e.target.value ? `${e.target.value}:00` : null })}
-          />
+          <DateTimePicker label="일정 종료" disabled={busy} value={draft.endAt?.slice(0,16)??''} onChange={value=>setDraft({...draft,endAt:value?`${value}:00`:null})}/>
         </label>
       </div>
       <div className="tags">

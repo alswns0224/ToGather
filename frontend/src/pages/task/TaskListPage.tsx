@@ -1,3 +1,4 @@
+import {DatePicker} from '../../components/DateTimePicker';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useWorkspaceEvents } from '../../hooks/useWorkspaceEvents';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -736,7 +737,7 @@ function TaskFields({
         </label>
         <label className="block">
           <span className={`mb-1 block text-xs font-bold ${MUTED}`}>마감일</span>
-          <input className={INPUT} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          <DatePicker label="팀 작업 마감일" value={dueDate} onChange={setDueDate}/>
         </label>
       </div>
     </>
